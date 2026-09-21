@@ -23,7 +23,7 @@ Built for the fictional (personal-project) company **Transportes MARJAN**, based
 ## Tech stack
 
 | Concern | Choice |
-|---|---|
+| --- | --- |
 | Language | Java 21 (LTS) |
 | UI | Java Swing (+ FlatLaf for a modern look, optional) |
 | Database | MariaDB 11 (in Docker Compose; MySQL-compatible) |
@@ -67,10 +67,10 @@ docker compose down -v        # stop AND wipe data (re-runs db/init scripts)
 Read from environment variables, with these defaults:
 
 | Variable | Default |
-|---|---|
-| `DB_URL` | `jdbc:mariadb://localhost:3306/marjan` |
+| --- | --- |
+| `DB_URL` | `jdbc:mariadb://localhost:3306/sysportdb` |
 | `DB_USER` | `marjan` |
-| `DB_PASSWORD` | `marjan` |
+| `DB_PASSWORD` | `changeme` |
 
 ## Project structure
 

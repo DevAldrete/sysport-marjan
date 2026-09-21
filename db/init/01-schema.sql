@@ -1,15 +1,7 @@
--- SysPort - MARJAN :: bootstrap script (schema + minimal seed)
+-- SysPort - MARJAN :: schema
 -- MariaDB 11. English status codes, BIGINT auto-increment ids, DECIMAL money.
 -- Design notes: the child column always references the parent id (PRD 4.1 F1).
 -- Foreign keys are declared inline so table creation order is self-documenting.
---
--- This file is the reference / manual bootstrap. The files that Docker loads
--- automatically are db/init/01-schema.sql and db/init/02-seed.sql.
--- Run manually with:  mysql -u root -p < SYSPORT_MARJAN.sql
-
-CREATE DATABASE IF NOT EXISTS marjan
-  CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
-USE marjan;
 
 SET NAMES utf8mb4;
 
@@ -358,28 +350,3 @@ CREATE TABLE audit_log (
   CONSTRAINT fk_audit_user FOREIGN KEY (user_id) REFERENCES users (id),
   INDEX idx_audit_entity (entity, entity_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- ---------------------------------------------------------------- minimal seed
--- Enough to log in. Full demo data lives in db/init/02-seed.sql.
--- Password for admin is "admin123" (bcrypt), dev only.
-
-INSERT INTO roles (id, name) VALUES
-  (1, 'admin'), (2, 'traffic'), (3, 'maintenance'), (4, 'collections'), (5, 'viewer');
-
-INSERT INTO permissions (name) VALUES
-  ('clients.read'), ('clients.write'), ('routes.read'), ('routes.write'),
-  ('rates.read'), ('rates.write'), ('operators.read'), ('operators.write'),
-  ('fleet.read'), ('fleet.write'), ('fleet.maintenance'),
-  ('fuel.read'), ('fuel.write'), ('requests.read'), ('requests.write'),
-  ('requests.assign'), ('trips.read'), ('trips.write'), ('trips.assign'),
-  ('expenses.read'), ('expenses.write'), ('advances.read'), ('advances.write'),
-  ('deliveries.read'), ('deliveries.write'), ('incidents.read'), ('incidents.write'),
-  ('invoices.read'), ('invoices.write'), ('payments.read'), ('payments.write'),
-  ('reports.view'), ('security.users');
-
-INSERT INTO role_permissions (role_id, permission_id)
-SELECT 1, id FROM permissions;
-
-INSERT INTO users (id, username, password_hash, role_id, status) VALUES
-  (1, 'admin',
-   '$2a$10$eyAVHtcAySDTLjNDlIGuROCBMcOg3GfQrm9pWOYuAISimjSIJjd.y', 1, 'active');
