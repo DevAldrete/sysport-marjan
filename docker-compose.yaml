@@ -8,13 +8,14 @@ services:
       MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
       MARIADB_USER: ${DB_USER}
       MARIADB_PASSWORD: ${DB_PASSWORD}
-      MARIADB_DB: ${DB_NAME}
+      MARIADB_DATABASE: ${DB_NAME}
 
     ports:
         - "3306:3306"
 
     volumes:
       - mysql_data:/var/lib/mysql
+      - ./db/init:/docker-entrypoint-initdb.d:ro
 
     networks:
       - sysport-network
