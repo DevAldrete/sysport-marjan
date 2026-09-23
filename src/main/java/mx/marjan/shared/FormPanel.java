@@ -55,11 +55,16 @@ public final class FormPanel {
         JTextArea area = new JTextArea(value == null ? "" : value, 3, 24);
         area.setLineWrap(true);
         area.setWrapStyleWord(true);
-        put(key, label, new JScrollPane(area));
+        // Store the text area (so text()/setText() can read it) but display a scroll pane.
+        put(key, label, area, new JScrollPane(area));
         return this;
     }
 
     private void put(String key, String label, JComponent field) {
+        put(key, label, field, field);
+    }
+
+    private void put(String key, String label, JComponent fieldToStore, JComponent fieldToDisplay) {
         GridBagConstraints labelConstraints = new GridBagConstraints();
         labelConstraints.gridx = 0;
         labelConstraints.gridy = row;
@@ -73,9 +78,9 @@ public final class FormPanel {
         fieldConstraints.weightx = 1;
         fieldConstraints.fill = GridBagConstraints.HORIZONTAL;
         fieldConstraints.insets = INSETS;
-        panel.add(field, fieldConstraints);
+        panel.add(fieldToDisplay, fieldConstraints);
 
-        fields.put(key, field);
+        fields.put(key, fieldToStore);
         row++;
     }
 
