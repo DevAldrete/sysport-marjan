@@ -6,7 +6,6 @@ import java.util.List;
 import javax.swing.JLabel;
 import javax.swing.JTable;
 import javax.swing.JTextField;
-import mx.marjan.shared.Async;
 import mx.marjan.shared.BaseView;
 import mx.marjan.shared.Dates;
 import mx.marjan.shared.FormPanel;
@@ -34,6 +33,7 @@ public class OperatorsView extends BaseView {
                 Ui.button("Nuevo", this::openNew),
                 Ui.button("Editar", this::openEdit),
                 Ui.button("Cambiar estado", this::changeStatus),
+                Ui.button("Eliminar", this::deleteOperator),
                 Ui.button("Recargar", this::reload)), BorderLayout.NORTH);
         add(Ui.scroll(table), BorderLayout.CENTER);
         reload();
@@ -96,6 +96,16 @@ public class OperatorsView extends BaseView {
                     (EmployeeStatus) form.selected("status"));
             return service.save(built);
         }, this::reload);
+    }
+
+    private void deleteOperator() {
+        Employee employee = selected();
+        if (employee == null) {
+            Ui.info(this, "Seleccione un operador");
+            return;
+        }
+        Ui.delete(this, "el operador \"" + employee.name() + "\"",
+                () -> service.delete(employee.id()), this::reload);
     }
 
     private void changeStatus() {

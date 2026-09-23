@@ -36,23 +36,23 @@ public class ExpenseRepository {
         return Database.queryList(BASE + " ORDER BY e.expense_date DESC", this::map);
     }
 
-    public BigDecimal sumByTrip(Connection connection, long tripId) throws SQLException {
-        return Database.queryOne(connection,
-                "SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE trip_id = ?",
-                rs -> rs.getBigDecimal("total"), tripId).orElse(BigDecimal.ZERO);
-    }
-
     public BigDecimal sumByTrip(long tripId) {
         return Database.queryOne(
                 "SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE trip_id = ?",
                 rs -> rs.getBigDecimal("total"), tripId).orElse(BigDecimal.ZERO);
     }
 
-    public void insert(Connection connection, Expense expense, long userId) throws SQLException {
-        Database.insertReturningId(connection, """
-                INSERT INTO expenses (trip_id, expense_type, amount, expense_date, description, created_by)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """, expense.tripId(), expense.type().dbValue(), expense.amount(),
+    public long insert(Connection connection, Expense expense, long userId) throws SQLException {
+        long id = mx.marjan.shared.Sequences.next(connection, "expenses");
+        Database.update(connection, """
+                INSERT INTO expenses (id, trip_id, expense_type, amount, expense_date, description, created_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, id, expense.tripId(), expense.type().dbValue(), expense.amount(),
                 expense.expenseDate(), expense.description(), userId);
+        return id;
+    }
+
+    public void delete(long id) {
+        Database.update("DELETE FROM expenses WHERE id = ?", id);
     }
 }

@@ -2,7 +2,6 @@ package mx.marjan.security;
 
 import java.awt.BorderLayout;
 import java.util.List;
-import javax.swing.JComboBox;
 import javax.swing.JTable;
 import javax.swing.JTextField;
 import mx.marjan.shared.Async;
@@ -10,7 +9,6 @@ import mx.marjan.shared.BaseView;
 import mx.marjan.shared.FormPanel;
 import mx.marjan.shared.ModalForm;
 import mx.marjan.shared.RecordTableModel;
-import mx.marjan.shared.Result;
 import mx.marjan.shared.Ui;
 
 public class UsersView extends BaseView {
@@ -27,6 +25,7 @@ public class UsersView extends BaseView {
         add(Ui.row(Ui.button("Nuevo", this::openNew),
                 Ui.button("Editar", this::openEdit),
                 Ui.button("Restablecer contrasena", this::resetPassword),
+                Ui.button("Eliminar", this::deleteUser),
                 Ui.button("Recargar", this::reload)), BorderLayout.NORTH);
         add(Ui.scroll(table), BorderLayout.CENTER);
         Async.run(authService::roles, loaded -> roles = loaded, failure -> Ui.failure(this, failure));
@@ -66,6 +65,10 @@ public class UsersView extends BaseView {
             Ui.info(this, "Seleccione un usuario");
             return;
         }
+        if (roles.isEmpty()) {
+            Ui.info(this, "Cargando roles, intente de nuevo");
+            return;
+        }
         FormPanel form = new FormPanel()
                 .addText("username", "Usuario", user.username())
                 .addCombo("role", "Rol", roles.toArray(), roleById(user.roleId()))
@@ -98,6 +101,16 @@ public class UsersView extends BaseView {
                     }
                 },
                 failure -> Ui.failure(this, failure));
+    }
+
+    private void deleteUser() {
+        User user = selected();
+        if (user == null) {
+            Ui.info(this, "Seleccione un usuario");
+            return;
+        }
+        Ui.delete(this, "el usuario \"" + user.username() + "\"",
+                () -> authService.deleteUser(user.id()), this::reload);
     }
 
     private Role roleById(long id) {

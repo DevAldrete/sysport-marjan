@@ -89,18 +89,24 @@ public class ServiceRequestRepository {
                 """, rs -> rs.getLong("next_seq"), "SR-" + year + "-%").orElse(1L);
     }
 
-    public long insert(ServiceRequest request, long userId) {
-        return Database.insert("""
+    public long insert(java.sql.Connection connection, ServiceRequest request, long userId) throws SQLException {
+        long id = mx.marjan.shared.Sequences.next(connection, "service_requests");
+        Database.update(connection, """
                 INSERT INTO service_requests
-                  (folio, client_id, route_id, cargo_description, estimated_weight,
+                  (id, folio, client_id, route_id, cargo_description, estimated_weight,
                    pickup_date_scheduled, delivery_date_scheduled, agreed_rate,
                    requires_documents, status, notes, created_by, updated_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                request.folio(), request.clientId(), request.routeId(), request.cargoDescription(),
+                id, request.folio(), request.clientId(), request.routeId(), request.cargoDescription(),
                 request.estimatedWeight(), request.pickupScheduled(), request.deliveryScheduled(),
                 request.agreedRate(), request.requiresDocuments(), request.status().dbValue(),
                 request.notes(), userId, userId);
+        return id;
+    }
+
+    public void delete(long id) {
+        Database.update("DELETE FROM service_requests WHERE id = ?", id);
     }
 
     public void update(ServiceRequest request, long userId) {

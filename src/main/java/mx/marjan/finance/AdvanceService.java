@@ -33,7 +33,7 @@ public class AdvanceService {
         return Result.ok(null);
     }
 
-    public Result<Void> settle(long advanceId, long tripId) {
+    public Result<Void> settle(long advanceId) {
         if (!Session.has(Permissions.ADVANCES_WRITE)) {
             return Result.err("No tiene permiso para comprobar anticipos");
         }
@@ -53,11 +53,12 @@ public class AdvanceService {
         return AdvanceRules.balance(given, expenses.sumByTrip(tripId), fuels.sumByTrip(tripId));
     }
 
-    public java.math.BigDecimal totalExpenses(long tripId) {
-        return expenses.sumByTrip(tripId);
+    public Result<Void> delete(long id) {
+        if (!Session.has(Permissions.ADVANCES_WRITE)) {
+            return Result.err("No tiene permiso para eliminar anticipos");
+        }
+        advances.delete(id);
+        return Result.ok(null);
     }
 
-    public java.math.BigDecimal totalFuel(long tripId) {
-        return fuels.sumByTrip(tripId);
-    }
 }

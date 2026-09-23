@@ -67,13 +67,20 @@ public class InvoiceRepository {
     }
 
     public long insert(Connection connection, Invoice invoice, long userId) throws SQLException {
-        return Database.insertReturningId(connection, """
+        long id = mx.marjan.shared.Sequences.next(connection, "invoices");
+        Database.update(connection, """
                 INSERT INTO invoices
-                  (client_id, service_request_id, invoice_number, amount, issue_date, due_date, status, created_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, invoice.clientId(), invoice.serviceRequestId(), invoice.invoiceNumber(),
+                  (id, client_id, service_request_id, invoice_number, amount, issue_date, due_date,
+                   status, created_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, id, invoice.clientId(), invoice.serviceRequestId(), invoice.invoiceNumber(),
                 invoice.amount(), invoice.issueDate(), invoice.dueDate(),
                 invoice.status().dbValue(), userId);
+        return id;
+    }
+
+    public void delete(long id) {
+        Database.update("DELETE FROM invoices WHERE id = ?", id);
     }
 
     public void updateStatus(long id, InvoiceStatus status) {

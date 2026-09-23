@@ -14,9 +14,7 @@ public final class ServiceRequestFlow {
     /** BR-03 + BR-04: authorize only from requested, with a positive agreed rate snapshot. */
     public static Result<ServiceRequest> authorize(ServiceRequest request, BigDecimal agreedRate) {
         List<String> problems = transitionProblems(request, RequestStatus.AUTHORIZED);
-        if (agreedRate == null || agreedRate.signum() <= 0) {
-            problems.add("La tarifa acordada debe ser mayor a cero");
-        }
+        problems.addAll(RateRules.validateAgreedRate(agreedRate).problems());
         if (!problems.isEmpty()) {
             return Result.err(problems);
         }
@@ -47,11 +45,6 @@ public final class ServiceRequestFlow {
             return Result.err(problems);
         }
         return Result.ok(request.withNotes(reason).withStatus(RequestStatus.CANCELLED));
-    }
-
-    public static Result<ServiceRequest> moveTo(ServiceRequest request, RequestStatus next) {
-        List<String> problems = transitionProblems(request, next);
-        return problems.isEmpty() ? Result.ok(request.withStatus(next)) : Result.err(problems);
     }
 
     private static List<String> transitionProblems(ServiceRequest request, RequestStatus next) {

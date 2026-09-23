@@ -29,4 +29,12 @@ public class ExpenseService {
         });
         return Result.ok(null);
     }
+
+    public Result<Void> delete(long id) {
+        if (!Session.has(Permissions.EXPENSES_WRITE)) {
+            return Result.err("No tiene permiso para eliminar gastos");
+        }
+        expenses.delete(id);
+        return Result.ok(null);
+    }
 }

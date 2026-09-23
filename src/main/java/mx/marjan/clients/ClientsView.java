@@ -44,6 +44,7 @@ public class ClientsView extends BaseView {
                 Ui.button("Desactivar", () -> changeStatus(ClientStatus.INACTIVE)),
                 Ui.button("Activar", () -> changeStatus(ClientStatus.ACTIVE)),
                 Ui.button("Tarifas", this::openRates),
+                Ui.button("Eliminar", this::deleteClient),
                 Ui.button("Recargar", this::reload)), BorderLayout.NORTH);
         add(Ui.scroll(table), BorderLayout.CENTER);
         reload();
@@ -88,7 +89,11 @@ public class ClientsView extends BaseView {
                 .addText("creditDays", "Dias de credito", String.valueOf(client.creditDays()))
                 .addCombo("status", "Estado", ClientStatus.values(), client.status());
         ModalForm.show(this, isNew ? "Nuevo cliente" : "Editar cliente", form, () -> {
-            BigDecimal limit = Money.parse(form.text("creditLimit")).orElse(BigDecimal.ZERO);
+            Result<BigDecimal> limitResult = Money.require(form.text("creditLimit"), "limite de credito");
+            if (limitResult.isErr()) {
+                return limitResult;
+            }
+            BigDecimal limit = limitResult.value();
             int days;
             try {
                 days = Integer.parseInt(form.text("creditDays").isBlank() ? "0" : form.text("creditDays"));
@@ -121,6 +126,16 @@ public class ClientsView extends BaseView {
                 failure -> Ui.failure(this, failure));
     }
 
+    private void deleteClient() {
+        Client client = selected();
+        if (client == null) {
+            Ui.info(this, "Seleccione un cliente");
+            return;
+        }
+        Ui.delete(this, "el cliente \"" + client.name() + "\"",
+                () -> service.delete(client.id()), this::reload);
+    }
+
     private void openRates() {
         Client client = selected();
         if (client == null) {
@@ -147,6 +162,14 @@ public class ClientsView extends BaseView {
         dialog.add(Ui.row(
                 Ui.button("Nueva tarifa", () -> openRateForm(client, null, reloadRates)),
                 Ui.button("Editar", () -> openRateForm(client, cache[0], reloadRates)),
+                Ui.button("Eliminar", () -> {
+                    if (cache[0] == null) {
+                        Ui.info(dialog, "Seleccione una tarifa");
+                        return;
+                    }
+                    Ui.delete(dialog, "la tarifa seleccionada",
+                            () -> service.deleteRate(cache[0].id()), reloadRates);
+                }),
                 Ui.button("Cerrar", dialog::dispose)), BorderLayout.SOUTH);
         reloadRates.run();
         dialog.setSize(600, 360);

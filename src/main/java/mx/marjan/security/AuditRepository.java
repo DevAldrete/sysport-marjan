@@ -8,18 +8,19 @@ import mx.marjan.shared.Database;
 public class AuditRepository {
 
     public void log(String entity, long entityId, String action, String details) {
-        Database.insert("""
-                INSERT INTO audit_log (user_id, entity, entity_id, action, details)
-                VALUES (?, ?, ?, ?, ?)
-                """, currentUserId(), entity, entityId, action, details);
+        Database.inTransaction(connection -> {
+            log(connection, entity, entityId, action, details);
+            return null;
+        });
     }
 
     public void log(Connection connection, String entity, long entityId, String action, String details)
             throws SQLException {
-        Database.insertReturningId(connection, """
-                INSERT INTO audit_log (user_id, entity, entity_id, action, details)
-                VALUES (?, ?, ?, ?, ?)
-                """, currentUserId(), entity, entityId, action, details);
+        long id = mx.marjan.shared.Sequences.next(connection, "audit_log");
+        Database.update(connection, """
+                INSERT INTO audit_log (id, user_id, entity, entity_id, action, details)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, id, currentUserId(), entity, entityId, action, details);
     }
 
     private Long currentUserId() {

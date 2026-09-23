@@ -3,7 +3,6 @@ package mx.marjan.trips;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Optional;
 import mx.marjan.shared.Database;
 
@@ -36,19 +35,20 @@ public class DeliveryRepository {
         return Database.queryOne(connection, BASE + " WHERE d.trip_id = ?", this::map, tripId);
     }
 
-    public List<Delivery> listAll() {
-        return Database.queryList(BASE + " ORDER BY d.actual_datetime DESC", this::map);
+    public void delete(long id) {
+        Database.update("DELETE FROM deliveries WHERE id = ?", id);
     }
 
     public void save(java.sql.Connection connection, Delivery delivery, long userId) throws SQLException {
         Optional<Delivery> existing = findByTrip(connection, delivery.tripId());
         if (existing.isEmpty()) {
-            Database.insertReturningId(connection, """
+            long id = mx.marjan.shared.Sequences.next(connection, "deliveries");
+            Database.update(connection, """
                     INSERT INTO deliveries
-                      (trip_id, actual_datetime, received_by, evidence_reference, status, created_by)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                      (id, trip_id, actual_datetime, received_by, evidence_reference, status, created_by)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
-                    delivery.tripId(), delivery.actualDatetime(), delivery.receivedBy(),
+                    id, delivery.tripId(), delivery.actualDatetime(), delivery.receivedBy(),
                     delivery.evidenceReference(), delivery.status().dbValue(), userId);
         } else {
             Database.update(connection, """

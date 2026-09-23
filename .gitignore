@@ -17,3 +17,6 @@ buildNumber.properties
 .classpath
 # keys
 .env
+
+# development
+.idea/

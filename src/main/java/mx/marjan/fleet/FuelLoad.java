@@ -15,9 +15,4 @@ public record FuelLoad(
         BigDecimal pricePerLiter,
         BigDecimal amount,
         BigDecimal odometerReading) {
-
-    public static FuelLoad empty() {
-        return new FuelLoad(0, 0, "", null, "", "", LocalDateTime.now(),
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null);
-    }
 }

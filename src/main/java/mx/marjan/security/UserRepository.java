@@ -62,11 +62,18 @@ public class UserRepository {
         return Database.queryList("SELECT name FROM permissions ORDER BY name", rs -> rs.getString("name"));
     }
 
-    public long insert(String username, String passwordHash, long roleId, Long employeeId, UserStatus status) {
-        return Database.insert("""
-                INSERT INTO users (username, password_hash, role_id, employee_id, status)
-                VALUES (?, ?, ?, ?, ?)
-                """, username, passwordHash, roleId, employeeId, status.dbValue());
+    public long insert(java.sql.Connection connection, String username, String passwordHash, long roleId,
+            Long employeeId, UserStatus status) throws SQLException {
+        long id = mx.marjan.shared.Sequences.next(connection, "users");
+        Database.update(connection, """
+                INSERT INTO users (id, username, password_hash, role_id, employee_id, status)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, id, username, passwordHash, roleId, employeeId, status.dbValue());
+        return id;
+    }
+
+    public void delete(long id) {
+        Database.update("DELETE FROM users WHERE id = ?", id);
     }
 
     public void update(long id, String username, long roleId, Long employeeId, UserStatus status) {

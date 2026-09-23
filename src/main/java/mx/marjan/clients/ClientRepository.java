@@ -48,16 +48,18 @@ public class ClientRepository {
         return Database.queryOne("SELECT " + COLUMNS + " FROM clients WHERE id = ?", this::map, id);
     }
 
-    public long insert(Client client) {
-        return Database.insert("""
+    public long insert(java.sql.Connection connection, Client client) throws SQLException {
+        long id = mx.marjan.shared.Sequences.next(connection, "clients");
+        Database.update(connection, """
                 INSERT INTO clients
-                  (name, rfc, address, phone, email, contact_name, client_type,
+                  (id, name, rfc, address, phone, email, contact_name, client_type,
                    payment_terms, credit_limit, credit_days, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                client.name(), client.rfc(), client.address(), client.phone(), client.email(),
+                id, client.name(), client.rfc(), client.address(), client.phone(), client.email(),
                 client.contactName(), client.clientType().dbValue(), client.paymentTerms().dbValue(),
                 client.creditLimit(), client.creditDays(), client.status().dbValue());
+        return id;
     }
 
     public void update(Client client) {
@@ -74,5 +76,9 @@ public class ClientRepository {
 
     public void setStatus(long id, ClientStatus status) {
         Database.update("UPDATE clients SET status = ? WHERE id = ?", status.dbValue(), id);
+    }
+
+    public void delete(long id) {
+        Database.update("DELETE FROM clients WHERE id = ?", id);
     }
 }

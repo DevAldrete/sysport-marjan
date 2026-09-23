@@ -31,11 +31,13 @@ public class ClientRateRepository {
                 this::map, clientId);
     }
 
-    public long insert(ClientRate rate) {
-        return Database.insert("""
-                INSERT INTO client_rates (client_id, route_id, rate, valid_from, valid_to)
-                VALUES (?, ?, ?, ?, ?)
-                """, rate.clientId(), rate.routeId(), rate.rate(), rate.validFrom(), rate.validTo());
+    public long insert(java.sql.Connection connection, ClientRate rate) throws SQLException {
+        long id = mx.marjan.shared.Sequences.next(connection, "client_rates");
+        Database.update(connection, """
+                INSERT INTO client_rates (id, client_id, route_id, rate, valid_from, valid_to)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, id, rate.clientId(), rate.routeId(), rate.rate(), rate.validFrom(), rate.validTo());
+        return id;
     }
 
     public void update(ClientRate rate) {
@@ -43,5 +45,9 @@ public class ClientRateRepository {
                 UPDATE client_rates SET route_id = ?, rate = ?, valid_from = ?, valid_to = ?
                 WHERE id = ?
                 """, rate.routeId(), rate.rate(), rate.validFrom(), rate.validTo(), rate.id());
+    }
+
+    public void delete(long id) {
+        Database.update("DELETE FROM client_rates WHERE id = ?", id);
     }
 }

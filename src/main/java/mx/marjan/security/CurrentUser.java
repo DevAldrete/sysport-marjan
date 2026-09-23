@@ -12,8 +12,4 @@ public record CurrentUser(long id, String username, String roleName, Set<String>
     public boolean can(String permission) {
         return permissions.contains(permission);
     }
-
-    public boolean isAdmin() {
-        return "admin".equalsIgnoreCase(roleName);
-    }
 }

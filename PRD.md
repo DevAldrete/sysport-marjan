@@ -131,6 +131,7 @@ Grouping by feature keeps everything about "trips" in one place, so a change usu
 - Money is `BigDecimal` (never `double`) mapped to `DECIMAL(12,2)`.
 - Dates use `java.time` (`LocalDate`, `LocalDateTime`); no `java.util.Date`.
 - Start with `DriverManager` behind `Database`. Adding HikariCP later only changes that one class.
+- No `AUTO_INCREMENT`: call `Sequences.next(connection, "table")` for the primary key inside the transaction. User input is validated with `Validators` (email, RFC, CURP, phone, plates, date ranges, non-negative amounts).
 - Hand-written SQL with small `RowMapper`-style functions: `rs -> new Client(rs.getLong("id"), …)`.
 
 ### 3.6 Swing conventions
@@ -160,7 +161,7 @@ The ER design in the SQL/PDF is a solid base. It maps well to the interview. Bef
 |---|---|---|
 | F1 | **Foreign keys are inverted** (diagram-export artifact). `employees.id → users.employee_id`, `licenses.id → employees.license_id`, `service_requests.id → trips.service_request_id`, `trips.id → deliveries.trip_id` make the parent reference the child, creating impossible/circular constraints. | The **child** column references the **parent** `id`: `users.employee_id → employees.id`, `employees.license_id → licenses.id`, `trips.service_request_id → service_requests.id`, `deliveries.trip_id → trips.id`. Keep the `UNIQUE` on those columns to preserve the 1:1. |
 | F2 | **`decimal` with no precision** defaults to `DECIMAL(10,0)` in MariaDB, so **cents are silently rounded away**. | Money: `DECIMAL(12,2)`. Quantities: liters `DECIMAL(8,2)`, price/liter `DECIMAL(8,3)`, km/weight/odometer `DECIMAL(10,1)`. |
-| F3 | No `AUTO_INCREMENT` on `id`. | `id BIGINT AUTO_INCREMENT PRIMARY KEY` on all tables (and matching `BIGINT` FKs). |
+| F3 | No key generation. | **No `AUTO_INCREMENT`.** Ids are `BIGINT PRIMARY KEY` (matching `BIGINT` FKs) allocated by the application through the `sequences` table inside the same transaction (`Sequences.next`). |
 | F4 | Status columns are free text. | Add `CHECK (status IN (...))` constraints (MariaDB ≥ 10.2 enforces them) and mirror them as Java enums. |
 | F5 | Missing `NOT NULL`/defaults. | `created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`; `NOT NULL` where the domain demands it. |
 | F6 | `licenses.updated_at` exists but no other table has one. | Keep only where edits are expected (`licenses`, `service_requests`, `trips`, `vehicles`, `employees`). |
@@ -262,7 +263,7 @@ Each rule gets an ID so code, tests and commits can reference it.
 | BR-11 | A vehicle marked `out_of_service` cannot be assigned until returned to `available`. | `AssignmentRules` |
 | BR-12 | Each trip has at most one delivery. | DB `UNIQUE(trip_id)` |
 | BR-13 | A request requiring documents cannot move to `closed` until its delivery is `complete` (has `received_by` and `evidence_reference`). | `ClosingRules` |
-| BR-14 | Historical records are never physically deleted; use status (`cancelled`, `terminated`, `decommissioned`, `disabled`). | No `DELETE` in repos |
+| BR-14 | The normal lifecycle uses status (`cancelled`, `terminated`, `decommissioned`, `disabled`) to keep history. An explicit, confirmed **hard delete** is also available; the database still refuses to delete a parent that has related rows. | Repos expose `delete(id)`; services check permission and the UI asks for confirmation |
 | BR-15 | Changing the vehicle/operator on an already-created trip is allowed only before `in_transit`, is validated like a new assignment, and is logged in the audit trail. | `TripService` |
 | BR-16 | Advance balance = `amount_given − Σ expenses (+ fuel, see D3)` of that trip: positive → operator returns money; negative → company reimburses; zero → settled. | `AdvanceRules` |
 | BR-17 | Expense type must be one of the allowed values; amount > 0. | `ExpenseRules` + CHECK |
@@ -573,7 +574,7 @@ Build in this order, one vertical slice each: **Clients → Routes → Client ra
 | D4 | One trip per request, one invoice per request in v1 | Matches the provided model; keep it simple; can be relaxed later |
 | D5 | Availability = overlap check on trips, stored status only for manual conditions | A status flag alone gets stale |
 | D6 | Status columns → Java enums + DB CHECK | Prevents typos, enables exhaustive `switch` |
-| D7 | Soft delete via status | Interview requirement to keep history |
+| D7 | Soft delete via status for normal lifecycle, plus an explicit confirmed hard delete | Keep history by default; allow cleanup when truly needed (BR-14) |
 | D8 | Invoice `paid`/`overdue` derived from payments and dates | Avoids inconsistent stored state |
 | D9 | Feature-based packages | Changes stay local |
 

@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 import mx.marjan.security.Permissions;
 import mx.marjan.security.Session;
+import mx.marjan.shared.Database;
 import mx.marjan.shared.Result;
 
 /** Use cases for clients and negotiated rates. Permission checks live here, not in the UI. */
@@ -35,11 +36,20 @@ public class ClientService {
             return validated;
         }
         if (client.id() == 0) {
-            long id = clients.insert(client);
+            Long id = Database.inTransaction(connection -> clients.insert(connection, client));
             return Result.ok(client.withId(id));
         }
         clients.update(client);
         return Result.ok(client);
+    }
+
+    /** Hard delete. Fails (surfaced to the UI) when the client has related records. */
+    public Result<Void> delete(long id) {
+        if (!Session.has(Permissions.CLIENTS_WRITE)) {
+            return Result.err("No tiene permiso para eliminar clientes");
+        }
+        clients.delete(id);
+        return Result.ok(null);
     }
 
     public Result<Void> deactivate(long id) {
@@ -73,8 +83,9 @@ public class ClientService {
         if (rate.routeId() == 0) {
             return Result.err("Debe seleccionar una ruta");
         }
-        if (rate.rate() == null || rate.rate().signum() <= 0) {
-            return Result.err("La tarifa debe ser mayor a cero");
+        if (rate.rate() == null || rate.rate().signum() <= 0
+                || !mx.marjan.shared.Validators.isMoney(rate.rate())) {
+            return Result.err("La tarifa debe ser mayor a cero y dentro del rango permitido");
         }
         if (rate.validFrom() == null) {
             return Result.err("La fecha de vigencia inicial es obligatoria");
@@ -83,11 +94,19 @@ public class ClientService {
             return Result.err("La vigencia final no puede ser anterior a la inicial");
         }
         if (rate.id() == 0) {
-            long id = rates.insert(rate);
+            Long id = Database.inTransaction(connection -> rates.insert(connection, rate));
             return Result.ok(new ClientRate(id, rate.clientId(), rate.routeId(), rate.routeLabel(),
                     rate.rate(), rate.validFrom(), rate.validTo()));
         }
         rates.update(rate);
         return Result.ok(rate);
+    }
+
+    public Result<Void> deleteRate(long id) {
+        if (!Session.has(Permissions.RATES_WRITE)) {
+            return Result.err("No tiene permiso para eliminar tarifas");
+        }
+        rates.delete(id);
+        return Result.ok(null);
     }
 }

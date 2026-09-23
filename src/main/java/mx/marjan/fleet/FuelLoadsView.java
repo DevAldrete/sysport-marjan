@@ -6,7 +6,6 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import javax.swing.JTable;
-import javax.swing.JTextField;
 import mx.marjan.shared.BaseView;
 import mx.marjan.shared.Dates;
 import mx.marjan.shared.FormPanel;
@@ -34,11 +33,27 @@ public class FuelLoadsView extends BaseView {
             RecordTableModel.Column.of("Odometro", FuelLoad::odometerReading)));
     private final JTable table = Ui.table(model);
 
+    private final FuelLoad[] selectedLoad = new FuelLoad[1];
+
     public FuelLoadsView() {
-        add(Ui.row(Ui.button("Nueva carga", this::openNew), Ui.button("Recargar", this::reload)),
-                BorderLayout.NORTH);
+        table.getSelectionModel().addListSelectionListener(event -> {
+            int row = table.getSelectedRow();
+            selectedLoad[0] = row < 0 ? null : model.rowAt(table.convertRowIndexToModel(row));
+        });
+        add(Ui.row(Ui.button("Nueva carga", this::openNew),
+                Ui.button("Eliminar", this::deleteLoad),
+                Ui.button("Recargar", this::reload)), BorderLayout.NORTH);
         add(Ui.scroll(table), BorderLayout.CENTER);
         reload();
+    }
+
+    private void deleteLoad() {
+        if (selectedLoad[0] == null) {
+            Ui.info(this, "Seleccione una carga");
+            return;
+        }
+        Ui.delete(this, "la carga seleccionada",
+                () -> service.delete(selectedLoad[0].id()), this::reload);
     }
 
     @Override

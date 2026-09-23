@@ -15,14 +15,22 @@ public final class FuelRules {
 
     public static Result<Void> validate(FuelLoad load, BigDecimal currentMileage) {
         List<String> problems = new ArrayList<>();
-        if (load.liters() == null || load.liters().signum() <= 0) {
-            problems.add("Los litros deben ser mayores a cero");
+        if (!mx.marjan.shared.Validators.isLiters(load.liters())) {
+            problems.add("Los litros son invalidos o exceden el maximo permitido");
         }
-        if (load.pricePerLiter() == null || load.pricePerLiter().signum() <= 0) {
-            problems.add("El precio por litro debe ser mayor a cero");
+        if (!mx.marjan.shared.Validators.isPricePerLiter(load.pricePerLiter())) {
+            problems.add("El precio por litro es invalido o excede el maximo permitido");
         }
-        if (load.amount() == null || load.amount().signum() <= 0) {
-            problems.add("El importe debe ser mayor a cero");
+        if (load.amount() == null || load.amount().signum() <= 0
+                || !mx.marjan.shared.Validators.isMoney(load.amount())) {
+            problems.add("El importe debe ser mayor a cero y dentro del rango permitido");
+        }
+        if (!mx.marjan.shared.Validators.isMeasure(load.odometerReading())) {
+            problems.add("El odometro es invalido o excede el maximo permitido");
+        }
+        if (!mx.marjan.shared.Validators.isValidDate(
+                load.loadDate() == null ? null : load.loadDate().toLocalDate())) {
+            problems.add("La fecha de la carga no es valida");
         }
         if (load.liters() != null && load.pricePerLiter() != null && load.amount() != null) {
             BigDecimal expected = load.liters().multiply(load.pricePerLiter());
@@ -44,12 +52,5 @@ public final class FuelRules {
             return Result.err("La unidad de la carga no coincide con la unidad del viaje");
         }
         return Result.ok(null);
-    }
-
-    public static BigDecimal kmPerLiter(BigDecimal km, BigDecimal liters) {
-        if (km == null || liters == null || liters.signum() == 0) {
-            return BigDecimal.ZERO;
-        }
-        return km.divide(liters, 2, RoundingMode.HALF_UP);
     }
 }

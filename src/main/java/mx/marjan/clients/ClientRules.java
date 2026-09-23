@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
 import mx.marjan.shared.Result;
+import mx.marjan.shared.Validators;
 
 /** Pure validation and selection rules for clients and their rates. */
 public final class ClientRules {
@@ -27,12 +28,18 @@ public final class ClientRules {
         } else if (!RFC.matcher(client.rfc().trim().toUpperCase()).matches()) {
             problems.add("El RFC no tiene un formato valido (ej. ABC950101XYZ)");
         }
+        if (!Validators.isValidEmail(client.email())) {
+            problems.add("El correo electronico no tiene un formato valido");
+        }
+        if (!Validators.isValidPhone(client.phone())) {
+            problems.add("El telefono no tiene un formato valido");
+        }
         if (client.paymentTerms() == PaymentTerms.CREDIT) {
-            if (client.creditDays() < 0) {
-                problems.add("Los dias de credito no pueden ser negativos");
+            if (client.creditDays() < 0 || client.creditDays() > Validators.MAX_CREDIT_DAYS) {
+                problems.add("Los dias de credito deben estar entre 0 y " + Validators.MAX_CREDIT_DAYS);
             }
-            if (client.creditLimit() != null && client.creditLimit().signum() < 0) {
-                problems.add("El limite de credito no puede ser negativo");
+            if (!Validators.isMoney(client.creditLimit())) {
+                problems.add("El limite de credito es invalido o excede el maximo permitido");
             }
         }
         return problems.isEmpty() ? Result.ok(client) : Result.err(problems);

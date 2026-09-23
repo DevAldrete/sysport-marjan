@@ -10,8 +10,4 @@ public record Delivery(
         String receivedBy,
         String evidenceReference,
         DeliveryStatus status) {
-
-    public static Delivery empty(long tripId) {
-        return new Delivery(0, tripId, "", LocalDateTime.now(), "", "", DeliveryStatus.PENDING_DOCUMENTS);
-    }
 }

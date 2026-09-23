@@ -13,9 +13,4 @@ public record Incident(
         IncidentType type,
         String description,
         String actionsTaken) {
-
-    public static Incident empty(long tripId) {
-        return new Incident(0, tripId, "", LocalDate.now(), LocalTime.now(),
-                "", IncidentType.OTHER, "", "");
-    }
 }

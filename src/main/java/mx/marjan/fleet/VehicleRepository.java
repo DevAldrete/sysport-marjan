@@ -36,11 +36,6 @@ public class VehicleRepository {
                 """, this::map, like, like, like, like);
     }
 
-    public List<Vehicle> listAssignable() {
-        return Database.queryList("SELECT * FROM vehicles WHERE status = 'available' ORDER BY internal_code",
-                this::map);
-    }
-
     public Optional<Vehicle> findById(long id) {
         return Database.queryOne("SELECT * FROM vehicles WHERE id = ?", this::map, id);
     }
@@ -63,16 +58,18 @@ public class VehicleRepository {
                 """, this::map, end, start);
     }
 
-    public long insert(Vehicle vehicle) {
-        return Database.insert("""
+    public long insert(java.sql.Connection connection, Vehicle vehicle) throws SQLException {
+        long id = mx.marjan.shared.Sequences.next(connection, "vehicles");
+        Database.update(connection, """
                 INSERT INTO vehicles
-                  (internal_code, plates, brand, model, year, serial_number, vehicle_type,
+                  (id, internal_code, plates, brand, model, year, serial_number, vehicle_type,
                    load_capacity, mileage, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                vehicle.internalCode(), vehicle.plates(), vehicle.brand(), vehicle.model(),
+                id, vehicle.internalCode(), vehicle.plates(), vehicle.brand(), vehicle.model(),
                 vehicle.year(), vehicle.serialNumber(), vehicle.vehicleType(),
                 vehicle.loadCapacity(), vehicle.mileage(), vehicle.status().dbValue());
+        return id;
     }
 
     public void update(Vehicle vehicle) {
@@ -91,15 +88,15 @@ public class VehicleRepository {
         Database.update("UPDATE vehicles SET status = ? WHERE id = ?", status.dbValue(), id);
     }
 
+    public void delete(long id) {
+        Database.update("DELETE FROM vehicles WHERE id = ?", id);
+    }
+
     public void updateStatus(java.sql.Connection connection, long id, VehicleStatus status) throws SQLException {
         Database.update(connection, "UPDATE vehicles SET status = ? WHERE id = ?", status.dbValue(), id);
     }
 
     /** BR-21: mileage never decreases. */
-    public void updateMileageIfHigher(long id, BigDecimal reading) {
-        Database.update("UPDATE vehicles SET mileage = ? WHERE id = ? AND mileage < ?", reading, id, reading);
-    }
-
     public void updateMileageIfHigher(java.sql.Connection connection, long id, BigDecimal reading)
             throws SQLException {
         if (reading == null) {
