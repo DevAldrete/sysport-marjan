@@ -15,9 +15,4 @@ public record Maintenance(
         BigDecimal cost,
         LocalDate nextServiceDate,
         BigDecimal nextServiceKm) {
-
-    public static Maintenance empty() {
-        return new Maintenance(0, 0, "", LocalDate.now(), null, MaintenanceType.PREVENTIVE,
-                "", "", BigDecimal.ZERO, null, null);
-    }
 }

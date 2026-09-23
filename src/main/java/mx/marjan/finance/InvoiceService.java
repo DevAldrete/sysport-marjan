@@ -25,6 +25,10 @@ public class InvoiceService {
         return invoices.findById(id);
     }
 
+    public Optional<Invoice> findByRequest(long serviceRequestId) {
+        return invoices.findByRequest(serviceRequestId);
+    }
+
     public List<Payment> paymentsFor(long invoiceId) {
         return payments.listByInvoice(invoiceId);
     }
@@ -42,15 +46,22 @@ public class InvoiceService {
             return Result.err("La solicitud ya tiene una factura");
         }
         BigDecimal finalAmount = amount != null ? amount : request.agreedRate();
-        if (finalAmount == null || finalAmount.signum() <= 0) {
-            return Result.err("El importe de la factura debe ser mayor a cero");
+        if (finalAmount == null || finalAmount.signum() <= 0
+                || !mx.marjan.shared.Validators.isMoney(finalAmount)) {
+            return Result.err("El importe de la factura debe ser mayor a cero y dentro del rango permitido");
         }
         Optional<mx.marjan.clients.Client> client = clients.findById(request.clientId());
         if (client.isEmpty()) {
             return Result.err("Cliente no encontrado");
         }
         LocalDate issue = issueDate != null ? issueDate : LocalDate.now();
+        if (!mx.marjan.shared.Validators.isValidDate(issue)) {
+            return Result.err("La fecha de emision no es valida");
+        }
         LocalDate due = InvoiceRules.dueDate(issue, client.get().paymentTerms(), client.get().creditDays());
+        if (due.isBefore(issue)) {
+            return Result.err("La fecha de vencimiento no puede ser anterior a la de emision");
+        }
         String number = String.format("INV-%d-%06d", issue.getYear(), invoices.nextSequence(issue.getYear()));
         Invoice invoice = new Invoice(0, request.clientId(), client.get().name(), request.id(),
                 request.folio(), number, finalAmount, issue, due, InvoiceStatus.PENDING, BigDecimal.ZERO);
@@ -89,6 +100,22 @@ public class InvoiceService {
             invoices.updateStatus(connection, invoiceId, status);
             return null;
         });
+        return Result.ok(null);
+    }
+
+    public Result<Void> delete(long id) {
+        if (!Session.has(Permissions.INVOICES_WRITE)) {
+            return Result.err("No tiene permiso para eliminar facturas");
+        }
+        invoices.delete(id);
+        return Result.ok(null);
+    }
+
+    public Result<Void> deletePayment(long id) {
+        if (!Session.has(Permissions.PAYMENTS_WRITE)) {
+            return Result.err("No tiene permiso para eliminar pagos");
+        }
+        payments.delete(id);
         return Result.ok(null);
     }
 

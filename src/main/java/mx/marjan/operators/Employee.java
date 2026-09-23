@@ -17,11 +17,6 @@ public record Employee(
         return new Employee(0, "", "", "", "", "", "", "", "", null, EmployeeStatus.AVAILABLE);
     }
 
-    public Employee withStatus(EmployeeStatus newStatus) {
-        return new Employee(id, name, address, phone, email, rfc, curp,
-                emergencyContactName, emergencyContactPhone, license, newStatus);
-    }
-
     @Override
     public String toString() {
         return name;

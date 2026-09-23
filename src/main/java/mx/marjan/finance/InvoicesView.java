@@ -51,6 +51,7 @@ public class InvoicesView extends BaseView {
                 Ui.button("Facturar", this::openInvoiceForm),
                 Ui.button("Registrar pago", this::openPaymentForm),
                 Ui.button("Actualizar estatus", this::refreshStatuses),
+                Ui.button("Eliminar", this::deleteInvoice),
                 Ui.button("Recargar", this::reload)), BorderLayout.NORTH);
         add(Ui.scroll(table), BorderLayout.CENTER);
         reloadClients();
@@ -102,8 +103,16 @@ public class InvoicesView extends BaseView {
                 if (issue == null) {
                     return Result.err("La fecha de emision es obligatoria (yyyy-MM-dd)");
                 }
-                BigDecimal amount = form.text("amount").isBlank() ? request.agreedRate()
-                        : Money.parse(form.text("amount")).orElse(null);
+                BigDecimal amount;
+                if (form.text("amount").isBlank()) {
+                    amount = request.agreedRate();
+                } else {
+                    Result<BigDecimal> parsed = Money.require(form.text("amount"), "importe");
+                    if (parsed.isErr()) {
+                        return parsed;
+                    }
+                    amount = parsed.value();
+                }
                 return service.createFromRequest(request, issue, amount);
             }, this::reload);
         }, failure -> Ui.failure(this, failure));
@@ -120,11 +129,25 @@ public class InvoicesView extends BaseView {
                 .addText("date", "Fecha (yyyy-MM-dd)", Dates.format(Dates.today()))
                 .addCombo("method", "Forma de pago", PaymentMethod.values(), PaymentMethod.CASH);
         ModalForm.show(this, "Pago de " + invoice.invoiceNumber(), form, () -> {
-            BigDecimal amount = Money.parse(form.text("amount")).orElse(BigDecimal.ZERO);
+            Result<BigDecimal> amountResult = Money.require(form.text("amount"), "monto del pago");
+            if (amountResult.isErr()) {
+                return amountResult;
+            }
+            BigDecimal amount = amountResult.value();
             LocalDate date = Dates.parseDate(form.text("date")).orElse(null);
             return service.registerPayment(invoice.id(), amount, date,
                     (PaymentMethod) form.selected("method"));
         }, this::reload);
+    }
+
+    private void deleteInvoice() {
+        Invoice invoice = selected();
+        if (invoice == null) {
+            Ui.info(this, "Seleccione una factura");
+            return;
+        }
+        Ui.delete(this, "la factura " + invoice.invoiceNumber(),
+                () -> service.delete(invoice.id()), this::reload);
     }
 
     private void refreshStatuses() {

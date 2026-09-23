@@ -43,6 +43,7 @@ public class VehiclesView extends BaseView {
                 Ui.button("Editar", this::openEdit),
                 Ui.button("Cambiar estado", this::changeStatus),
                 Ui.button("Mantenimiento", this::openMaintenance),
+                Ui.button("Eliminar", this::deleteVehicle),
                 Ui.button("Recargar", this::reload)), BorderLayout.NORTH);
         add(Ui.scroll(table), BorderLayout.CENTER);
         reload();
@@ -119,6 +120,16 @@ public class VehiclesView extends BaseView {
                 this::reload);
     }
 
+    private void deleteVehicle() {
+        Vehicle vehicle = selected();
+        if (vehicle == null) {
+            Ui.info(this, "Seleccione una unidad");
+            return;
+        }
+        Ui.delete(this, "la unidad \"" + vehicle.label() + "\"",
+                () -> service.delete(vehicle.id()), this::reload);
+    }
+
     private void openMaintenance() {
         Vehicle vehicle = selected();
         if (vehicle == null) {
@@ -136,12 +147,25 @@ public class VehiclesView extends BaseView {
                 RecordTableModel.Column.of("Proxima fecha", record -> Dates.format(record.nextServiceDate())),
                 RecordTableModel.Column.of("Proximo km", Maintenance::nextServiceKm)));
         JTable recordsTable = Ui.table(records);
+        Maintenance[] cache = new Maintenance[1];
+        recordsTable.getSelectionModel().addListSelectionListener(event -> {
+            int row = recordsTable.getSelectedRow();
+            cache[0] = row < 0 ? null : records.rowAt(recordsTable.convertRowIndexToModel(row));
+        });
         Runnable reloadRecords = () -> Async.run(() -> maintenanceService.listByVehicle(vehicle.id()),
                 records::setRows, failure -> Ui.failure(dialog, failure));
         dialog.setLayout(new BorderLayout(8, 8));
         dialog.add(Ui.scroll(recordsTable), BorderLayout.CENTER);
         dialog.add(Ui.row(Ui.button("Registrar mantenimiento",
                 () -> openMaintenanceForm(vehicle, reloadRecords)),
+                Ui.button("Eliminar", () -> {
+                    if (cache[0] == null) {
+                        Ui.info(dialog, "Seleccione un registro de mantenimiento");
+                        return;
+                    }
+                    Ui.delete(dialog, "el registro de mantenimiento seleccionado",
+                            () -> maintenanceService.delete(cache[0].id()), reloadRecords);
+                }),
                 Ui.button("Cerrar", dialog::dispose)), BorderLayout.SOUTH);
         reloadRecords.run();
         dialog.setSize(820, 380);

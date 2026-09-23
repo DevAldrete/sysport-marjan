@@ -2,7 +2,6 @@ package mx.marjan;
 
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
-import mx.marjan.security.CurrentUser;
 import mx.marjan.security.LoginView;
 import mx.marjan.security.Session;
 import mx.marjan.shared.Database;

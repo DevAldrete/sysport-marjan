@@ -5,7 +5,6 @@ import java.util.Optional;
 import mx.marjan.security.Permissions;
 import mx.marjan.security.Session;
 import mx.marjan.shared.Database;
-import mx.marjan.shared.Money;
 import mx.marjan.shared.Result;
 
 public class FuelService {
@@ -57,11 +56,12 @@ public class FuelService {
         });
     }
 
-    public java.math.BigDecimal efficiency(long vehicleId, java.math.BigDecimal km) {
-        java.math.BigDecimal liters = loads.listByVehicle(vehicleId).stream()
-                .map(FuelLoad::liters)
-                .map(Money::zeroIfNull)
-                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
-        return FuelRules.kmPerLiter(km, liters);
+    public Result<Void> delete(long id) {
+        if (!Session.has(Permissions.FUEL_WRITE)) {
+            return Result.err("No tiene permiso para eliminar cargas de combustible");
+        }
+        loads.delete(id);
+        return Result.ok(null);
     }
+
 }

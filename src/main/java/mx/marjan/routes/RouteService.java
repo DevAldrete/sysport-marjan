@@ -34,18 +34,26 @@ public class RouteService {
         if (route.destination() == null || route.destination().isBlank()) {
             problems.add("El destino es obligatorio");
         }
-        if (route.estimatedKm() != null && route.estimatedKm().signum() < 0) {
-            problems.add("Los kilometros estimados no pueden ser negativos");
+        if (!mx.marjan.shared.Validators.isMeasure(route.estimatedKm())) {
+            problems.add("Los kilometros estimados son invalidos o exceden el maximo permitido");
         }
         if (!problems.isEmpty()) {
             return Result.err(problems);
         }
         if (route.id() == 0) {
-            long id = routes.insert(route);
+            Long id = mx.marjan.shared.Database.inTransaction(connection -> routes.insert(connection, route));
             return Result.ok(new Route(id, route.origin(), route.destination(),
                     route.estimatedKm(), route.description()));
         }
         routes.update(route);
         return Result.ok(route);
+    }
+
+    public Result<Void> delete(long id) {
+        if (!Session.has(Permissions.ROUTES_WRITE)) {
+            return Result.err("No tiene permiso para eliminar rutas");
+        }
+        routes.delete(id);
+        return Result.ok(null);
     }
 }

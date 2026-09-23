@@ -46,6 +46,7 @@ public class TripsView extends BaseView {
                 Ui.button("Reasignar", this::reassign),
                 Ui.button("Cancelar", this::cancel),
                 Ui.button("Detalle", this::detail),
+                Ui.button("Eliminar", this::deleteTrip),
                 Ui.button("Recargar", this::reload)), BorderLayout.NORTH);
         add(Ui.scroll(table), BorderLayout.CENTER);
         reload();
@@ -131,6 +132,16 @@ public class TripsView extends BaseView {
         FormPanel form = new FormPanel().addArea("reason", "Motivo", "");
         ModalForm.show(this, "Cancelar " + trip.folio(), form,
                 () -> service.cancel(trip.id(), form.text("reason")), this::reload);
+    }
+
+    private void deleteTrip() {
+        Trip trip = selected();
+        if (trip == null) {
+            Ui.info(this, "Seleccione un viaje");
+            return;
+        }
+        Ui.delete(this, "el viaje " + trip.folio(),
+                () -> service.delete(trip.id()), this::reload);
     }
 
     private void detail() {

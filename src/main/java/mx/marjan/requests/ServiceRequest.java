@@ -20,11 +20,6 @@ public record ServiceRequest(
         String notes,
         LocalDateTime createdAt) {
 
-    public static ServiceRequest draft() {
-        return new ServiceRequest(0, "", 0, "", 0, "", "", null,
-                null, null, null, true, RequestStatus.REQUESTED, "", LocalDateTime.now());
-    }
-
     public ServiceRequest withStatus(RequestStatus newStatus) {
         return new ServiceRequest(id, folio, clientId, clientName, routeId, routeLabel,
                 cargoDescription, estimatedWeight, pickupScheduled, deliveryScheduled, agreedRate,

@@ -84,13 +84,14 @@ public class EmployeeRepository {
         Database.inTransaction(connection -> {
             Long licenseId = saveLicense(connection, employee.license());
             if (employee.id() == 0) {
-                Database.insertReturningId(connection, """
+                long id = mx.marjan.shared.Sequences.next(connection, "employees");
+                Database.update(connection, """
                         INSERT INTO employees
-                          (name, address, phone, email, rfc, curp,
+                          (id, name, address, phone, email, rfc, curp,
                            emergency_contact_name, emergency_contact_phone, license_id, status)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
-                        employee.name(), employee.address(), employee.phone(), employee.email(),
+                        id, employee.name(), employee.address(), employee.phone(), employee.email(),
                         employee.rfc(), employee.curp(), employee.emergencyContactName(),
                         employee.emergencyContactPhone(), licenseId, employee.status().dbValue());
             } else {
@@ -114,11 +115,13 @@ public class EmployeeRepository {
             return null;
         }
         if (license.id() == 0) {
-            return Database.insertReturningId(connection, """
-                    INSERT INTO licenses (license_number, license_type, issue_date, expiration_date)
-                    VALUES (?, ?, ?, ?)
-                    """, license.licenseNumber(), license.licenseType(),
+            long id = mx.marjan.shared.Sequences.next(connection, "licenses");
+            Database.update(connection, """
+                    INSERT INTO licenses (id, license_number, license_type, issue_date, expiration_date)
+                    VALUES (?, ?, ?, ?, ?)
+                    """, id, license.licenseNumber(), license.licenseType(),
                     license.issueDate(), license.expirationDate());
+            return id;
         }
         Database.update(connection, """
                 UPDATE licenses SET license_number = ?, license_type = ?, issue_date = ?, expiration_date = ?
@@ -126,6 +129,18 @@ public class EmployeeRepository {
                 """, license.licenseNumber(), license.licenseType(),
                 license.issueDate(), license.expirationDate(), license.id());
         return license.id();
+    }
+
+    public void delete(long id) {
+        Database.inTransaction(connection -> {
+            Optional<Employee> employee = findById(connection, id);
+            Database.update(connection, "DELETE FROM employees WHERE id = ?", id);
+            if (employee.isPresent() && employee.get().license() != null) {
+                Database.update(connection, "DELETE FROM licenses WHERE id = ?",
+                        employee.get().license().id());
+            }
+            return null;
+        });
     }
 
     public void updateStatus(long id, EmployeeStatus status) {

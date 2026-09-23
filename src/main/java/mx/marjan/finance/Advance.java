@@ -14,9 +14,4 @@ public record Advance(
         LocalDate deliveredDate,
         AdvanceStatus status,
         LocalDateTime settledAt) {
-
-    public static Advance empty(long tripId, long employeeId) {
-        return new Advance(0, tripId, "", employeeId, "", BigDecimal.ZERO,
-                LocalDate.now(), AdvanceStatus.PENDING, null);
-    }
 }

@@ -1,7 +1,6 @@
 package mx.marjan.shared;
 
 import java.util.List;
-import java.util.function.Function;
 
 /**
  * The outcome of a business operation: either a value or a list of problems.
@@ -42,9 +41,5 @@ public sealed interface Result<T> permits Result.Ok, Result.Err {
 
     default List<String> problems() {
         return this instanceof Err<T> err ? err.problems() : List.of();
-    }
-
-    default <R> Result<R> map(Function<T, R> mapper) {
-        return this instanceof Ok<T> ok ? ok(mapper.apply(ok.value())) : err(problems());
     }
 }

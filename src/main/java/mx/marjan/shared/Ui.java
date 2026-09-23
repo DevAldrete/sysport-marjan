@@ -3,6 +3,7 @@ package mx.marjan.shared;
 import java.awt.Component;
 import java.awt.FlowLayout;
 import java.util.List;
+import java.util.concurrent.Callable;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JLabel;
@@ -38,6 +39,20 @@ public final class Ui {
     public static void failure(Component parent, Throwable failure) {
         String message = failure.getMessage() == null ? failure.toString() : failure.getMessage();
         error(parent, "Error inesperado", List.of(message));
+    }
+
+    /** Confirms a hard delete, runs it off the EDT, and reports success or problems uniformly. */
+    public static void delete(Component parent, String what, Callable<Result<Void>> action, Runnable onDone) {
+        if (!confirm(parent, "Eliminar definitivamente " + what + "?")) {
+            return;
+        }
+        Async.run(action, result -> {
+            if (result.isErr()) {
+                error(parent, "No se puede eliminar", result.problems());
+            } else if (onDone != null) {
+                onDone.run();
+            }
+        }, failure -> failure(parent, failure));
     }
 
     public static JButton button(String text, Runnable action) {

@@ -5,7 +5,6 @@ import java.awt.Dialog;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
@@ -92,6 +91,7 @@ public class ServiceRequestsView extends BaseView {
                 Ui.button("Cancelar", this::openCancel),
                 Ui.button("Cerrar", this::closeRequest),
                 Ui.button("Detalle", this::openDetail),
+                Ui.button("Eliminar", this::deleteRequest),
                 Ui.button("Recargar", this::reload));
     }
 
@@ -167,7 +167,11 @@ public class ServiceRequestsView extends BaseView {
                 .addCheck("documents", "Requiere documentacion", true)
                 .addArea("notes", "Observaciones", "");
         ModalForm.show(this, "Nueva solicitud", form, () -> {
-            BigDecimal weight = Money.parse(form.text("weight")).orElse(BigDecimal.ZERO);
+            Result<BigDecimal> weightResult = Money.require(form.text("weight"), "peso aproximado");
+            if (weightResult.isErr()) {
+                return weightResult;
+            }
+            BigDecimal weight = weightResult.value();
             LocalDateTime pickup = optionalDateTime(form.text("pickup"));
             LocalDateTime delivery = optionalDateTime(form.text("delivery"));
             if (!form.text("pickup").isBlank() && pickup == null
@@ -197,7 +201,11 @@ public class ServiceRequestsView extends BaseView {
                 .addCheck("documents", "Requiere documentacion", request.requiresDocuments())
                 .addArea("notes", "Observaciones", request.notes());
         ModalForm.show(this, "Editar solicitud " + request.folio(), form, () -> {
-            BigDecimal weight = Money.parse(form.text("weight")).orElse(BigDecimal.ZERO);
+            Result<BigDecimal> weightResult = Money.require(form.text("weight"), "peso aproximado");
+            if (weightResult.isErr()) {
+                return weightResult;
+            }
+            BigDecimal weight = weightResult.value();
             ServiceRequest updated = new ServiceRequest(request.id(), request.folio(),
                     request.clientId(), request.clientName(), request.routeId(), request.routeLabel(),
                     form.text("cargo"), weight, request.pickupScheduled(), request.deliveryScheduled(),
@@ -221,8 +229,9 @@ public class ServiceRequestsView extends BaseView {
                     FormPanel form = new FormPanel()
                             .addText("rate", "Tarifa acordada", suggested.toPlainString());
                     ModalForm.show(this, "Autorizar " + request.folio(), form, () -> {
-                        BigDecimal rate = Money.parse(form.text("rate")).orElse(BigDecimal.ZERO);
-                        return service.authorize(request.id(), rate);
+                        Result<BigDecimal> rateResult = Money.require(form.text("rate"), "tarifa acordada");
+                        return rateResult.isErr() ? rateResult
+                                : service.authorize(request.id(), rateResult.value());
                     }, this::reload);
                 },
                 failure -> Ui.failure(this, failure));
@@ -310,6 +319,16 @@ public class ServiceRequestsView extends BaseView {
                 failure -> Ui.failure(this, failure));
     }
 
+    private void deleteRequest() {
+        ServiceRequest request = selected();
+        if (request == null) {
+            Ui.info(this, "Seleccione una solicitud");
+            return;
+        }
+        Ui.delete(this, "la solicitud " + request.folio(),
+                () -> service.delete(request.id()), this::reload);
+    }
+
     private void openDetail() {
         ServiceRequest request = selected();
         if (request == null) {
@@ -355,9 +374,8 @@ public class ServiceRequestsView extends BaseView {
         text.append("Gastos: ").append(Money.format(expenses)).append('\n')
                 .append("Anticipo: ").append(advanceService.balanceForTrip(trip.id()).label()).append('\n');
         deliveryService.findByTrip(trip.id()).ifPresent(delivery -> appendDelivery(text, delivery));
-        invoiceService.search(null, null).stream()
-                .filter(invoice -> invoice.serviceRequestId() == trip.serviceRequestId())
-                .findFirst().ifPresent(invoice -> appendInvoice(text, invoice));
+        invoiceService.findByRequest(trip.serviceRequestId())
+                .ifPresent(invoice -> appendInvoice(text, invoice));
     }
 
     private void appendDelivery(StringBuilder text, Delivery delivery) {

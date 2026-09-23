@@ -61,13 +61,19 @@ public class FuelLoadRepository {
     }
 
     public long insert(java.sql.Connection connection, FuelLoad load) throws SQLException {
-        return Database.insertReturningId(connection, """
+        long id = mx.marjan.shared.Sequences.next(connection, "fuel_loads");
+        Database.update(connection, """
                 INSERT INTO fuel_loads
-                  (vehicle_id, trip_id, fuel_station, load_date, liters, price_per_liter,
+                  (id, vehicle_id, trip_id, fuel_station, load_date, liters, price_per_liter,
                    amount, odometer_reading)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                load.vehicleId(), load.tripId(), load.fuelStation(), load.loadDate(),
+                id, load.vehicleId(), load.tripId(), load.fuelStation(), load.loadDate(),
                 load.liters(), load.pricePerLiter(), load.amount(), load.odometerReading());
+        return id;
+    }
+
+    public void delete(long id) {
+        Database.update("DELETE FROM fuel_loads WHERE id = ?", id);
     }
 }

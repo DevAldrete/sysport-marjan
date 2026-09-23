@@ -1,6 +1,5 @@
 package mx.marjan.trips;
 
-import java.util.List;
 import java.util.Optional;
 import mx.marjan.requests.RequestStatus;
 import mx.marjan.requests.ServiceRequestRepository;
@@ -17,10 +16,6 @@ public class DeliveryService {
 
     public Optional<Delivery> findByTrip(long tripId) {
         return deliveries.findByTrip(tripId);
-    }
-
-    public List<Delivery> listAll() {
-        return deliveries.listAll();
     }
 
     /** FR-DEL-1: registers the delivery and advances the request to delivered. */
@@ -52,13 +47,21 @@ public class DeliveryService {
                         requests.findById(connection, tripOpt.get().serviceRequestId());
                 if (requestOpt.isPresent()) {
                     mx.marjan.requests.ServiceRequest request = requestOpt.get();
-                    if (request.status() == RequestStatus.IN_TRANSIT
-                            || request.status() == RequestStatus.ASSIGNED) {
+                    // The state machine only allows in_transit -> delivered (BR-03).
+                    if (request.status() == RequestStatus.IN_TRANSIT) {
                         requests.update(connection, request.withStatus(RequestStatus.DELIVERED), userId);
                     }
                 }
             }
             return Result.<Void>ok(null);
         });
+    }
+
+    public Result<Void> delete(long id) {
+        if (!Session.has(Permissions.DELIVERIES_WRITE)) {
+            return Result.err("No tiene permiso para eliminar entregas");
+        }
+        deliveries.delete(id);
+        return Result.ok(null);
     }
 }

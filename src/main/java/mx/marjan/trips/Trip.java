@@ -25,12 +25,6 @@ public record Trip(
         return status.isActive();
     }
 
-    public Trip withStatus(TripStatus newStatus) {
-        return new Trip(id, serviceRequestId, folio, clientName, routeLabel, vehicleId, vehicleLabel,
-                employeeId, employeeName, estimatedKm, actualKm, plannedStart, plannedEnd,
-                departure, arrival, newStatus);
-    }
-
     @Override
     public String toString() {
         return folio + " - " + vehicleLabel;

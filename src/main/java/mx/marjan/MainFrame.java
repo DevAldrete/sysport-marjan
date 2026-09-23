@@ -22,8 +22,6 @@ import mx.marjan.security.Session;
 import mx.marjan.security.UsersView;
 import mx.marjan.shared.FormPanel;
 import mx.marjan.shared.ModalForm;
-import mx.marjan.shared.Result;
-import mx.marjan.shared.Ui;
 import mx.marjan.trips.TripsView;
 
 /** Main window: a tab per feature, shown only when the user has permission. */

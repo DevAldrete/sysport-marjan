@@ -52,8 +52,8 @@ public final class InvoiceRules {
     /** Payments cannot exceed the outstanding balance. */
     public static Result<Void> canPay(BigDecimal amount, BigDecimal alreadyPaid, BigDecimal newPayment) {
         List<String> problems = new ArrayList<>();
-        if (newPayment == null || newPayment.signum() <= 0) {
-            problems.add("El pago debe ser mayor a cero");
+        if (newPayment == null || newPayment.signum() <= 0 || !mx.marjan.shared.Validators.isMoney(newPayment)) {
+            problems.add("El pago debe ser mayor a cero y dentro del rango permitido");
         } else if (alreadyPaid.add(newPayment).compareTo(amount) > 0) {
             problems.add("El pago excede el saldo pendiente (" + amount.subtract(alreadyPaid) + ")");
         }

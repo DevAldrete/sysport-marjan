@@ -116,14 +116,20 @@ public class TripRepository {
 
     public long insert(Connection connection, AssignmentPlan plan, BigDecimal estimatedKm, long userId)
             throws SQLException {
-        return Database.insertReturningId(connection, """
+        long id = mx.marjan.shared.Sequences.next(connection, "trips");
+        Database.update(connection, """
                 INSERT INTO trips
-                  (service_request_id, vehicle_id, employee_id, estimated_km,
+                  (id, service_request_id, vehicle_id, employee_id, estimated_km,
                    planned_start, planned_end, status, created_by, updated_by)
-                VALUES (?, ?, ?, ?, ?, ?, 'scheduled', ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'scheduled', ?, ?)
                 """,
-                plan.requestId(), plan.vehicleId(), plan.employeeId(), estimatedKm,
+                id, plan.requestId(), plan.vehicleId(), plan.employeeId(), estimatedKm,
                 plan.plannedStart(), plan.plannedEnd(), userId, userId);
+        return id;
+    }
+
+    public void delete(long id) {
+        Database.update("DELETE FROM trips WHERE id = ?", id);
     }
 
     public void depart(Connection connection, long id, LocalDateTime departure, long userId) throws SQLException {

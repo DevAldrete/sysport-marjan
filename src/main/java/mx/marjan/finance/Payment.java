@@ -10,8 +10,4 @@ public record Payment(
         BigDecimal amount,
         LocalDate paymentDate,
         PaymentMethod method) {
-
-    public static Payment empty(long invoiceId) {
-        return new Payment(0, invoiceId, "", BigDecimal.ZERO, LocalDate.now(), PaymentMethod.CASH);
-    }
 }

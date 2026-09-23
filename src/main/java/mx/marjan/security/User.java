@@ -8,8 +8,4 @@ public record User(
         long roleId,
         String roleName,
         UserStatus status) {
-
-    public User withStatus(UserStatus newStatus) {
-        return new User(id, employeeId, username, passwordHash, roleId, roleName, newStatus);
-    }
 }

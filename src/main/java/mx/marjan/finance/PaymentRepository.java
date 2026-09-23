@@ -41,10 +41,15 @@ public class PaymentRepository {
     }
 
     public void insert(Connection connection, Payment payment, long userId) throws SQLException {
-        Database.insertReturningId(connection, """
-                INSERT INTO payments (invoice_id, amount, payment_date, payment_method, created_by)
-                VALUES (?, ?, ?, ?, ?)
-                """, payment.invoiceId(), payment.amount(), payment.paymentDate(),
+        long id = mx.marjan.shared.Sequences.next(connection, "payments");
+        Database.update(connection, """
+                INSERT INTO payments (id, invoice_id, amount, payment_date, payment_method, created_by)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, id, payment.invoiceId(), payment.amount(), payment.paymentDate(),
                 payment.method().dbValue(), userId);
+    }
+
+    public void delete(long id) {
+        Database.update("DELETE FROM payments WHERE id = ?", id);
     }
 }

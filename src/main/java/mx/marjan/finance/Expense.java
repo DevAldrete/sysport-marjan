@@ -11,8 +11,4 @@ public record Expense(
         BigDecimal amount,
         LocalDate expenseDate,
         String description) {
-
-    public static Expense empty(long tripId) {
-        return new Expense(0, tripId, "", ExpenseType.TOLLS, BigDecimal.ZERO, LocalDate.now(), "");
-    }
 }

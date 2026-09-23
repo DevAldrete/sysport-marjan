@@ -12,6 +12,9 @@ public final class RateRules {
         if (rate == null || rate.signum() <= 0) {
             return Result.err("La tarifa acordada debe ser mayor a cero");
         }
+        if (!mx.marjan.shared.Validators.isMoney(rate)) {
+            return Result.err("La tarifa acordada excede el maximo permitido");
+        }
         return Result.ok(null);
     }
 }

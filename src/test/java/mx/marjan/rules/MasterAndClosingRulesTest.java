@@ -35,6 +35,28 @@ class MasterAndClosingRulesTest {
     }
 
     @Test
+    void rejectsInvalidEmailAndPhone() {
+        Client bad = new Client(0, "Cliente", "ABC950101XYZ", "", "abc", "not-an-email", "",
+                ClientType.OCCASIONAL, PaymentTerms.CASH, BigDecimal.ZERO, 0, ClientStatus.ACTIVE);
+        assertTrue(ClientRules.validate(bad).isErr());
+    }
+
+    @Test
+    void rejectsOutOfRangeCreditLimit() {
+        Client huge = new Client(0, "Cliente", "ABC950101XYZ", "", "5551234567", "a@b.com", "",
+                ClientType.FREQUENT, PaymentTerms.CREDIT, new BigDecimal("100000000000"), 30,
+                ClientStatus.ACTIVE);
+        assertTrue(ClientRules.validate(huge).isErr());
+    }
+
+    @Test
+    void rejectsNegativeCreditForCreditClients() {
+        Client bad = new Client(0, "Cliente", "ABC950101XYZ", "", "5551234567", "a@b.com", "",
+                ClientType.FREQUENT, PaymentTerms.CREDIT, new BigDecimal("-1"), 30, ClientStatus.ACTIVE);
+        assertTrue(ClientRules.validate(bad).isErr());
+    }
+
+    @Test
     void requiresDeliveryWhenDocumentsRequired() { // BR-13
         assertTrue(ClosingRules.canClose(request(true), Optional.empty()).isErr());
         assertTrue(ClosingRules.canClose(request(true), Optional.of(delivery(DeliveryStatus.PENDING_DOCUMENTS)))

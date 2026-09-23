@@ -8,20 +8,19 @@ SET NAMES utf8mb4;
 -- ---------------------------------------------------------------- security
 
 CREATE TABLE roles (
-  id   BIGINT AUTO_INCREMENT PRIMARY KEY,
+  id   BIGINT PRIMARY KEY,
   name VARCHAR(50) NOT NULL UNIQUE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE permissions (
-  id   BIGINT AUTO_INCREMENT PRIMARY KEY,
+  id   BIGINT PRIMARY KEY,
   name VARCHAR(100) NOT NULL UNIQUE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE role_permissions (
-  id            BIGINT AUTO_INCREMENT PRIMARY KEY,
   role_id       BIGINT NOT NULL,
   permission_id BIGINT NOT NULL,
-  UNIQUE KEY uq_role_permission (role_id, permission_id),
+  PRIMARY KEY (role_id, permission_id),
   CONSTRAINT fk_rp_role       FOREIGN KEY (role_id)       REFERENCES roles (id),
   CONSTRAINT fk_rp_permission FOREIGN KEY (permission_id) REFERENCES permissions (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -29,7 +28,7 @@ CREATE TABLE role_permissions (
 -- ---------------------------------------------------------------- people
 
 CREATE TABLE licenses (
-  id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+  id              BIGINT PRIMARY KEY,
   license_number  VARCHAR(50)  NOT NULL UNIQUE,
   license_type    VARCHAR(50)  NOT NULL,
   issue_date      DATE,
@@ -40,7 +39,7 @@ CREATE TABLE licenses (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE employees (
-  id                     BIGINT AUTO_INCREMENT PRIMARY KEY,
+  id                     BIGINT PRIMARY KEY,
   name                   VARCHAR(150) NOT NULL,
   address                VARCHAR(255),
   phone                  VARCHAR(30)  NOT NULL UNIQUE,
@@ -60,7 +59,7 @@ CREATE TABLE employees (
 
 -- users reference the person they belong to (employee_id -> employees.id)
 CREATE TABLE users (
-  id            BIGINT AUTO_INCREMENT PRIMARY KEY,
+  id            BIGINT PRIMARY KEY,
   employee_id   BIGINT UNIQUE,
   username      VARCHAR(50)  NOT NULL UNIQUE,
   password_hash VARCHAR(100) NOT NULL,
@@ -75,7 +74,7 @@ CREATE TABLE users (
 -- ---------------------------------------------------------------- fleet
 
 CREATE TABLE vehicles (
-  id            BIGINT AUTO_INCREMENT PRIMARY KEY,
+  id            BIGINT PRIMARY KEY,
   internal_code VARCHAR(30)  NOT NULL UNIQUE,
   plates        VARCHAR(20)  NOT NULL UNIQUE,
   brand         VARCHAR(50),
@@ -95,7 +94,7 @@ CREATE TABLE vehicles (
 -- ---------------------------------------------------------------- clients
 
 CREATE TABLE clients (
-  id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+  id           BIGINT PRIMARY KEY,
   name         VARCHAR(150) NOT NULL,
   rfc          VARCHAR(13)  NOT NULL UNIQUE,
   address      VARCHAR(255),
@@ -116,7 +115,7 @@ CREATE TABLE clients (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE routes (
-  id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+  id           BIGINT PRIMARY KEY,
   origin       VARCHAR(150) NOT NULL,
   destination  VARCHAR(150) NOT NULL,
   estimated_km DECIMAL(10,1),
@@ -125,7 +124,7 @@ CREATE TABLE routes (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE client_rates (
-  id         BIGINT AUTO_INCREMENT PRIMARY KEY,
+  id         BIGINT PRIMARY KEY,
   client_id  BIGINT NOT NULL,
   route_id   BIGINT NOT NULL,
   rate       DECIMAL(12,2) NOT NULL,
@@ -140,7 +139,7 @@ CREATE TABLE client_rates (
 -- ---------------------------------------------------------------- requests
 
 CREATE TABLE service_requests (
-  id                     BIGINT AUTO_INCREMENT PRIMARY KEY,
+  id                     BIGINT PRIMARY KEY,
   folio                  VARCHAR(20) NOT NULL UNIQUE,
   client_id              BIGINT NOT NULL,
   route_id               BIGINT NOT NULL,
@@ -169,7 +168,7 @@ CREATE TABLE service_requests (
 -- ---------------------------------------------------------------- trips
 
 CREATE TABLE trips (
-  id                 BIGINT AUTO_INCREMENT PRIMARY KEY,
+  id                 BIGINT PRIMARY KEY,
   service_request_id BIGINT NOT NULL UNIQUE,
   vehicle_id         BIGINT NOT NULL,
   employee_id        BIGINT NOT NULL,
@@ -196,7 +195,7 @@ CREATE TABLE trips (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE expenses (
-  id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+  id           BIGINT PRIMARY KEY,
   trip_id      BIGINT NOT NULL,
   expense_type VARCHAR(20) NOT NULL
                CHECK (expense_type IN ('tolls','food','parking','lodging','repairs','handling','permits','other')),
@@ -211,7 +210,7 @@ CREATE TABLE expenses (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE advances (
-  id             BIGINT AUTO_INCREMENT PRIMARY KEY,
+  id             BIGINT PRIMARY KEY,
   trip_id        BIGINT NOT NULL,
   employee_id    BIGINT NOT NULL,
   amount_given   DECIMAL(12,2) NOT NULL CHECK (amount_given > 0),
@@ -230,7 +229,7 @@ CREATE TABLE advances (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE fuel_loads (
-  id                BIGINT AUTO_INCREMENT PRIMARY KEY,
+  id                BIGINT PRIMARY KEY,
   vehicle_id        BIGINT NOT NULL,
   trip_id           BIGINT,
   fuel_station      VARCHAR(100),
@@ -249,7 +248,7 @@ CREATE TABLE fuel_loads (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE maintenance (
-  id                BIGINT AUTO_INCREMENT PRIMARY KEY,
+  id                BIGINT PRIMARY KEY,
   vehicle_id        BIGINT NOT NULL,
   maintenance_date  DATE NOT NULL,
   odometer_reading  DECIMAL(10,1),
@@ -269,7 +268,7 @@ CREATE TABLE maintenance (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE incidents (
-  id             BIGINT AUTO_INCREMENT PRIMARY KEY,
+  id             BIGINT PRIMARY KEY,
   trip_id        BIGINT NOT NULL,
   incident_date  DATE NOT NULL,
   incident_time  TIME,
@@ -287,7 +286,7 @@ CREATE TABLE incidents (
 
 -- one delivery per trip (BR-12)
 CREATE TABLE deliveries (
-  id                 BIGINT AUTO_INCREMENT PRIMARY KEY,
+  id                 BIGINT PRIMARY KEY,
   trip_id            BIGINT NOT NULL UNIQUE,
   actual_datetime    DATETIME,
   received_by        VARCHAR(150),
@@ -304,7 +303,7 @@ CREATE TABLE deliveries (
 
 -- one invoice per request in v1 (BR-20)
 CREATE TABLE invoices (
-  id                 BIGINT AUTO_INCREMENT PRIMARY KEY,
+  id                 BIGINT PRIMARY KEY,
   client_id          BIGINT NOT NULL,
   service_request_id BIGINT NOT NULL UNIQUE,
   invoice_number     VARCHAR(30) NOT NULL UNIQUE,
@@ -324,7 +323,7 @@ CREATE TABLE invoices (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE payments (
-  id             BIGINT AUTO_INCREMENT PRIMARY KEY,
+  id             BIGINT PRIMARY KEY,
   invoice_id     BIGINT NOT NULL,
   amount         DECIMAL(12,2) NOT NULL CHECK (amount > 0),
   payment_date   DATE NOT NULL,
@@ -340,7 +339,7 @@ CREATE TABLE payments (
 -- ---------------------------------------------------------------- audit
 
 CREATE TABLE audit_log (
-  id         BIGINT AUTO_INCREMENT PRIMARY KEY,
+  id         BIGINT PRIMARY KEY,
   user_id    BIGINT,
   entity     VARCHAR(50) NOT NULL,
   entity_id  BIGINT,
@@ -349,4 +348,11 @@ CREATE TABLE audit_log (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_audit_user FOREIGN KEY (user_id) REFERENCES users (id),
   INDEX idx_audit_entity (entity, entity_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---------------------------------------------------------------- sequences
+
+CREATE TABLE sequences (
+  name       VARCHAR(50) NOT NULL PRIMARY KEY,
+  next_value BIGINT NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

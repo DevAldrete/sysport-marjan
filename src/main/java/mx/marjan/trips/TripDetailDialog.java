@@ -94,11 +94,24 @@ public class TripDetailDialog extends JDialog {
                 RecordTableModel.Column.of("Importe", expense -> Money.format(expense.amount())),
                 RecordTableModel.Column.of("Descripcion", Expense::description)));
         JTable table = Ui.table(model);
+        Expense[] selected = new Expense[1];
+        table.getSelectionModel().addListSelectionListener(event -> {
+            int row = table.getSelectedRow();
+            selected[0] = row < 0 ? null : model.rowAt(table.convertRowIndexToModel(row));
+        });
         Runnable reload = () -> Async.run(() -> expenseService.listByTrip(trip.id()),
                 model::setRows, failure -> Ui.failure(this, failure));
         JPanel panel = new JPanel(new BorderLayout(8, 8));
         panel.add(Ui.scroll(table), BorderLayout.CENTER);
         panel.add(Ui.row(Ui.button("Nuevo gasto", () -> openExpenseForm(reload)),
+                Ui.button("Eliminar", () -> {
+                    if (selected[0] == null) {
+                        Ui.info(this, "Seleccione un gasto");
+                        return;
+                    }
+                    Ui.delete(this, "el gasto seleccionado",
+                            () -> expenseService.delete(selected[0].id()), reload);
+                }),
                 Ui.button("Recargar", reload)), BorderLayout.SOUTH);
         reload.run();
         return panel;
@@ -111,7 +124,11 @@ public class TripDetailDialog extends JDialog {
                 .addText("date", "Fecha (yyyy-MM-dd)", Dates.format(Dates.today()))
                 .addText("description", "Descripcion", "");
         ModalForm.show(this, "Gasto del viaje " + trip.folio(), form, () -> {
-            BigDecimal amount = Money.parse(form.text("amount")).orElse(BigDecimal.ZERO);
+            Result<BigDecimal> amountResult = Money.require(form.text("amount"), "importe");
+            if (amountResult.isErr()) {
+                return amountResult;
+            }
+            BigDecimal amount = amountResult.value();
             LocalDate date = Dates.parseDate(form.text("date")).orElse(null);
             Expense expense = new Expense(0, trip.id(), trip.folio(),
                     (ExpenseType) form.selected("type"), amount, date, form.text("description"));
@@ -161,12 +178,20 @@ public class TripDetailDialog extends JDialog {
                         Ui.info(this, "Seleccione un anticipo");
                         return;
                     }
-                    var result = advanceService.settle(cache[0].id(), trip.id());
+                    var result = advanceService.settle(cache[0].id());
                     if (result.isErr()) {
                         Ui.error(this, "Error", result.problems());
                     } else {
                         reload.run();
                     }
+                }),
+                Ui.button("Eliminar", () -> {
+                    if (cache[0] == null) {
+                        Ui.info(this, "Seleccione un anticipo");
+                        return;
+                    }
+                    Ui.delete(this, "el anticipo seleccionado",
+                            () -> advanceService.delete(cache[0].id()), reload);
                 }),
                 Ui.button("Recargar", reload)), BorderLayout.SOUTH);
         reload.run();
@@ -178,7 +203,11 @@ public class TripDetailDialog extends JDialog {
                 .addText("amount", "Monto entregado", "0")
                 .addText("date", "Fecha de entrega (yyyy-MM-dd)", Dates.format(Dates.today()));
         ModalForm.show(this, "Anticipo del viaje " + trip.folio(), form, () -> {
-            BigDecimal amount = Money.parse(form.text("amount")).orElse(BigDecimal.ZERO);
+            Result<BigDecimal> amountResult = Money.require(form.text("amount"), "monto entregado");
+            if (amountResult.isErr()) {
+                return amountResult;
+            }
+            BigDecimal amount = amountResult.value();
             LocalDate date = Dates.parseDate(form.text("date")).orElse(null);
             Advance advance = new Advance(0, trip.id(), trip.folio(), trip.employeeId(),
                     trip.employeeName(), amount, date, mx.marjan.finance.AdvanceStatus.PENDING, null);
@@ -194,11 +223,24 @@ public class TripDetailDialog extends JDialog {
                 RecordTableModel.Column.of("Descripcion", Incident::description),
                 RecordTableModel.Column.of("Acciones", Incident::actionsTaken)));
         JTable table = Ui.table(model);
+        Incident[] selected = new Incident[1];
+        table.getSelectionModel().addListSelectionListener(event -> {
+            int row = table.getSelectedRow();
+            selected[0] = row < 0 ? null : model.rowAt(table.convertRowIndexToModel(row));
+        });
         Runnable reload = () -> Async.run(() -> incidentService.listByTrip(trip.id()),
                 model::setRows, failure -> Ui.failure(this, failure));
         JPanel panel = new JPanel(new BorderLayout(8, 8));
         panel.add(Ui.scroll(table), BorderLayout.CENTER);
         panel.add(Ui.row(Ui.button("Nueva incidencia", () -> openIncidentForm(reload)),
+                Ui.button("Eliminar", () -> {
+                    if (selected[0] == null) {
+                        Ui.info(this, "Seleccione una incidencia");
+                        return;
+                    }
+                    Ui.delete(this, "la incidencia seleccionada",
+                            () -> incidentService.delete(selected[0].id()), reload);
+                }),
                 Ui.button("Recargar", reload)), BorderLayout.SOUTH);
         reload.run();
         return panel;

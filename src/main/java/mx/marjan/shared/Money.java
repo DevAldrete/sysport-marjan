@@ -17,10 +17,6 @@ public final class Money {
         return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP);
     }
 
-    public static BigDecimal scaled(BigDecimal value) {
-        return value == null ? null : value.setScale(2, RoundingMode.HALF_UP);
-    }
-
     public static BigDecimal zeroIfNull(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
     }
@@ -39,5 +35,19 @@ public final class Money {
         } catch (NumberFormatException failure) {
             return Optional.empty();
         }
+    }
+
+    /**
+     * Parses an optional money field: blank means zero, a present but invalid
+     * value is reported as a problem instead of silently becoming zero.
+     */
+    public static Result<BigDecimal> require(String text, String fieldName) {
+        if (text == null || text.isBlank()) {
+            return Result.ok(BigDecimal.ZERO);
+        }
+        Optional<BigDecimal> parsed = parse(text);
+        return parsed.isPresent()
+                ? Result.ok(parsed.get())
+                : Result.err("El campo \"" + fieldName + "\" debe ser un numero valido");
     }
 }

@@ -31,15 +31,21 @@ public class RouteRepository {
         return Database.queryOne("SELECT * FROM routes WHERE id = ?", this::map, id);
     }
 
-    public long insert(Route route) {
-        return Database.insert(
-                "INSERT INTO routes (origin, destination, estimated_km, description) VALUES (?, ?, ?, ?)",
-                route.origin(), route.destination(), route.estimatedKm(), route.description());
+    public long insert(java.sql.Connection connection, Route route) throws SQLException {
+        long id = mx.marjan.shared.Sequences.next(connection, "routes");
+        Database.update(connection,
+                "INSERT INTO routes (id, origin, destination, estimated_km, description) VALUES (?, ?, ?, ?, ?)",
+                id, route.origin(), route.destination(), route.estimatedKm(), route.description());
+        return id;
     }
 
     public void update(Route route) {
         Database.update(
                 "UPDATE routes SET origin = ?, destination = ?, estimated_km = ?, description = ? WHERE id = ?",
                 route.origin(), route.destination(), route.estimatedKm(), route.description(), route.id());
+    }
+
+    public void delete(long id) {
+        Database.update("DELETE FROM routes WHERE id = ?", id);
     }
 }

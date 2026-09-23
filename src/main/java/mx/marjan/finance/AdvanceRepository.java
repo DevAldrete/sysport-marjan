@@ -40,12 +40,18 @@ public class AdvanceRepository {
         return Database.queryList(BASE + " ORDER BY a.delivered_date DESC", this::map);
     }
 
-    public void insert(Connection connection, Advance advance, long userId) throws SQLException {
-        Database.insertReturningId(connection, """
-                INSERT INTO advances (trip_id, employee_id, amount_given, delivered_date, status, created_by)
-                VALUES (?, ?, ?, ?, 'pending', ?)
-                """, advance.tripId(), advance.employeeId(), advance.amountGiven(),
+    public long insert(Connection connection, Advance advance, long userId) throws SQLException {
+        long id = mx.marjan.shared.Sequences.next(connection, "advances");
+        Database.update(connection, """
+                INSERT INTO advances (id, trip_id, employee_id, amount_given, delivered_date, status, created_by)
+                VALUES (?, ?, ?, ?, ?, 'pending', ?)
+                """, id, advance.tripId(), advance.employeeId(), advance.amountGiven(),
                 advance.deliveredDate(), userId);
+        return id;
+    }
+
+    public void delete(long id) {
+        Database.update("DELETE FROM advances WHERE id = ?", id);
     }
 
     public void markSettled(Connection connection, long id, long userId) throws SQLException {

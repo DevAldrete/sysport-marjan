@@ -36,28 +36,21 @@ public class MaintenanceRepository {
                 this::map, vehicleId);
     }
 
-    public List<Maintenance> listAll() {
-        return Database.queryList(BASE + " ORDER BY m.maintenance_date DESC", this::map);
-    }
-
-    /** FR-MNT-3: records whose next service date or km has been reached. */
-    public List<Maintenance> listDue(LocalDate today) {
-        return Database.queryList(BASE + """
-                WHERE (m.next_service_date IS NOT NULL AND m.next_service_date <= ?)
-                   OR (m.next_service_km IS NOT NULL AND m.next_service_km <= v.mileage)
-                ORDER BY m.next_service_date
-                """, this::map, today);
-    }
-
     public long insert(java.sql.Connection connection, Maintenance maintenance) throws SQLException {
-        return Database.insertReturningId(connection, """
+        long id = mx.marjan.shared.Sequences.next(connection, "maintenance");
+        Database.update(connection, """
                 INSERT INTO maintenance
-                  (vehicle_id, maintenance_date, odometer_reading, maintenance_type, work_performed,
+                  (id, vehicle_id, maintenance_date, odometer_reading, maintenance_type, work_performed,
                    provider, cost, next_service_date, next_service_km)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                maintenance.vehicleId(), maintenance.maintenanceDate(), maintenance.odometerReading(),
+                id, maintenance.vehicleId(), maintenance.maintenanceDate(), maintenance.odometerReading(),
                 maintenance.type().dbValue(), maintenance.workPerformed(), maintenance.provider(),
                 maintenance.cost(), maintenance.nextServiceDate(), maintenance.nextServiceKm());
+        return id;
+    }
+
+    public void delete(long id) {
+        Database.update("DELETE FROM maintenance WHERE id = ?", id);
     }
 }

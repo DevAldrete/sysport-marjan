@@ -55,6 +55,8 @@ public class AuthService {
         List<String> problems = new ArrayList<>();
         if (username == null || username.isBlank()) {
             problems.add("El nombre de usuario es obligatorio");
+        } else if (!mx.marjan.shared.Validators.isValidUsername(username)) {
+            problems.add("El usuario solo admite letras, numeros y . _ - (3 a 50 caracteres)");
         } else if (users.findByUsername(username.trim()).isPresent()) {
             problems.add("Ya existe un usuario con ese nombre");
         }
@@ -64,7 +66,24 @@ public class AuthService {
         if (!problems.isEmpty()) {
             return Result.err(problems);
         }
-        users.insert(username.trim(), BCrypt.hashpw(password, BCrypt.gensalt(12)), roleId, employeeId, status);
+        String name = username.trim();
+        String hash = BCrypt.hashpw(password, BCrypt.gensalt(12));
+        mx.marjan.shared.Database.inTransaction(connection -> {
+            users.insert(connection, name, hash, roleId, employeeId, status);
+            return null;
+        });
+        return Result.ok(null);
+    }
+
+    public Result<Void> deleteUser(long id) {
+        Result<Void> denied = requireAdmin();
+        if (denied != null) {
+            return denied;
+        }
+        if (id == Session.userId()) {
+            return Result.err("No puede eliminar su propio usuario");
+        }
+        users.delete(id);
         return Result.ok(null);
     }
 

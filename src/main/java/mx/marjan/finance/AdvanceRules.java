@@ -34,11 +34,14 @@ public final class AdvanceRules {
         if (advance.employeeId() == 0) {
             problems.add("Debe seleccionar un operador");
         }
-        if (advance.amountGiven() == null || advance.amountGiven().signum() <= 0) {
-            problems.add("El monto del anticipo debe ser mayor a cero");
+        if (advance.amountGiven() == null || advance.amountGiven().signum() <= 0
+                || !mx.marjan.shared.Validators.isMoney(advance.amountGiven())) {
+            problems.add("El monto del anticipo debe ser mayor a cero y dentro del rango permitido");
         }
         if (advance.deliveredDate() == null) {
             problems.add("La fecha de entrega del anticipo es obligatoria");
+        } else if (!mx.marjan.shared.Validators.isValidDate(advance.deliveredDate())) {
+            problems.add("La fecha del anticipo no es valida");
         }
         return problems;
     }

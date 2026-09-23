@@ -163,13 +163,10 @@ public class TripService {
             trips.depart(connection, tripId, departure, userId);
             vehicles.updateStatus(connection, trip.vehicleId(), VehicleStatus.ON_TRIP);
             employees.updateStatus(connection, trip.employeeId(), EmployeeStatus.ON_TRIP);
-            requests.findById(connection, trip.serviceRequestId()).ifPresent(request -> {
-                try {
-                    requests.update(connection, request.withStatus(RequestStatus.IN_TRANSIT), userId);
-                } catch (java.sql.SQLException failure) {
-                    throw new RuntimeException(failure);
-                }
-            });
+            Optional<ServiceRequest> request = requests.findById(connection, trip.serviceRequestId());
+            if (request.isPresent()) {
+                requests.update(connection, request.get().withStatus(RequestStatus.IN_TRANSIT), userId);
+            }
             return Result.ok(trips.findById(connection, tripId).orElseThrow());
         });
     }
@@ -178,6 +175,9 @@ public class TripService {
     public Result<Trip> arrive(long tripId, BigDecimal actualKm) {
         if (!Session.has(Permissions.TRIPS_WRITE)) {
             return Result.err("No tiene permiso para registrar la llegada");
+        }
+        if (!mx.marjan.shared.Validators.isMeasure(actualKm)) {
+            return Result.err("Los kilometros reales son invalidos o exceden el maximo permitido");
         }
         long userId = Session.userId();
         return Database.inTransaction(connection -> {
@@ -220,17 +220,23 @@ public class TripService {
                 return Result.<Trip>err("Solo se puede cancelar un viaje programado");
             }
             trips.updateStatus(connection, tripId, TripStatus.CANCELLED, userId);
-            requests.findById(connection, trip.serviceRequestId()).ifPresent(request -> {
-                try {
-                    requests.update(connection,
-                            request.withNotes(reason).withStatus(RequestStatus.CANCELLED), userId);
-                } catch (java.sql.SQLException failure) {
-                    throw new RuntimeException(failure);
-                }
-            });
+            Optional<ServiceRequest> request = requests.findById(connection, trip.serviceRequestId());
+            if (request.isPresent()) {
+                requests.update(connection,
+                        request.get().withNotes(reason).withStatus(RequestStatus.CANCELLED), userId);
+            }
             audit.log(connection, "trip", tripId, "cancelled", reason);
             return Result.ok(trips.findById(connection, tripId).orElseThrow());
         });
+    }
+
+    /** Hard delete. Fails (surfaced to the UI) when the trip has costs, advances or a delivery. */
+    public Result<Void> delete(long tripId) {
+        if (!Session.has(Permissions.TRIPS_WRITE)) {
+            return Result.err("No tiene permiso para eliminar viajes");
+        }
+        trips.delete(tripId);
+        return Result.ok(null);
     }
 
     /** FR-DEL-2 / BR-13: closes a delivered request only when its delivery is complete. */

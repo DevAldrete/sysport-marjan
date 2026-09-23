@@ -29,9 +29,20 @@ public class RoutesView extends BaseView {
                 Ui.button("Buscar", this::reload),
                 Ui.button("Nuevo", this::openNew),
                 Ui.button("Editar", this::openEdit),
+                Ui.button("Eliminar", this::deleteRoute),
                 Ui.button("Recargar", this::reload)), BorderLayout.NORTH);
         add(Ui.scroll(table), BorderLayout.CENTER);
         reload();
+    }
+
+    private void deleteRoute() {
+        Route route = selected();
+        if (route == null) {
+            Ui.info(this, "Seleccione una ruta");
+            return;
+        }
+        Ui.delete(this, "la ruta \"" + route.label() + "\"",
+                () -> service.delete(route.id()), this::reload);
     }
 
     @Override

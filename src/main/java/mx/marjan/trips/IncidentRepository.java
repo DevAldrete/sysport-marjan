@@ -35,19 +35,21 @@ public class IncidentRepository {
                 this::map, tripId);
     }
 
-    public List<Incident> listAll() {
-        return Database.queryList(BASE + " ORDER BY i.incident_date DESC", this::map);
-    }
-
-    public void insert(Incident incident) {
-        Database.insert("""
+    public long insert(java.sql.Connection connection, Incident incident) throws SQLException {
+        long id = mx.marjan.shared.Sequences.next(connection, "incidents");
+        Database.update(connection, """
                 INSERT INTO incidents
-                  (trip_id, incident_date, incident_time, location, incident_type,
+                  (id, trip_id, incident_date, incident_time, location, incident_type,
                    description, actions_taken, created_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                incident.tripId(), incident.incidentDate(), incident.incidentTime(),
+                id, incident.tripId(), incident.incidentDate(), incident.incidentTime(),
                 incident.location(), incident.type().dbValue(), incident.description(),
                 incident.actionsTaken(), mx.marjan.security.Session.userId());
+        return id;
+    }
+
+    public void delete(long id) {
+        Database.update("DELETE FROM incidents WHERE id = ?", id);
     }
 }
