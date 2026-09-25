@@ -69,6 +69,15 @@ public final class Ui {
         return panel;
     }
 
+    /** Stacks several rows vertically so a long toolbar never clips its buttons. */
+    public static JPanel column(JPanel... rows) {
+        JPanel panel = new JPanel(new java.awt.GridLayout(rows.length, 1));
+        for (JPanel row : rows) {
+            panel.add(row);
+        }
+        return panel;
+    }
+
     public static JPanel titled(String title, Component content) {
         JPanel panel = new JPanel(new java.awt.BorderLayout());
         panel.setBorder(BorderFactory.createTitledBorder(title));

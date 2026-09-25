@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
+import javax.swing.JPanel;
 import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
@@ -83,18 +84,20 @@ public class ServiceRequestsView extends BaseView {
                 failure -> { });
     }
 
-    private javax.swing.JPanel buildFilters() {
+    private JPanel buildFilters() {
         statusFilter.addItem("(todos)");
         for (RequestStatus status : RequestStatus.values()) {
             statusFilter.addItem(status);
         }
-        return Ui.row(new JLabel("Folio:"), folioField,
+        JPanel filters = Ui.row(new JLabel("Folio:"), folioField,
                 new JLabel("Cliente:"), clientFilter,
                 new JLabel("Estado:"), statusFilter,
                 new JLabel("Desde:"), fromField,
                 new JLabel("Hasta:"), toField,
                 Ui.button("Buscar", this::reload),
                 Ui.button("Limpiar", this::clearFilters),
+                Ui.button("Recargar", this::reload));
+        JPanel actions = Ui.row(
                 Ui.button("Nueva", this::openNew),
                 Ui.button("Editar", this::openEdit),
                 Ui.button("Autorizar", this::openAuthorize),
@@ -104,8 +107,8 @@ public class ServiceRequestsView extends BaseView {
                 Ui.button("Cancelar", this::openCancel),
                 Ui.button("Cerrar", this::closeRequest),
                 Ui.button("Detalle", this::openDetail),
-                Ui.button("Eliminar", this::deleteRequest),
-                Ui.button("Recargar", this::reload));
+                Ui.button("Eliminar", this::deleteRequest));
+        return Ui.column(filters, actions);
     }
 
     private void reloadClients() {
