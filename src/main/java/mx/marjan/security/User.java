@@ -8,4 +8,10 @@ public record User(
         long roleId,
         String roleName,
         UserStatus status) {
+
+    /** Never includes the password hash. */
+    @Override
+    public String toString() {
+        return username + " (" + roleName + ")";
+    }
 }

@@ -36,6 +36,20 @@ public final class ServiceRequestFlow {
         return Result.ok(request.withSchedule(pickup, delivery).withStatus(RequestStatus.SCHEDULED));
     }
 
+    /**
+     * Time-driven sweep step (no user input): an authorized request with both dates
+     * confirmed is already effectively scheduled, so move it forward.
+     */
+    public static ServiceRequest autoSchedule(ServiceRequest request) {
+        if (request.status() == RequestStatus.AUTHORIZED
+                && request.pickupScheduled() != null
+                && request.deliveryScheduled() != null
+                && request.deliveryScheduled().isAfter(request.pickupScheduled())) {
+            return request.withStatus(RequestStatus.SCHEDULED);
+        }
+        return request;
+    }
+
     public static Result<ServiceRequest> cancel(ServiceRequest request, String reason) {
         List<String> problems = transitionProblems(request, RequestStatus.CANCELLED);
         if (reason == null || reason.isBlank()) {

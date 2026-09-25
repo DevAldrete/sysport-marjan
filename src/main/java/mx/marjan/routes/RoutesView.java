@@ -20,7 +20,7 @@ public class RoutesView extends BaseView {
             RecordTableModel.Column.of("Origen", Route::origin),
             RecordTableModel.Column.of("Destino", Route::destination),
             RecordTableModel.Column.of("Km estimados", Route::estimatedKm),
-            RecordTableModel.Column.of("Descripcion", Route::description)));
+            RecordTableModel.Column.text("Descripcion", Route::description, 60)));
     private final JTable table = Ui.table(model);
     private final JTextField searchField = new JTextField(18);
 

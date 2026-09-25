@@ -53,6 +53,34 @@ class ServiceRequestFlowTest {
     }
 
     @Test
+    void autoSchedulesAuthorizedRequestWithConfirmedDates() { // BR-03
+        ServiceRequest base = request(RequestStatus.AUTHORIZED);
+        ServiceRequest dated = new ServiceRequest(base.id(), base.folio(), base.clientId(),
+                base.clientName(), base.routeId(), base.routeLabel(), base.cargoDescription(),
+                base.estimatedWeight(), LocalDateTime.of(2026, 1, 1, 8, 0),
+                LocalDateTime.of(2026, 1, 2, 8, 0), base.agreedRate(), base.requiresDocuments(),
+                base.status(), base.notes(), base.createdAt());
+        assertTrue(ServiceRequestFlow.autoSchedule(dated).status() == RequestStatus.SCHEDULED);
+    }
+
+    @Test
+    void autoScheduleLeavesRequestsWithoutDatesAlone() { // BR-03
+        assertTrue(ServiceRequestFlow.autoSchedule(request(RequestStatus.AUTHORIZED)).status()
+                == RequestStatus.AUTHORIZED);
+    }
+
+    @Test
+    void autoScheduleLeavesRequestedAlone() { // BR-03
+        ServiceRequest base = request(RequestStatus.REQUESTED);
+        ServiceRequest dated = new ServiceRequest(base.id(), base.folio(), base.clientId(),
+                base.clientName(), base.routeId(), base.routeLabel(), base.cargoDescription(),
+                base.estimatedWeight(), LocalDateTime.of(2026, 1, 1, 8, 0),
+                LocalDateTime.of(2026, 1, 2, 8, 0), base.agreedRate(), base.requiresDocuments(),
+                base.status(), base.notes(), base.createdAt());
+        assertTrue(ServiceRequestFlow.autoSchedule(dated).status() == RequestStatus.REQUESTED);
+    }
+
+    @Test
     void cancelsBeforeTransitWithReason() {
         assertTrue(ServiceRequestFlow.cancel(request(RequestStatus.SCHEDULED), "Cliente cancelo").isOk());
         assertTrue(ServiceRequestFlow.cancel(request(RequestStatus.ASSIGNED), "").isErr());

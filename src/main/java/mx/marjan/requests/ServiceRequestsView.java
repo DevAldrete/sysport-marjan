@@ -69,6 +69,18 @@ public class ServiceRequestsView extends BaseView {
         add(Ui.scroll(table), BorderLayout.CENTER);
         reloadClients();
         reload();
+        // Keep the lifecycle moving while the screen is open (BR-03 automation).
+        new javax.swing.Timer(60_000, event -> sweep()).start();
+    }
+
+    private void sweep() {
+        mx.marjan.shared.Async.run(() -> tripService.sweepLifecycle(),
+                changes -> {
+                    if (changes > 0) {
+                        reload();
+                    }
+                },
+                failure -> { });
     }
 
     private javax.swing.JPanel buildFilters() {
@@ -88,6 +100,7 @@ public class ServiceRequestsView extends BaseView {
                 Ui.button("Autorizar", this::openAuthorize),
                 Ui.button("Programar", this::openSchedule),
                 Ui.button("Asignar viaje", this::openAssign),
+                Ui.button("Salida", this::openDepart),
                 Ui.button("Cancelar", this::openCancel),
                 Ui.button("Cerrar", this::closeRequest),
                 Ui.button("Detalle", this::openDetail),
@@ -131,7 +144,10 @@ public class ServiceRequestsView extends BaseView {
                 client instanceof Client c ? c.id() : null,
                 status instanceof RequestStatus s ? s : null,
                 from, to);
-        load(() -> service.search(filter), model::setRows);
+        load(() -> {
+            tripService.sweepLifecycle();
+            return service.search(filter);
+        }, model::setRows);
     }
 
     private ServiceRequest selected() {
@@ -288,6 +304,26 @@ public class ServiceRequestsView extends BaseView {
             Employee operator = (Employee) form.selected("operator");
             return tripService.assign(request.id(), vehicle.id(), operator.id());
         }, this::reload);
+    }
+
+    private void openDepart() {
+        ServiceRequest request = selected();
+        if (request == null) {
+            Ui.info(this, "Seleccione una solicitud");
+            return;
+        }
+        mx.marjan.shared.Async.run(
+                () -> tripService.findByRequest(request.id())
+                        .map(trip -> tripService.depart(trip.id()))
+                        .orElseGet(() -> Result.<Trip>err("La solicitud no tiene un viaje asignado")),
+                result -> {
+                    if (result.isErr()) {
+                        Ui.error(this, "No se puede iniciar el viaje", result.problems());
+                    } else {
+                        reload();
+                    }
+                },
+                failure -> Ui.failure(this, failure));
     }
 
     private void openCancel() {

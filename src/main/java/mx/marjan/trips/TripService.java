@@ -12,6 +12,7 @@ import mx.marjan.operators.EmployeeRepository;
 import mx.marjan.operators.EmployeeStatus;
 import mx.marjan.requests.RequestStatus;
 import mx.marjan.requests.ServiceRequest;
+import mx.marjan.requests.ServiceRequestFlow;
 import mx.marjan.requests.ServiceRequestRepository;
 import mx.marjan.security.AuditRepository;
 import mx.marjan.security.Permissions;
@@ -196,6 +197,41 @@ public class TripService {
             vehicles.updateMileageIfHigher(connection, trip.vehicleId(), actualKm);
             employees.updateStatus(connection, trip.employeeId(), EmployeeStatus.AVAILABLE);
             return Result.ok(trips.findById(connection, tripId).orElseThrow());
+        });
+    }
+
+    /**
+     * Time-driven reconciliation run on load/reload: confirms dates (authorized -> scheduled)
+     * and departs assigned trips whose planned start has already passed. Returns how many
+     * records changed, so views only refresh when something actually moved.
+     */
+    public int sweepLifecycle() {
+        if (!Session.isLoggedIn()) {
+            return 0;
+        }
+        long userId = Session.userId();
+        return Database.inTransaction(connection -> {
+            int changes = 0;
+            for (ServiceRequest request : requests.listAuthorized(connection)) {
+                ServiceRequest advanced = ServiceRequestFlow.autoSchedule(request);
+                if (advanced.status() != request.status()) {
+                    requests.update(connection, advanced, userId);
+                    changes++;
+                }
+            }
+            LocalDateTime now = Dates.now();
+            for (Trip trip : trips.findDueToDepart(connection, now)) {
+                trips.depart(connection, trip.id(), now, userId);
+                vehicles.updateStatus(connection, trip.vehicleId(), VehicleStatus.ON_TRIP);
+                employees.updateStatus(connection, trip.employeeId(), EmployeeStatus.ON_TRIP);
+                Optional<ServiceRequest> request = requests.findById(connection, trip.serviceRequestId());
+                if (request.isPresent()) {
+                    requests.update(connection, request.get().withStatus(RequestStatus.IN_TRANSIT), userId);
+                }
+                audit.log(connection, "trip", trip.id(), "departed", "auto: planned start reached");
+                changes++;
+            }
+            return changes;
         });
     }
 

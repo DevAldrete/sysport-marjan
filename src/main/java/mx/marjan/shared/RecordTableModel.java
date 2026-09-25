@@ -12,6 +12,11 @@ public class RecordTableModel<T> extends AbstractTableModel {
         public static <T> Column<T> of(String title, Function<T, Object> getter) {
             return new Column<>(title, Object.class, getter);
         }
+
+        /** A text column collapsed to one line and cut to {@code max} characters. */
+        public static <T> Column<T> text(String title, Function<T, String> getter, int max) {
+            return of(title, row -> Text.truncate(getter.apply(row), max));
+        }
     }
 
     private final List<Column<T>> columns;

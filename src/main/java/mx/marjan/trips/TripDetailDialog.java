@@ -92,7 +92,7 @@ public class TripDetailDialog extends JDialog {
                 RecordTableModel.Column.of("Fecha", expense -> Dates.format(expense.expenseDate())),
                 RecordTableModel.Column.of("Tipo", expense -> expense.type().label()),
                 RecordTableModel.Column.of("Importe", expense -> Money.format(expense.amount())),
-                RecordTableModel.Column.of("Descripcion", Expense::description)));
+                RecordTableModel.Column.text("Descripcion", Expense::description, 50)));
         JTable table = Ui.table(model);
         Expense[] selected = new Expense[1];
         table.getSelectionModel().addListSelectionListener(event -> {
@@ -219,9 +219,9 @@ public class TripDetailDialog extends JDialog {
         RecordTableModel<Incident> model = new RecordTableModel<>(java.util.List.of(
                 RecordTableModel.Column.of("Fecha", incident -> Dates.format(incident.incidentDate())),
                 RecordTableModel.Column.of("Tipo", incident -> incident.type().label()),
-                RecordTableModel.Column.of("Ubicacion", Incident::location),
-                RecordTableModel.Column.of("Descripcion", Incident::description),
-                RecordTableModel.Column.of("Acciones", Incident::actionsTaken)));
+                RecordTableModel.Column.text("Ubicacion", Incident::location, 30),
+                RecordTableModel.Column.text("Descripcion", Incident::description, 50),
+                RecordTableModel.Column.text("Acciones", Incident::actionsTaken, 50)));
         JTable table = Ui.table(model);
         Incident[] selected = new Incident[1];
         table.getSelectionModel().addListSelectionListener(event -> {

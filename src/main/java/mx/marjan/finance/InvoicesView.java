@@ -41,11 +41,26 @@ public class InvoicesView extends BaseView {
     private final JComboBox<Object> statusFilter = new JComboBox<>();
     private final JComboBox<Object> clientFilter = new JComboBox<>();
 
+    private final RecordTableModel<ServiceRequest> pendingModel = new RecordTableModel<>(List.of(
+            RecordTableModel.Column.of("Folio", ServiceRequest::folio),
+            RecordTableModel.Column.of("Cliente", ServiceRequest::clientName),
+            RecordTableModel.Column.text("Ruta", ServiceRequest::routeLabel, 40),
+            RecordTableModel.Column.of("Estado", request -> request.status().label()),
+            RecordTableModel.Column.of("Tarifa", request -> Money.format(request.agreedRate())),
+            RecordTableModel.Column.of("Recoleccion", request -> Dates.format(request.pickupScheduled()))));
+    private final JTable pendingTable = Ui.table(pendingModel);
+    private final ServiceRequest[] pendingSelected = new ServiceRequest[1];
+
     public InvoicesView() {
         statusFilter.addItem("(todos)");
         for (InvoiceStatus status : InvoiceStatus.values()) {
             statusFilter.addItem(status);
         }
+        pendingTable.getSelectionModel().addListSelectionListener(event -> {
+            int row = pendingTable.getSelectedRow();
+            pendingSelected[0] = row < 0
+                    ? null : pendingModel.rowAt(pendingTable.convertRowIndexToModel(row));
+        });
         add(Ui.row(new JLabel("Estado:"), statusFilter, new JLabel("Cliente:"), clientFilter,
                 Ui.button("Buscar", this::reload),
                 Ui.button("Facturar", this::openInvoiceForm),
@@ -53,9 +68,22 @@ public class InvoicesView extends BaseView {
                 Ui.button("Actualizar estatus", this::refreshStatuses),
                 Ui.button("Eliminar", this::deleteInvoice),
                 Ui.button("Recargar", this::reload)), BorderLayout.NORTH);
-        add(Ui.scroll(table), BorderLayout.CENTER);
+        javax.swing.JSplitPane split = new javax.swing.JSplitPane(
+                javax.swing.JSplitPane.VERTICAL_SPLIT, Ui.scroll(table), buildPendingPanel());
+        split.setDividerLocation(0.6);
+        add(split, BorderLayout.CENTER);
         reloadClients();
         reload();
+    }
+
+    private javax.swing.JPanel buildPendingPanel() {
+        javax.swing.JPanel panel = new javax.swing.JPanel(new BorderLayout(8, 8));
+        panel.setBorder(javax.swing.BorderFactory.createTitledBorder(
+                "Por facturar (tarifa autorizada sin factura)"));
+        panel.add(Ui.scroll(pendingTable), BorderLayout.CENTER);
+        panel.add(Ui.row(Ui.button("Facturar seleccionada", this::billSelectedRequest),
+                Ui.button("Recargar", this::reloadPending)), BorderLayout.SOUTH);
+        return panel;
     }
 
     private void reloadClients() {
@@ -75,6 +103,29 @@ public class InvoicesView extends BaseView {
         load(() -> service.search(status instanceof InvoiceStatus s ? s : null,
                         client instanceof Client c ? c.id() : null),
                 model::setRows);
+        reloadPending();
+    }
+
+    private void reloadPending() {
+        load(requestService::pendingBilling, pendingModel::setRows);
+    }
+
+    private void billSelectedRequest() {
+        ServiceRequest request = pendingSelected[0];
+        if (request == null) {
+            Ui.info(this, "Seleccione una solicitud por facturar");
+            return;
+        }
+        Async.run(() -> service.createFromRequest(request, Dates.today(), request.agreedRate()),
+                result -> {
+                    if (result.isErr()) {
+                        Ui.error(this, "No se puede facturar", result.problems());
+                    } else {
+                        Ui.info(this, "Factura creada: " + result.value().invoiceNumber());
+                        reload();
+                    }
+                },
+                failure -> Ui.failure(this, failure));
     }
 
     private Invoice selected() {

@@ -82,6 +82,17 @@ public class TripRepository {
                 this::map, serviceRequestId);
     }
 
+    /** Assigned trips whose planned start has already passed (lifecycle sweep). */
+    public List<Trip> findDueToDepart(Connection connection, LocalDateTime now) throws SQLException {
+        return Database.queryList(connection, BASE + """
+                WHERE t.status = 'scheduled'
+                  AND sr.status = 'assigned'
+                  AND t.planned_start IS NOT NULL
+                  AND t.planned_start <= ?
+                ORDER BY t.planned_start
+                """, this::map, now);
+    }
+
     /** BR-05: active trips of a vehicle that overlap [start, end), excluding one trip id. */
     public List<Trip> overlappingForVehicle(Connection connection, long vehicleId,
             LocalDateTime start, LocalDateTime end, long excludeTripId) throws SQLException {

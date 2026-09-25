@@ -5,6 +5,7 @@ import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import javax.swing.DefaultListCellRenderer;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
@@ -37,6 +38,8 @@ public final class FormPanel {
 
     public FormPanel addCombo(String key, String label, Object[] items, Object selected) {
         JComboBox<Object> combo = new JComboBox<>(items);
+        // Records render through their toString(); truncate so a long value never stretches the dialog.
+        combo.setRenderer(new CompactRenderer());
         if (selected != null) {
             combo.setSelectedItem(selected);
         }
@@ -124,5 +127,14 @@ public final class FormPanel {
 
     public JPanel panel() {
         return panel;
+    }
+
+    /** One-line, fixed-length combo label: keeps long record values from widening the dialog. */
+    private static final class CompactRenderer extends DefaultListCellRenderer {
+        @Override
+        public java.awt.Component getListCellRendererComponent(javax.swing.JList<?> list, Object value,
+                int index, boolean selected, boolean focused) {
+            return super.getListCellRendererComponent(list, Text.label(value), index, selected, focused);
+        }
     }
 }

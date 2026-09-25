@@ -55,8 +55,10 @@ public class TripsView extends BaseView {
     @Override
     public void reload() {
         Object status = statusFilter.getSelectedItem();
-        load(() -> service.search(searchField.getText(), status instanceof TripStatus s ? s : null),
-                model::setRows);
+        load(() -> {
+            service.sweepLifecycle();
+            return service.search(searchField.getText(), status instanceof TripStatus s ? s : null);
+        }, model::setRows);
     }
 
     private Trip selected() {

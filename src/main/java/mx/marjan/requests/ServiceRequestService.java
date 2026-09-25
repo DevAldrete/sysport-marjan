@@ -26,6 +26,11 @@ public class ServiceRequestService {
         return requests.listByStatus(status);
     }
 
+    /** FR-INV-1: requests whose authorized rate has no invoice yet. */
+    public List<ServiceRequest> pendingBilling() {
+        return requests.listPendingBilling();
+    }
+
     /** BR-01: assigns the next folio for the request's year. */
     public Result<ServiceRequest> create(ServiceRequest draft) {
         if (!Session.has(Permissions.REQUESTS_WRITE)) {

@@ -141,8 +141,8 @@ public class VehiclesView extends BaseView {
         RecordTableModel<Maintenance> records = new RecordTableModel<>(List.of(
                 RecordTableModel.Column.of("Fecha", record -> Dates.format(record.maintenanceDate())),
                 RecordTableModel.Column.of("Tipo", record -> record.type().label()),
-                RecordTableModel.Column.of("Trabajos", Maintenance::workPerformed),
-                RecordTableModel.Column.of("Proveedor", Maintenance::provider),
+                RecordTableModel.Column.text("Trabajos", Maintenance::workPerformed, 50),
+                RecordTableModel.Column.text("Proveedor", Maintenance::provider, 30),
                 RecordTableModel.Column.of("Costo", record -> Money.format(record.cost())),
                 RecordTableModel.Column.of("Proxima fecha", record -> Dates.format(record.nextServiceDate())),
                 RecordTableModel.Column.of("Proximo km", Maintenance::nextServiceKm)));

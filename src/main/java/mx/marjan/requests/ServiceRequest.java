@@ -43,4 +43,14 @@ public record ServiceRequest(
                 cargoDescription, estimatedWeight, pickupScheduled, deliveryScheduled, agreedRate,
                 requiresDocuments, status, newNotes, createdAt);
     }
+
+    /** Compact one-line label for lists and combo boxes; never dumps the whole record. */
+    public String label() {
+        return folio + " - " + clientName;
+    }
+
+    @Override
+    public String toString() {
+        return label();
+    }
 }

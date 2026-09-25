@@ -82,6 +82,21 @@ public class ServiceRequestRepository {
                 this::map, status.dbValue());
     }
 
+    /** Requests waiting to be scheduled by the lifecycle sweep. */
+    public List<ServiceRequest> listAuthorized(java.sql.Connection connection) throws SQLException {
+        return Database.queryList(connection, BASE + " WHERE sr.status = 'authorized'", this::map);
+    }
+
+    /** FR-INV-1: authorized rates without an invoice yet, so collections can see what is billable. */
+    public List<ServiceRequest> listPendingBilling() {
+        return Database.queryList(BASE + """
+                WHERE sr.agreed_rate IS NOT NULL AND sr.agreed_rate > 0
+                  AND sr.status <> 'cancelled'
+                  AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.service_request_id = sr.id)
+                ORDER BY sr.created_at DESC
+                """, this::map);
+    }
+
     public long nextSequence(int year) {
         return Database.queryOne("""
                 SELECT COALESCE(MAX(CAST(SUBSTRING(folio, 9) AS UNSIGNED)), 0) + 1 AS next_seq
