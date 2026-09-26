@@ -82,7 +82,8 @@ marjan/
 ├── db/
 │   └── init/
 │       ├── 01-schema.sql        # tables, constraints
-│       └── 02-seed.sql          # roles, permissions, admin user, sample data
+│       ├── 02-seed.sql          # roles, permissions, admin user, sample data
+│       └── 03-demo-seed.sql     # large showcase dataset (50 routes, 70 clients/operators/vehicles, demo requests)
 ├── PRD.md                      # requirements, architecture, plan
 └── src/
     ├── main/java/mx/marjan/

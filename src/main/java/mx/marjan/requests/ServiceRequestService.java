@@ -6,13 +6,18 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import mx.marjan.finance.InvoiceRepository;
 import mx.marjan.security.Permissions;
 import mx.marjan.security.Session;
+import mx.marjan.shared.Database;
 import mx.marjan.shared.Result;
+import mx.marjan.trips.TripRepository;
 
 public class ServiceRequestService {
 
     private final ServiceRequestRepository requests = new ServiceRequestRepository();
+    private final TripRepository trips = new TripRepository();
+    private final InvoiceRepository invoices = new InvoiceRepository();
 
     public List<ServiceRequest> search(RequestFilter filter) {
         return requests.search(filter);
@@ -73,11 +78,19 @@ public class ServiceRequestService {
         return Result.ok(withId(toInsert, id));
     }
 
+    /** BR-14: careful cascade; removes the request with its trip, costs, delivery and invoices. */
     public Result<Void> delete(long id) {
         if (!Session.has(Permissions.REQUESTS_WRITE)) {
             return Result.err("No tiene permiso para eliminar solicitudes");
         }
-        requests.delete(id);
+        Database.inTransaction(connection -> {
+            trips.deleteByServiceRequest(connection, id);
+            invoices.deleteByRequest(connection, id);
+            Database.update(connection,
+                    "DELETE FROM audit_log WHERE entity = 'service_request' AND entity_id = ?", id);
+            requests.delete(connection, id);
+            return null;
+        });
         return Result.ok(null);
     }
 

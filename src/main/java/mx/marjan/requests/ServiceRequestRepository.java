@@ -120,8 +120,8 @@ public class ServiceRequestRepository {
         return id;
     }
 
-    public void delete(long id) {
-        Database.update("DELETE FROM service_requests WHERE id = ?", id);
+    public void delete(java.sql.Connection connection, long id) throws SQLException {
+        Database.update(connection, "DELETE FROM service_requests WHERE id = ?", id);
     }
 
     public void update(ServiceRequest request, long userId) {

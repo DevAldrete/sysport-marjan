@@ -81,7 +81,7 @@ public class ServiceRequestsView extends BaseView {
                         reload();
                     }
                 },
-                failure -> { });
+                failure -> System.err.println("Lifecycle sweep failed: " + failure.getMessage()));
     }
 
     private JPanel buildFilters() {
@@ -103,7 +103,6 @@ public class ServiceRequestsView extends BaseView {
                 Ui.button("Autorizar", this::openAuthorize),
                 Ui.button("Programar", this::openSchedule),
                 Ui.button("Asignar viaje", this::openAssign),
-                Ui.button("Salida", this::openDepart),
                 Ui.button("Cancelar", this::openCancel),
                 Ui.button("Cerrar", this::closeRequest),
                 Ui.button("Detalle", this::openDetail),
@@ -309,26 +308,6 @@ public class ServiceRequestsView extends BaseView {
         }, this::reload);
     }
 
-    private void openDepart() {
-        ServiceRequest request = selected();
-        if (request == null) {
-            Ui.info(this, "Seleccione una solicitud");
-            return;
-        }
-        mx.marjan.shared.Async.run(
-                () -> tripService.findByRequest(request.id())
-                        .map(trip -> tripService.depart(trip.id()))
-                        .orElseGet(() -> Result.<Trip>err("La solicitud no tiene un viaje asignado")),
-                result -> {
-                    if (result.isErr()) {
-                        Ui.error(this, "No se puede iniciar el viaje", result.problems());
-                    } else {
-                        reload();
-                    }
-                },
-                failure -> Ui.failure(this, failure));
-    }
-
     private void openCancel() {
         ServiceRequest request = selected();
         if (request == null) {
@@ -364,7 +343,8 @@ public class ServiceRequestsView extends BaseView {
             Ui.info(this, "Seleccione una solicitud");
             return;
         }
-        Ui.delete(this, "la solicitud " + request.folio(),
+        Ui.delete(this, "la solicitud " + request.folio()
+                        + " y todo lo relacionado (viaje, gastos, anticipos, incidencias, entrega, factura y pagos)",
                 () -> service.delete(request.id()), this::reload);
     }
 

@@ -79,8 +79,19 @@ public class InvoiceRepository {
         return id;
     }
 
-    public void delete(long id) {
-        Database.update("DELETE FROM invoices WHERE id = ?", id);
+    /** Careful cascade: removes the invoice and its payments. */
+    public void deleteCascade(Connection connection, long id) throws SQLException {
+        Database.update(connection, "DELETE FROM payments WHERE invoice_id = ?", id);
+        Database.update(connection, "DELETE FROM invoices WHERE id = ?", id);
+    }
+
+    /** Careful cascade: removes the request's invoices and their payments. */
+    public void deleteByRequest(Connection connection, long serviceRequestId) throws SQLException {
+        Database.update(connection, """
+                DELETE FROM payments WHERE invoice_id IN
+                  (SELECT id FROM invoices WHERE service_request_id = ?)
+                """, serviceRequestId);
+        Database.update(connection, "DELETE FROM invoices WHERE service_request_id = ?", serviceRequestId);
     }
 
     public void updateStatus(long id, InvoiceStatus status) {

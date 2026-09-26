@@ -197,7 +197,7 @@ public class InvoicesView extends BaseView {
             Ui.info(this, "Seleccione una factura");
             return;
         }
-        Ui.delete(this, "la factura " + invoice.invoiceNumber(),
+        Ui.delete(this, "la factura " + invoice.invoiceNumber() + " y sus pagos",
                 () -> service.delete(invoice.id()), this::reload);
     }
 

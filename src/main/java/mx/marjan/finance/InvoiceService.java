@@ -107,7 +107,10 @@ public class InvoiceService {
         if (!Session.has(Permissions.INVOICES_WRITE)) {
             return Result.err("No tiene permiso para eliminar facturas");
         }
-        invoices.delete(id);
+        Database.inTransaction(connection -> {
+            invoices.deleteCascade(connection, id);
+            return null;
+        });
         return Result.ok(null);
     }
 

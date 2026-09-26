@@ -142,7 +142,8 @@ public class TripsView extends BaseView {
             Ui.info(this, "Seleccione un viaje");
             return;
         }
-        Ui.delete(this, "el viaje " + trip.folio(),
+        Ui.delete(this, "el viaje " + trip.folio()
+                        + " y todo lo relacionado (gastos, anticipos, incidencias y entrega)",
                 () -> service.delete(trip.id()), this::reload);
     }
 

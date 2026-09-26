@@ -156,9 +156,13 @@ public class TripService {
                 return Result.<Trip>err("Viaje no encontrado");
             }
             Trip trip = tripOpt.get();
+            if (trip.status() == TripStatus.IN_TRANSIT) {
+                connection.rollback();
+                return Result.<Trip>err("El viaje ya esta en transito; registre la llegada en Viajes");
+            }
             if (trip.status() != TripStatus.SCHEDULED) {
                 connection.rollback();
-                return Result.<Trip>err("El viaje no esta programado");
+                return Result.<Trip>err("Solo se puede registrar la salida de un viaje programado");
             }
             LocalDateTime departure = Dates.now();
             trips.depart(connection, tripId, departure, userId);
@@ -266,13 +270,30 @@ public class TripService {
         });
     }
 
-    /** Hard delete. Fails (surfaced to the UI) when the trip has costs, advances or a delivery. */
+    /**
+     * BR-14: careful cascade. Removes the trip with its costs, advances, incidents and
+     * delivery, unlinks fuel loads, and sends the request back to scheduled so it can be
+     * reassigned. Refuses only when the request is missing.
+     */
     public Result<Void> delete(long tripId) {
         if (!Session.has(Permissions.TRIPS_WRITE)) {
             return Result.err("No tiene permiso para eliminar viajes");
         }
-        trips.delete(tripId);
-        return Result.ok(null);
+        long userId = Session.userId();
+        return Database.inTransaction(connection -> {
+            Optional<Trip> trip = trips.findById(connection, tripId);
+            if (trip.isEmpty()) {
+                return Result.<Void>err("Viaje no encontrado");
+            }
+            trips.deleteCascade(connection, tripId);
+            Optional<ServiceRequest> request = requests.findById(connection, trip.get().serviceRequestId());
+            if (request.isPresent()
+                    && (request.get().status() == RequestStatus.ASSIGNED
+                        || request.get().status() == RequestStatus.IN_TRANSIT)) {
+                requests.update(connection, request.get().withStatus(RequestStatus.SCHEDULED), userId);
+            }
+            return Result.<Void>ok(null);
+        });
     }
 
     /** FR-DEL-2 / BR-13: closes a delivered request only when its delivery is complete. */

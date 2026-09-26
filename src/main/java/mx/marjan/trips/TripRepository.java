@@ -139,8 +139,26 @@ public class TripRepository {
         return id;
     }
 
-    public void delete(long id) {
-        Database.update("DELETE FROM trips WHERE id = ?", id);
+    /**
+     * Careful cascade (BR-14): removes the trip together with the records that only
+     * exist because of it. Fuel loads are vehicle history, so they are unlinked, not deleted.
+     */
+    public void deleteCascade(Connection connection, long id) throws SQLException {
+        Database.update(connection, "DELETE FROM expenses WHERE trip_id = ?", id);
+        Database.update(connection, "DELETE FROM advances WHERE trip_id = ?", id);
+        Database.update(connection, "DELETE FROM incidents WHERE trip_id = ?", id);
+        Database.update(connection, "DELETE FROM deliveries WHERE trip_id = ?", id);
+        Database.update(connection, "UPDATE fuel_loads SET trip_id = NULL WHERE trip_id = ?", id);
+        Database.update(connection, "DELETE FROM audit_log WHERE entity = 'trip' AND entity_id = ?", id);
+        Database.update(connection, "DELETE FROM trips WHERE id = ?", id);
+    }
+
+    /** Deletes the request's trip (if any) and its dependent records. */
+    public void deleteByServiceRequest(Connection connection, long serviceRequestId) throws SQLException {
+        Optional<Trip> trip = findByServiceRequest(connection, serviceRequestId);
+        if (trip.isPresent()) {
+            deleteCascade(connection, trip.get().id());
+        }
     }
 
     public void depart(Connection connection, long id, LocalDateTime departure, long userId) throws SQLException {
