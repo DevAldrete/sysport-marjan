@@ -1,19 +1,16 @@
 package mx.marjan.clients;
 
+import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import mx.marjan.shared.Database;
+import mx.marjan.shared.Result;
 
+/** Thin JDBC wrapper over the client-rate stored procedures. */
 public class ClientRateRepository {
-
-    private static final String BASE = """
-            SELECT cr.id, cr.client_id, cr.route_id,
-                   CONCAT(r.origin, ' -> ', r.destination) AS route_label,
-                   cr.rate, cr.valid_from, cr.valid_to
-            FROM client_rates cr
-            JOIN routes r ON r.id = cr.route_id
-            """;
 
     private ClientRate map(ResultSet rs) throws SQLException {
         return new ClientRate(
@@ -27,27 +24,22 @@ public class ClientRateRepository {
     }
 
     public List<ClientRate> listByClient(long clientId) {
-        return Database.queryList(BASE + " WHERE cr.client_id = ? ORDER BY r.origin, r.destination",
-                this::map, clientId);
+        return Database.callList("{call sp_client_rates_by_client(?)}", this::map, clientId);
     }
 
-    public long insert(java.sql.Connection connection, ClientRate rate) throws SQLException {
-        long id = mx.marjan.shared.Sequences.next(connection, "client_rates");
-        Database.update(connection, """
-                INSERT INTO client_rates (id, client_id, route_id, rate, valid_from, valid_to)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """, id, rate.clientId(), rate.routeId(), rate.rate(), rate.validFrom(), rate.validTo());
-        return id;
+    /** BR-04: newest rate valid for the route on the given date. */
+    public Optional<BigDecimal> suggestRate(long clientId, long routeId, LocalDate date) {
+        return Database.callOne("{call sp_client_rate_suggest(?,?,?)}",
+                rs -> rs.getBigDecimal("rate"), clientId, routeId, date);
     }
 
-    public void update(ClientRate rate) {
-        Database.update("""
-                UPDATE client_rates SET route_id = ?, rate = ?, valid_from = ?, valid_to = ?
-                WHERE id = ?
-                """, rate.routeId(), rate.rate(), rate.validFrom(), rate.validTo(), rate.id());
+    public Result<Long> save(ClientRate rate) {
+        return Database.callForId("{call sp_client_rate_save(?,?,?,?,?,?,?,?)}",
+                rate.id(), rate.clientId(), rate.routeId(), rate.rate(),
+                rate.validFrom(), rate.validTo());
     }
 
-    public void delete(long id) {
-        Database.update("DELETE FROM client_rates WHERE id = ?", id);
+    public Result<Void> delete(long id) {
+        return Database.callVoid("{call sp_client_rate_delete(?,?)}", id);
     }
 }

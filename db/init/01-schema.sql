@@ -1,7 +1,12 @@
 -- SysPort - MARJAN :: schema
--- MariaDB 11. English status codes, BIGINT auto-increment ids, DECIMAL money.
+-- MySQL 8.4. English status codes, DECIMAL money, ids allocated from the
+-- `sequences` table (no AUTO_INCREMENT). Stored procedures/functions hold the
+-- application's business rules and are called by the repositories.
 -- Design notes: the child column always references the parent id (PRD 4.1 F1).
 -- Foreign keys are declared inline so table creation order is self-documenting.
+
+CREATE DATABASE IF NOT EXISTS sysportdb;
+USE sysportdb;
 
 SET NAMES utf8mb4;
 
@@ -1090,7 +1095,7 @@ p: BEGIN
   IF v_rate IS NULL OR v_rate <= 0 THEN
     ROLLBACK; SET p_problems = 'La solicitud no tiene tarifa acordada'; LEAVE p;
   END IF;
-  IF EXISTS (SELECT 1 FROM invoices WHERE service_request_id = p_request_id) THEN
+  IF (SELECT COUNT(*) FROM invoices WHERE service_request_id = p_request_id) > 0 THEN
     ROLLBACK; SET p_problems = 'La solicitud ya tiene una factura'; LEAVE p;
   END IF;
   SET v_amount = COALESCE(p_amount, v_rate);
@@ -1323,5 +1328,1389 @@ p: BEGIN
     SET p_problems = CONCAT_WS('; ', p_problems, v_extra);
   END IF;
 END$$
+
+DELIMITER ;
+
+-- ================================================================ app API
+-- The application never writes SQL of its own: every repository operation
+-- maps to one of these routines, so changing a routine changes the app.
+-- Convention: read procedures return a result set; write procedures take their
+-- parameters as IN and report through OUT (p_problems TEXT, p_id BIGINT).
+
+DELIMITER $$
+
+-- ---------------------------------------------------------------- validators
+
+CREATE FUNCTION fn_money_valid(p_value DECIMAL(12,2))
+RETURNS TINYINT DETERMINISTIC
+BEGIN
+  RETURN (p_value IS NULL OR (p_value >= 0 AND p_value <= 9999999999.99));
+END$$
+
+CREATE FUNCTION fn_measure_valid(p_value DECIMAL(10,1))
+RETURNS TINYINT DETERMINISTIC
+BEGIN
+  RETURN (p_value IS NULL OR (p_value >= 0 AND p_value <= 999999999.9));
+END$$
+
+CREATE FUNCTION fn_liters_valid(p_value DECIMAL(8,2))
+RETURNS TINYINT DETERMINISTIC
+BEGIN
+  RETURN (p_value IS NOT NULL AND p_value > 0 AND p_value <= 999999.99);
+END$$
+
+CREATE FUNCTION fn_price_per_liter_valid(p_value DECIMAL(8,3))
+RETURNS TINYINT DETERMINISTIC
+BEGIN
+  RETURN (p_value IS NOT NULL AND p_value > 0 AND p_value <= 99999.999);
+END$$
+
+CREATE FUNCTION fn_date_valid(p_value DATE)
+RETURNS TINYINT DETERMINISTIC
+BEGIN
+  RETURN (p_value IS NULL OR (p_value >= '2000-01-01' AND p_value <= '2100-01-01'));
+END$$
+
+CREATE FUNCTION fn_year_valid(p_year INT)
+RETURNS TINYINT
+READS SQL DATA
+BEGIN
+  RETURN (p_year IS NULL OR (p_year >= 1950 AND p_year <= YEAR(CURDATE()) + 1));
+END$$
+
+CREATE FUNCTION fn_curp_valid(p_curp VARCHAR(18))
+RETURNS TINYINT DETERMINISTIC
+BEGIN
+  RETURN (p_curp IS NULL OR p_curp = '' OR p_curp REGEXP '^[A-Z]{4}[0-9]{6}[HM][A-Z]{5}[A-Z0-9][0-9]$');
+END$$
+
+CREATE FUNCTION fn_plates_valid(p_plates VARCHAR(20))
+RETURNS TINYINT DETERMINISTIC
+BEGIN
+  RETURN (p_plates IS NULL OR p_plates = '' OR p_plates REGEXP '^[A-Z0-9-]{4,10}$');
+END$$
+
+CREATE FUNCTION fn_license_number_valid(p_number VARCHAR(50))
+RETURNS TINYINT DETERMINISTIC
+BEGIN
+  RETURN (p_number IS NULL OR p_number = '' OR p_number REGEXP '^[A-Za-z0-9-]{4,30}$');
+END$$
+
+CREATE FUNCTION fn_username_valid(p_username VARCHAR(50))
+RETURNS TINYINT DETERMINISTIC
+BEGIN
+  RETURN (p_username IS NOT NULL AND p_username REGEXP '^[A-Za-z0-9._-]{3,50}$');
+END$$
+
+-- ---------------------------------------------------------------- security
+
+CREATE PROCEDURE sp_user_by_username(IN p_username VARCHAR(50))
+p: BEGIN
+  SELECT u.id, u.employee_id, u.username, u.password_hash, u.role_id,
+         r.name AS role_name, u.status
+  FROM users u JOIN roles r ON r.id = u.role_id
+  WHERE u.username = p_username;
+END$$
+
+CREATE PROCEDURE sp_user_by_id(IN p_id BIGINT)
+p: BEGIN
+  SELECT u.id, u.employee_id, u.username, u.password_hash, u.role_id,
+         r.name AS role_name, u.status
+  FROM users u JOIN roles r ON r.id = u.role_id
+  WHERE u.id = p_id;
+END$$
+
+CREATE PROCEDURE sp_users_list()
+p: BEGIN
+  SELECT u.id, u.employee_id, u.username, u.password_hash, u.role_id,
+         r.name AS role_name, u.status
+  FROM users u JOIN roles r ON r.id = u.role_id
+  ORDER BY u.username;
+END$$
+
+CREATE PROCEDURE sp_roles_list()
+p: BEGIN
+  SELECT id, name FROM roles ORDER BY name;
+END$$
+
+CREATE PROCEDURE sp_permissions_list()
+p: BEGIN
+  SELECT name FROM permissions ORDER BY name;
+END$$
+
+CREATE PROCEDURE sp_role_permissions(IN p_role_id BIGINT)
+p: BEGIN
+  SELECT p.name
+  FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id
+  WHERE rp.role_id = p_role_id
+  ORDER BY p.name;
+END$$
+
+CREATE PROCEDURE sp_user_insert(IN p_username VARCHAR(50), IN p_hash VARCHAR(100),
+    IN p_role_id BIGINT, IN p_employee_id BIGINT, IN p_status VARCHAR(20), OUT p_id BIGINT)
+p: BEGIN
+  CALL sp_next_id('users', p_id);
+  INSERT INTO users (id, username, password_hash, role_id, employee_id, status)
+  VALUES (p_id, p_username, p_hash, p_role_id, p_employee_id, COALESCE(p_status, 'active'));
+END$$
+
+CREATE PROCEDURE sp_user_update(IN p_id BIGINT, IN p_username VARCHAR(50),
+    IN p_role_id BIGINT, IN p_employee_id BIGINT, IN p_status VARCHAR(20))
+p: BEGIN
+  UPDATE users SET username = p_username, role_id = p_role_id,
+                   employee_id = p_employee_id, status = COALESCE(p_status, 'active')
+  WHERE id = p_id;
+END$$
+
+CREATE PROCEDURE sp_user_update_password(IN p_id BIGINT, IN p_hash VARCHAR(100))
+p: BEGIN
+  UPDATE users SET password_hash = p_hash WHERE id = p_id;
+END$$
+
+CREATE PROCEDURE sp_user_delete(IN p_id BIGINT)
+p: BEGIN
+  DELETE FROM users WHERE id = p_id;
+END$$
+
+CREATE PROCEDURE sp_audit_log(IN p_user_id BIGINT, IN p_entity VARCHAR(50),
+    IN p_entity_id BIGINT, IN p_action VARCHAR(50), IN p_details VARCHAR(500))
+p: BEGIN
+  DECLARE v_id BIGINT;
+  CALL sp_next_id('audit_log', v_id);
+  INSERT INTO audit_log (id, user_id, entity, entity_id, action, details)
+  VALUES (v_id, p_user_id, p_entity, p_entity_id, p_action, p_details);
+END$$
+
+-- ---------------------------------------------------------------- clients
+
+CREATE PROCEDURE sp_clients_search(IN p_term VARCHAR(150))
+p: BEGIN
+  SELECT id, name, rfc, address, phone, email, contact_name, client_type,
+         payment_terms, credit_limit, credit_days, status
+  FROM clients
+  WHERE p_term IS NULL OR p_term = ''
+     OR name LIKE CONCAT('%', p_term, '%') OR rfc LIKE CONCAT('%', p_term, '%')
+  ORDER BY name;
+END$$
+
+CREATE PROCEDURE sp_clients_active()
+p: BEGIN
+  SELECT id, name, rfc, address, phone, email, contact_name, client_type,
+         payment_terms, credit_limit, credit_days, status
+  FROM clients WHERE status = 'active' ORDER BY name;
+END$$
+
+CREATE PROCEDURE sp_client_by_id(IN p_id BIGINT)
+p: BEGIN
+  SELECT id, name, rfc, address, phone, email, contact_name, client_type,
+         payment_terms, credit_limit, credit_days, status
+  FROM clients WHERE id = p_id;
+END$$
+
+CREATE PROCEDURE sp_client_save(IN p_id BIGINT, IN p_name VARCHAR(150), IN p_rfc VARCHAR(13),
+    IN p_address VARCHAR(255), IN p_phone VARCHAR(30), IN p_email VARCHAR(150),
+    IN p_contact VARCHAR(150), IN p_type VARCHAR(20), IN p_terms VARCHAR(20),
+    IN p_credit_limit DECIMAL(12,2), IN p_credit_days INT, IN p_status VARCHAR(20),
+    OUT p_new_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  SET p_problems = NULL;
+  IF p_name IS NULL OR p_name = '' THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'El nombre o razon social es obligatorio');
+  END IF;
+  IF p_rfc IS NULL OR p_rfc = '' THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'El RFC es obligatorio');
+  ELSEIF NOT fn_rfc_valid(p_rfc) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'El RFC no tiene un formato valido (ej. ABC950101XYZ)');
+  END IF;
+  IF NOT fn_email_valid(p_email) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'El correo electronico no tiene un formato valido');
+  END IF;
+  IF NOT fn_phone_valid(p_phone) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'El telefono no tiene un formato valido');
+  END IF;
+  IF p_terms = 'credit' THEN
+    IF p_credit_days IS NULL OR p_credit_days < 0 OR p_credit_days > 3650 THEN
+      SET p_problems = CONCAT_WS('; ', p_problems, 'Los dias de credito deben estar entre 0 y 3650');
+    END IF;
+    IF NOT fn_money_valid(p_credit_limit) THEN
+      SET p_problems = CONCAT_WS('; ', p_problems, 'El limite de credito es invalido o excede el maximo permitido');
+    END IF;
+  END IF;
+  IF p_problems IS NOT NULL THEN LEAVE p; END IF;
+
+  IF p_id IS NULL OR p_id = 0 THEN
+    CALL sp_next_id('clients', p_new_id);
+    INSERT INTO clients (id, name, rfc, address, phone, email, contact_name, client_type,
+                         payment_terms, credit_limit, credit_days, status)
+    VALUES (p_new_id, p_name, p_rfc, p_address, p_phone, p_email, p_contact,
+            COALESCE(p_type, 'occasional'), COALESCE(p_terms, 'cash'),
+            COALESCE(p_credit_limit, 0), COALESCE(p_credit_days, 0), COALESCE(p_status, 'active'));
+  ELSE
+    SET p_new_id = p_id;
+    UPDATE clients SET name = p_name, rfc = p_rfc, address = p_address, phone = p_phone,
+                       email = p_email, contact_name = p_contact,
+                       client_type = COALESCE(p_type, 'occasional'),
+                       payment_terms = COALESCE(p_terms, 'cash'),
+                       credit_limit = COALESCE(p_credit_limit, 0),
+                       credit_days = COALESCE(p_credit_days, 0),
+                       status = COALESCE(p_status, 'active')
+    WHERE id = p_id;
+  END IF;
+END$$
+
+CREATE PROCEDURE sp_client_delete(IN p_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  SET p_problems = NULL;
+  DELETE FROM clients WHERE id = p_id;
+END$$
+
+CREATE PROCEDURE sp_client_set_status(IN p_id BIGINT, IN p_status VARCHAR(20))
+p: BEGIN
+  UPDATE clients SET status = p_status WHERE id = p_id;
+END$$
+
+CREATE PROCEDURE sp_client_rates_by_client(IN p_client_id BIGINT)
+p: BEGIN
+  SELECT cr.id, cr.client_id, cr.route_id,
+         CONCAT(r.origin, ' -> ', r.destination) AS route_label,
+         cr.rate, cr.valid_from, cr.valid_to
+  FROM client_rates cr JOIN routes r ON r.id = cr.route_id
+  WHERE cr.client_id = p_client_id
+  ORDER BY r.origin, r.destination;
+END$$
+
+CREATE PROCEDURE sp_client_rate_save(IN p_id BIGINT, IN p_client_id BIGINT, IN p_route_id BIGINT,
+    IN p_rate DECIMAL(12,2), IN p_valid_from DATE, IN p_valid_to DATE,
+    OUT p_new_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  SET p_problems = NULL;
+  IF p_route_id IS NULL OR p_route_id = 0 THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'Debe seleccionar una ruta');
+  END IF;
+  IF p_rate IS NULL OR p_rate <= 0 OR NOT fn_money_valid(p_rate) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La tarifa debe ser mayor a cero y dentro del rango permitido');
+  END IF;
+  IF p_valid_from IS NULL THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La fecha de vigencia inicial es obligatoria');
+  END IF;
+  IF p_valid_to IS NOT NULL AND p_valid_to < p_valid_from THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La vigencia final no puede ser anterior a la inicial');
+  END IF;
+  IF p_problems IS NOT NULL THEN LEAVE p; END IF;
+
+  IF p_id IS NULL OR p_id = 0 THEN
+    CALL sp_next_id('client_rates', p_new_id);
+    INSERT INTO client_rates (id, client_id, route_id, rate, valid_from, valid_to)
+    VALUES (p_new_id, p_client_id, p_route_id, p_rate, p_valid_from, p_valid_to);
+  ELSE
+    SET p_new_id = p_id;
+    UPDATE client_rates SET route_id = p_route_id, rate = p_rate,
+                            valid_from = p_valid_from, valid_to = p_valid_to
+    WHERE id = p_id;
+  END IF;
+END$$
+
+CREATE PROCEDURE sp_client_rate_delete(IN p_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  SET p_problems = NULL;
+  DELETE FROM client_rates WHERE id = p_id;
+END$$
+
+-- ---------------------------------------------------------------- routes
+
+CREATE PROCEDURE sp_routes_search(IN p_term VARCHAR(150))
+p: BEGIN
+  SELECT id, origin, destination, estimated_km, description
+  FROM routes
+  WHERE p_term IS NULL OR p_term = ''
+     OR origin LIKE CONCAT('%', p_term, '%') OR destination LIKE CONCAT('%', p_term, '%')
+  ORDER BY origin, destination;
+END$$
+
+CREATE PROCEDURE sp_route_by_id(IN p_id BIGINT)
+p: BEGIN
+  SELECT id, origin, destination, estimated_km, description FROM routes WHERE id = p_id;
+END$$
+
+CREATE PROCEDURE sp_route_save(IN p_id BIGINT, IN p_origin VARCHAR(150),
+    IN p_destination VARCHAR(150), IN p_km DECIMAL(10,1), IN p_description VARCHAR(255),
+    OUT p_new_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  SET p_problems = NULL;
+  IF p_origin IS NULL OR p_origin = '' THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'El origen es obligatorio');
+  END IF;
+  IF p_destination IS NULL OR p_destination = '' THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'El destino es obligatorio');
+  END IF;
+  IF NOT fn_measure_valid(p_km) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'Los kilometros estimados son invalidos o exceden el maximo permitido');
+  END IF;
+  IF p_problems IS NOT NULL THEN LEAVE p; END IF;
+
+  IF p_id IS NULL OR p_id = 0 THEN
+    CALL sp_next_id('routes', p_new_id);
+    INSERT INTO routes (id, origin, destination, estimated_km, description)
+    VALUES (p_new_id, p_origin, p_destination, p_km, p_description);
+  ELSE
+    SET p_new_id = p_id;
+    UPDATE routes SET origin = p_origin, destination = p_destination,
+                      estimated_km = p_km, description = p_description
+    WHERE id = p_id;
+  END IF;
+END$$
+
+CREATE PROCEDURE sp_route_delete(IN p_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  SET p_problems = NULL;
+  DELETE FROM routes WHERE id = p_id;
+END$$
+
+-- ---------------------------------------------------------------- vehicles
+
+CREATE PROCEDURE sp_vehicles_search(IN p_term VARCHAR(150))
+p: BEGIN
+  SELECT id, internal_code, plates, brand, model, year, serial_number, vehicle_type,
+         load_capacity, mileage, status
+  FROM vehicles
+  WHERE p_term IS NULL OR p_term = ''
+     OR internal_code LIKE CONCAT('%', p_term, '%') OR plates LIKE CONCAT('%', p_term, '%')
+     OR brand LIKE CONCAT('%', p_term, '%') OR model LIKE CONCAT('%', p_term, '%')
+  ORDER BY internal_code;
+END$$
+
+CREATE PROCEDURE sp_vehicle_by_id(IN p_id BIGINT)
+p: BEGIN
+  SELECT id, internal_code, plates, brand, model, year, serial_number, vehicle_type,
+         load_capacity, mileage, status
+  FROM vehicles WHERE id = p_id;
+END$$
+
+CREATE PROCEDURE sp_vehicle_save(IN p_id BIGINT, IN p_code VARCHAR(30), IN p_plates VARCHAR(20),
+    IN p_brand VARCHAR(50), IN p_model VARCHAR(50), IN p_year INT, IN p_serial VARCHAR(60),
+    IN p_type VARCHAR(50), IN p_capacity DECIMAL(10,1), IN p_mileage DECIMAL(10,1),
+    IN p_status VARCHAR(20), OUT p_new_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  SET p_problems = NULL;
+  IF p_code IS NULL OR p_code = '' THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'El numero economico es obligatorio');
+  END IF;
+  IF p_plates IS NULL OR p_plates = '' THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'Las placas son obligatorias');
+  END IF;
+  IF NOT fn_measure_valid(p_capacity) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La capacidad de carga es invalida o excede el maximo permitido');
+  END IF;
+  IF NOT fn_measure_valid(p_mileage) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'El kilometraje es invalido o excede el maximo permitido');
+  END IF;
+  IF NOT fn_year_valid(p_year) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, CONCAT('El anio debe estar entre 1950 y ', YEAR(CURDATE()) + 1));
+  END IF;
+  IF NOT fn_plates_valid(p_plates) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'Las placas no tienen un formato valido');
+  END IF;
+  IF p_problems IS NOT NULL THEN LEAVE p; END IF;
+
+  IF p_id IS NULL OR p_id = 0 THEN
+    CALL sp_next_id('vehicles', p_new_id);
+    INSERT INTO vehicles (id, internal_code, plates, brand, model, year, serial_number,
+                          vehicle_type, load_capacity, mileage, status)
+    VALUES (p_new_id, p_code, p_plates, p_brand, p_model, p_year, p_serial, p_type,
+            p_capacity, COALESCE(p_mileage, 0), COALESCE(p_status, 'available'));
+  ELSE
+    SET p_new_id = p_id;
+    UPDATE vehicles SET internal_code = p_code, plates = p_plates, brand = p_brand,
+                        model = p_model, year = p_year, serial_number = p_serial,
+                        vehicle_type = p_type, load_capacity = p_capacity,
+                        mileage = COALESCE(p_mileage, 0), status = COALESCE(p_status, 'available')
+    WHERE id = p_id;
+  END IF;
+END$$
+
+CREATE PROCEDURE sp_vehicle_set_status(IN p_id BIGINT, IN p_status VARCHAR(20))
+p: BEGIN
+  UPDATE vehicles SET status = p_status WHERE id = p_id;
+END$$
+
+CREATE PROCEDURE sp_vehicle_raise_mileage(IN p_id BIGINT, IN p_reading DECIMAL(10,1))
+p: BEGIN
+  IF p_reading IS NOT NULL THEN
+    UPDATE vehicles SET mileage = p_reading WHERE id = p_id AND mileage < p_reading;
+  END IF;
+END$$
+
+CREATE PROCEDURE sp_vehicle_delete(IN p_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  SET p_problems = NULL;
+  DELETE FROM vehicles WHERE id = p_id;
+END$$
+
+CREATE PROCEDURE sp_eligible_vehicles_full(IN p_start DATETIME, IN p_end DATETIME)
+p: BEGIN
+  SELECT v.id, v.internal_code, v.plates, v.brand, v.model, v.year, v.serial_number,
+         v.vehicle_type, v.load_capacity, v.mileage, v.status
+  FROM vehicles v
+  WHERE v.status = 'available'
+    AND NOT EXISTS (
+      SELECT 1 FROM trips t
+      WHERE t.vehicle_id = v.id
+        AND t.status IN ('scheduled','in_transit')
+        AND t.planned_start < p_end AND t.planned_end > p_start)
+  ORDER BY v.internal_code;
+END$$
+
+-- ---------------------------------------------------------------- employees
+
+CREATE PROCEDURE sp_employees_search(IN p_term VARCHAR(150))
+p: BEGIN
+  SELECT e.id, e.name, e.address, e.phone, e.email, e.rfc, e.curp,
+         e.emergency_contact_name, e.emergency_contact_phone, e.status,
+         l.id AS license_id, l.license_number, l.license_type, l.issue_date, l.expiration_date
+  FROM employees e LEFT JOIN licenses l ON l.id = e.license_id
+  WHERE p_term IS NULL OR p_term = '' OR e.name LIKE CONCAT('%', p_term, '%')
+  ORDER BY e.name;
+END$$
+
+CREATE PROCEDURE sp_employee_by_id(IN p_id BIGINT)
+p: BEGIN
+  SELECT e.id, e.name, e.address, e.phone, e.email, e.rfc, e.curp,
+         e.emergency_contact_name, e.emergency_contact_phone, e.status,
+         l.id AS license_id, l.license_number, l.license_type, l.issue_date, l.expiration_date
+  FROM employees e LEFT JOIN licenses l ON l.id = e.license_id
+  WHERE e.id = p_id;
+END$$
+
+CREATE PROCEDURE sp_employees_assignable()
+p: BEGIN
+  SELECT e.id, e.name, e.address, e.phone, e.email, e.rfc, e.curp,
+         e.emergency_contact_name, e.emergency_contact_phone, e.status,
+         l.id AS license_id, l.license_number, l.license_type, l.issue_date, l.expiration_date
+  FROM employees e LEFT JOIN licenses l ON l.id = e.license_id
+  WHERE e.status = 'available'
+  ORDER BY e.name;
+END$$
+
+CREATE PROCEDURE sp_eligible_operators_full(IN p_start DATETIME, IN p_end DATETIME)
+p: BEGIN
+  SELECT e.id, e.name, e.address, e.phone, e.email, e.rfc, e.curp,
+         e.emergency_contact_name, e.emergency_contact_phone, e.status,
+         l.id AS license_id, l.license_number, l.license_type, l.issue_date, l.expiration_date
+  FROM employees e JOIN licenses l ON l.id = e.license_id
+  WHERE e.status = 'available'
+    AND l.expiration_date >= DATE(p_end)
+    AND NOT EXISTS (
+      SELECT 1 FROM trips t
+      WHERE t.employee_id = e.id
+        AND t.status IN ('scheduled','in_transit')
+        AND t.planned_start < p_end AND t.planned_end > p_start)
+  ORDER BY e.name;
+END$$
+
+CREATE PROCEDURE sp_employee_save(IN p_id BIGINT, IN p_name VARCHAR(150), IN p_address VARCHAR(255),
+    IN p_phone VARCHAR(30), IN p_email VARCHAR(150), IN p_rfc VARCHAR(13), IN p_curp VARCHAR(18),
+    IN p_ec_name VARCHAR(150), IN p_ec_phone VARCHAR(30), IN p_license_id BIGINT,
+    IN p_license_number VARCHAR(50), IN p_license_type VARCHAR(50), IN p_license_issue DATE,
+    IN p_license_expiry DATE, IN p_status VARCHAR(20),
+    OUT p_new_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  DECLARE v_license_id BIGINT DEFAULT NULL;
+  SET p_problems = NULL;
+  IF p_name IS NULL OR p_name = '' THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'El nombre es obligatorio');
+  END IF;
+  IF p_phone IS NULL OR p_phone = '' THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'El telefono es obligatorio');
+  ELSEIF NOT fn_phone_valid(p_phone) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'El telefono no tiene un formato valido');
+  END IF;
+  IF NOT fn_email_valid(p_email) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'El correo electronico no tiene un formato valido');
+  END IF;
+  IF NOT fn_rfc_valid(p_rfc) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'El RFC no tiene un formato valido');
+  END IF;
+  IF NOT fn_curp_valid(p_curp) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La CURP no tiene un formato valido');
+  END IF;
+  IF NOT fn_phone_valid(p_ec_phone) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'El telefono de emergencia no tiene un formato valido');
+  END IF;
+  IF p_license_number IS NOT NULL AND p_license_number <> '' THEN
+    IF NOT fn_license_number_valid(p_license_number) THEN
+      SET p_problems = CONCAT_WS('; ', p_problems, 'El numero de licencia no tiene un formato valido');
+    END IF;
+    IF p_license_expiry IS NULL THEN
+      SET p_problems = CONCAT_WS('; ', p_problems, 'La fecha de vencimiento de la licencia es obligatoria');
+    END IF;
+    IF NOT fn_date_valid(p_license_issue) OR NOT fn_date_valid(p_license_expiry) THEN
+      SET p_problems = CONCAT_WS('; ', p_problems, 'Las fechas de la licencia no son validas');
+    ELSEIF p_license_issue IS NOT NULL AND p_license_issue > p_license_expiry THEN
+      SET p_problems = CONCAT_WS('; ', p_problems, 'La fecha de expedicion no puede ser posterior al vencimiento');
+    END IF;
+  END IF;
+  IF p_problems IS NOT NULL THEN LEAVE p; END IF;
+
+  IF p_license_number IS NOT NULL AND p_license_number <> '' THEN
+    IF p_license_id IS NULL OR p_license_id = 0 THEN
+      CALL sp_next_id('licenses', v_license_id);
+      INSERT INTO licenses (id, license_number, license_type, issue_date, expiration_date)
+      VALUES (v_license_id, p_license_number, p_license_type, p_license_issue, p_license_expiry);
+    ELSE
+      SET v_license_id = p_license_id;
+      UPDATE licenses SET license_number = p_license_number, license_type = p_license_type,
+                          issue_date = p_license_issue, expiration_date = p_license_expiry
+      WHERE id = p_license_id;
+    END IF;
+  END IF;
+
+  IF p_id IS NULL OR p_id = 0 THEN
+    CALL sp_next_id('employees', p_new_id);
+    INSERT INTO employees (id, name, address, phone, email, rfc, curp,
+                           emergency_contact_name, emergency_contact_phone, license_id, status)
+    VALUES (p_new_id, p_name, p_address, p_phone, p_email, p_rfc, p_curp,
+            p_ec_name, p_ec_phone, v_license_id, COALESCE(p_status, 'available'));
+  ELSE
+    SET p_new_id = p_id;
+    UPDATE employees SET name = p_name, address = p_address, phone = p_phone, email = p_email,
+                         rfc = p_rfc, curp = p_curp, emergency_contact_name = p_ec_name,
+                         emergency_contact_phone = p_ec_phone, license_id = v_license_id,
+                         status = COALESCE(p_status, 'available')
+    WHERE id = p_id;
+  END IF;
+END$$
+
+CREATE PROCEDURE sp_employee_delete(IN p_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  DECLARE v_license BIGINT DEFAULT NULL;
+  SET p_problems = NULL;
+  SELECT license_id INTO v_license FROM employees WHERE id = p_id;
+  DELETE FROM employees WHERE id = p_id;
+  IF v_license IS NOT NULL THEN
+    DELETE FROM licenses WHERE id = v_license;
+  END IF;
+END$$
+
+CREATE PROCEDURE sp_employee_set_status(IN p_id BIGINT, IN p_status VARCHAR(20))
+p: BEGIN
+  UPDATE employees SET status = p_status WHERE id = p_id;
+END$$
+
+-- ---------------------------------------------------------------- requests
+
+CREATE PROCEDURE sp_requests_search(IN p_folio VARCHAR(20), IN p_client_id BIGINT,
+    IN p_status VARCHAR(20), IN p_from DATETIME, IN p_to DATETIME)
+p: BEGIN
+  SELECT sr.id, sr.folio, sr.client_id, c.name AS client_name, sr.route_id,
+         CONCAT(r.origin, ' -> ', r.destination) AS route_label,
+         sr.cargo_description, sr.estimated_weight, sr.pickup_date_scheduled,
+         sr.delivery_date_scheduled, sr.agreed_rate, sr.requires_documents,
+         sr.status, sr.notes, sr.created_at
+  FROM service_requests sr
+  JOIN clients c ON c.id = sr.client_id
+  JOIN routes r ON r.id = sr.route_id
+  WHERE (p_folio IS NULL OR p_folio = '' OR sr.folio LIKE CONCAT('%', p_folio, '%'))
+    AND (p_client_id IS NULL OR sr.client_id = p_client_id)
+    AND (p_status IS NULL OR sr.status = p_status)
+    AND (p_from IS NULL OR sr.pickup_date_scheduled >= p_from)
+    AND (p_to IS NULL OR sr.pickup_date_scheduled <= p_to)
+  ORDER BY sr.created_at DESC;
+END$$
+
+CREATE PROCEDURE sp_request_by_id(IN p_id BIGINT)
+p: BEGIN
+  SELECT sr.id, sr.folio, sr.client_id, c.name AS client_name, sr.route_id,
+         CONCAT(r.origin, ' -> ', r.destination) AS route_label,
+         sr.cargo_description, sr.estimated_weight, sr.pickup_date_scheduled,
+         sr.delivery_date_scheduled, sr.agreed_rate, sr.requires_documents,
+         sr.status, sr.notes, sr.created_at
+  FROM service_requests sr
+  JOIN clients c ON c.id = sr.client_id
+  JOIN routes r ON r.id = sr.route_id
+  WHERE sr.id = p_id;
+END$$
+
+CREATE PROCEDURE sp_requests_by_status(IN p_status VARCHAR(20))
+p: BEGIN
+  SELECT sr.id, sr.folio, sr.client_id, c.name AS client_name, sr.route_id,
+         CONCAT(r.origin, ' -> ', r.destination) AS route_label,
+         sr.cargo_description, sr.estimated_weight, sr.pickup_date_scheduled,
+         sr.delivery_date_scheduled, sr.agreed_rate, sr.requires_documents,
+         sr.status, sr.notes, sr.created_at
+  FROM service_requests sr
+  JOIN clients c ON c.id = sr.client_id
+  JOIN routes r ON r.id = sr.route_id
+  WHERE sr.status = p_status
+  ORDER BY sr.pickup_date_scheduled;
+END$$
+
+CREATE PROCEDURE sp_requests_authorized()
+p: BEGIN
+  SELECT sr.id, sr.folio, sr.client_id, c.name AS client_name, sr.route_id,
+         CONCAT(r.origin, ' -> ', r.destination) AS route_label,
+         sr.cargo_description, sr.estimated_weight, sr.pickup_date_scheduled,
+         sr.delivery_date_scheduled, sr.agreed_rate, sr.requires_documents,
+         sr.status, sr.notes, sr.created_at
+  FROM service_requests sr
+  JOIN clients c ON c.id = sr.client_id
+  JOIN routes r ON r.id = sr.route_id
+  WHERE sr.status = 'authorized';
+END$$
+
+CREATE PROCEDURE sp_requests_pending_billing()
+p: BEGIN
+  SELECT sr.id, sr.folio, sr.client_id, c.name AS client_name, sr.route_id,
+         CONCAT(r.origin, ' -> ', r.destination) AS route_label,
+         sr.cargo_description, sr.estimated_weight, sr.pickup_date_scheduled,
+         sr.delivery_date_scheduled, sr.agreed_rate, sr.requires_documents,
+         sr.status, sr.notes, sr.created_at
+  FROM service_requests sr
+  JOIN clients c ON c.id = sr.client_id
+  JOIN routes r ON r.id = sr.route_id
+  WHERE sr.agreed_rate IS NOT NULL AND sr.agreed_rate > 0
+    AND sr.status <> 'cancelled'
+    AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.service_request_id = sr.id)
+  ORDER BY sr.created_at DESC;
+END$$
+
+CREATE PROCEDURE sp_request_create(IN p_client_id BIGINT, IN p_route_id BIGINT,
+    IN p_cargo VARCHAR(255), IN p_weight DECIMAL(10,1), IN p_pickup DATETIME,
+    IN p_delivery DATETIME, IN p_rate DECIMAL(12,2), IN p_requires_documents BOOLEAN,
+    IN p_notes VARCHAR(500), IN p_user_id BIGINT, OUT p_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  DECLARE v_year INT;
+  DECLARE v_folio VARCHAR(20);
+  SET p_problems = NULL;
+  IF p_client_id IS NULL OR p_client_id = 0 THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'Debe seleccionar un cliente');
+  END IF;
+  IF p_route_id IS NULL OR p_route_id = 0 THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'Debe seleccionar una ruta');
+  END IF;
+  IF NOT fn_measure_valid(p_weight) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'El peso estimado es invalido o excede el maximo permitido');
+  END IF;
+  IF NOT fn_date_valid(DATE(p_pickup)) OR NOT fn_date_valid(DATE(p_delivery)) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'Las fechas programadas no son validas');
+  END IF;
+  IF (p_pickup IS NULL) <> (p_delivery IS NULL) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'Debe indicar ambas fechas o ninguna');
+  ELSEIF p_pickup IS NOT NULL AND p_delivery <= p_pickup THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La fecha de entrega debe ser posterior a la de recoleccion');
+  END IF;
+  IF p_problems IS NOT NULL THEN LEAVE p; END IF;
+
+  SET v_year = YEAR(COALESCE(p_pickup, CURDATE()));
+  SET v_folio = fn_next_folio(v_year);
+  CALL sp_next_id('service_requests', p_id);
+  INSERT INTO service_requests
+    (id, folio, client_id, route_id, cargo_description, estimated_weight,
+     pickup_date_scheduled, delivery_date_scheduled, agreed_rate,
+     requires_documents, status, notes, created_by, updated_by)
+  VALUES (p_id, v_folio, p_client_id, p_route_id, p_cargo, p_weight, p_pickup, p_delivery,
+          p_rate, COALESCE(p_requires_documents, TRUE), 'requested', p_notes, p_user_id, p_user_id);
+END$$
+
+CREATE PROCEDURE sp_request_update(IN p_id BIGINT, IN p_client_id BIGINT, IN p_route_id BIGINT,
+    IN p_cargo VARCHAR(255), IN p_weight DECIMAL(10,1), IN p_pickup DATETIME,
+    IN p_delivery DATETIME, IN p_rate DECIMAL(12,2), IN p_requires_documents BOOLEAN,
+    IN p_status VARCHAR(20), IN p_notes VARCHAR(500), IN p_user_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  SET p_problems = NULL;
+  IF NOT fn_measure_valid(p_weight) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'El peso estimado es invalido o excede el maximo permitido');
+  END IF;
+  IF p_problems IS NOT NULL THEN LEAVE p; END IF;
+  UPDATE service_requests SET client_id = p_client_id, route_id = p_route_id,
+                              cargo_description = p_cargo, estimated_weight = p_weight,
+                              pickup_date_scheduled = p_pickup, delivery_date_scheduled = p_delivery,
+                              agreed_rate = p_rate, requires_documents = p_requires_documents,
+                              status = p_status, notes = p_notes, updated_by = p_user_id
+  WHERE id = p_id;
+END$$
+
+CREATE PROCEDURE sp_request_delete(IN p_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  SET p_problems = NULL;
+  DELETE FROM payments WHERE invoice_id IN (SELECT id FROM invoices WHERE service_request_id = p_id);
+  DELETE FROM invoices WHERE service_request_id = p_id;
+  DELETE FROM expenses WHERE trip_id IN (SELECT id FROM trips WHERE service_request_id = p_id);
+  DELETE FROM advances WHERE trip_id IN (SELECT id FROM trips WHERE service_request_id = p_id);
+  DELETE FROM incidents WHERE trip_id IN (SELECT id FROM trips WHERE service_request_id = p_id);
+  DELETE FROM deliveries WHERE trip_id IN (SELECT id FROM trips WHERE service_request_id = p_id);
+  UPDATE fuel_loads SET trip_id = NULL WHERE trip_id IN (SELECT id FROM trips WHERE service_request_id = p_id);
+  DELETE FROM audit_log WHERE entity = 'trip'
+    AND entity_id IN (SELECT id FROM trips WHERE service_request_id = p_id);
+  DELETE FROM trips WHERE service_request_id = p_id;
+  DELETE FROM audit_log WHERE entity = 'service_request' AND entity_id = p_id;
+  DELETE FROM service_requests WHERE id = p_id;
+END$$
+
+-- ---------------------------------------------------------------- trips
+
+CREATE PROCEDURE sp_trips_search(IN p_term VARCHAR(150), IN p_status VARCHAR(20))
+p: BEGIN
+  SELECT t.id, t.service_request_id, sr.folio, c.name AS client_name,
+         CONCAT(r.origin, ' -> ', r.destination) AS route_label,
+         t.vehicle_id, CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label,
+         t.employee_id, e.name AS employee_name,
+         t.estimated_km, t.actual_km, t.planned_start, t.planned_end,
+         t.departure_datetime, t.arrival_datetime, t.status
+  FROM trips t
+  JOIN service_requests sr ON sr.id = t.service_request_id
+  JOIN clients c ON c.id = sr.client_id
+  JOIN routes r ON r.id = sr.route_id
+  JOIN vehicles v ON v.id = t.vehicle_id
+  JOIN employees e ON e.id = t.employee_id
+  WHERE (p_term IS NULL OR p_term = ''
+         OR sr.folio LIKE CONCAT('%', p_term, '%') OR c.name LIKE CONCAT('%', p_term, '%')
+         OR v.internal_code LIKE CONCAT('%', p_term, '%') OR e.name LIKE CONCAT('%', p_term, '%'))
+    AND (p_status IS NULL OR t.status = p_status)
+  ORDER BY t.planned_start DESC;
+END$$
+
+CREATE PROCEDURE sp_trip_by_id(IN p_id BIGINT)
+p: BEGIN
+  SELECT t.id, t.service_request_id, sr.folio, c.name AS client_name,
+         CONCAT(r.origin, ' -> ', r.destination) AS route_label,
+         t.vehicle_id, CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label,
+         t.employee_id, e.name AS employee_name,
+         t.estimated_km, t.actual_km, t.planned_start, t.planned_end,
+         t.departure_datetime, t.arrival_datetime, t.status
+  FROM trips t
+  JOIN service_requests sr ON sr.id = t.service_request_id
+  JOIN clients c ON c.id = sr.client_id
+  JOIN routes r ON r.id = sr.route_id
+  JOIN vehicles v ON v.id = t.vehicle_id
+  JOIN employees e ON e.id = t.employee_id
+  WHERE t.id = p_id;
+END$$
+
+CREATE PROCEDURE sp_trip_by_request(IN p_request_id BIGINT)
+p: BEGIN
+  SELECT t.id, t.service_request_id, sr.folio, c.name AS client_name,
+         CONCAT(r.origin, ' -> ', r.destination) AS route_label,
+         t.vehicle_id, CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label,
+         t.employee_id, e.name AS employee_name,
+         t.estimated_km, t.actual_km, t.planned_start, t.planned_end,
+         t.departure_datetime, t.arrival_datetime, t.status
+  FROM trips t
+  JOIN service_requests sr ON sr.id = t.service_request_id
+  JOIN clients c ON c.id = sr.client_id
+  JOIN routes r ON r.id = sr.route_id
+  JOIN vehicles v ON v.id = t.vehicle_id
+  JOIN employees e ON e.id = t.employee_id
+  WHERE t.service_request_id = p_request_id;
+END$$
+
+CREATE PROCEDURE sp_trips_due_to_depart(IN p_now DATETIME)
+p: BEGIN
+  SELECT t.id, t.service_request_id, sr.folio, c.name AS client_name,
+         CONCAT(r.origin, ' -> ', r.destination) AS route_label,
+         t.vehicle_id, CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label,
+         t.employee_id, e.name AS employee_name,
+         t.estimated_km, t.actual_km, t.planned_start, t.planned_end,
+         t.departure_datetime, t.arrival_datetime, t.status
+  FROM trips t
+  JOIN service_requests sr ON sr.id = t.service_request_id
+  JOIN clients c ON c.id = sr.client_id
+  JOIN routes r ON r.id = sr.route_id
+  JOIN vehicles v ON v.id = t.vehicle_id
+  JOIN employees e ON e.id = t.employee_id
+  WHERE t.status = 'scheduled' AND sr.status = 'assigned'
+    AND t.planned_start IS NOT NULL AND t.planned_start <= p_now
+  ORDER BY t.planned_start;
+END$$
+
+CREATE PROCEDURE sp_trip_vehicle(IN p_trip_id BIGINT)
+p: BEGIN
+  SELECT vehicle_id FROM trips WHERE id = p_trip_id;
+END$$
+
+CREATE PROCEDURE sp_reassign_trip(IN p_trip_id BIGINT, IN p_vehicle_id BIGINT,
+    IN p_operator_id BIGINT, IN p_user_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  DECLARE v_status VARCHAR(20) DEFAULT NULL;
+  DECLARE v_start DATETIME DEFAULT NULL;
+  DECLARE v_end DATETIME DEFAULT NULL;
+  DECLARE v_weight DECIMAL(10,1) DEFAULT NULL;
+  DECLARE v_request BIGINT;
+  DECLARE v_veh_status VARCHAR(20) DEFAULT NULL;
+  DECLARE v_capacity DECIMAL(10,1) DEFAULT NULL;
+  DECLARE v_emp_status VARCHAR(20) DEFAULT NULL;
+  DECLARE v_exp DATE DEFAULT NULL;
+  DECLARE v_conflicts INT DEFAULT 0;
+  DECLARE v_audit_id BIGINT;
+
+  SET p_problems = NULL;
+  SELECT status, service_request_id INTO v_status, v_request FROM trips WHERE id = p_trip_id;
+  IF v_status IS NULL THEN
+    SET p_problems = 'Viaje no encontrado';
+    LEAVE p;
+  END IF;
+  IF v_status <> 'scheduled' THEN
+    SET p_problems = 'Solo se puede reasignar un viaje programado (aun no inicia)';
+    LEAVE p;
+  END IF;
+  SELECT pickup_date_scheduled, delivery_date_scheduled, estimated_weight
+    INTO v_start, v_end, v_weight
+    FROM service_requests WHERE id = v_request;
+
+  SELECT status, load_capacity INTO v_veh_status, v_capacity FROM vehicles WHERE id = p_vehicle_id;
+  IF v_veh_status IS NULL THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'Debe seleccionar una unidad');
+  ELSE
+    IF NOT fn_vehicle_assignable(v_veh_status) THEN
+      SET p_problems = CONCAT_WS('; ', p_problems, CONCAT('La unidad no esta disponible (', v_veh_status, ')'));
+    END IF;
+    IF NOT fn_capacity_ok(v_capacity, v_weight) THEN
+      SET p_problems = CONCAT_WS('; ', p_problems, 'La capacidad de la unidad es menor al peso estimado');
+    END IF;
+    SELECT COUNT(*) INTO v_conflicts FROM trips
+      WHERE vehicle_id = p_vehicle_id AND id <> p_trip_id
+        AND status IN ('scheduled','in_transit')
+        AND planned_start < v_end AND planned_end > v_start;
+    IF v_conflicts > 0 THEN
+      SET p_problems = CONCAT_WS('; ', p_problems, 'La unidad ya tiene un viaje en ese periodo');
+    END IF;
+  END IF;
+
+  SELECT e.status, l.expiration_date INTO v_emp_status, v_exp
+    FROM employees e LEFT JOIN licenses l ON l.id = e.license_id WHERE e.id = p_operator_id;
+  IF v_emp_status IS NULL THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'Debe seleccionar un operador');
+  ELSE
+    IF NOT fn_employee_assignable(v_emp_status) THEN
+      SET p_problems = CONCAT_WS('; ', p_problems, CONCAT('El operador no esta disponible (', v_emp_status, ')'));
+    END IF;
+    IF v_exp IS NULL THEN
+      SET p_problems = CONCAT_WS('; ', p_problems, 'El operador no tiene licencia registrada');
+    ELSEIF v_end IS NOT NULL AND v_exp < DATE(v_end) THEN
+      SET p_problems = CONCAT_WS('; ', p_problems, 'La licencia del operador vence antes del fin del viaje');
+    END IF;
+    SELECT COUNT(*) INTO v_conflicts FROM trips
+      WHERE employee_id = p_operator_id AND id <> p_trip_id
+        AND status IN ('scheduled','in_transit')
+        AND planned_start < v_end AND planned_end > v_start;
+    IF v_conflicts > 0 THEN
+      SET p_problems = CONCAT_WS('; ', p_problems, 'El operador ya tiene un viaje en ese periodo');
+    END IF;
+  END IF;
+  IF p_problems IS NOT NULL THEN LEAVE p; END IF;
+
+  UPDATE trips SET vehicle_id = p_vehicle_id, employee_id = p_operator_id, updated_by = p_user_id
+  WHERE id = p_trip_id;
+  CALL sp_next_id('audit_log', v_audit_id);
+  INSERT INTO audit_log (id, user_id, entity, entity_id, action, details)
+  VALUES (v_audit_id, p_user_id, 'trip', p_trip_id, 'reassigned',
+          CONCAT('vehicle=', p_vehicle_id, ', operator=', p_operator_id));
+END$$
+
+CREATE PROCEDURE sp_trip_delete(IN p_trip_id BIGINT, IN p_user_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  DECLARE v_status VARCHAR(20) DEFAULT NULL;
+  DECLARE v_request BIGINT;
+  SET p_problems = NULL;
+  SELECT status, service_request_id INTO v_status, v_request FROM trips WHERE id = p_trip_id;
+  IF v_status IS NULL THEN
+    SET p_problems = 'Viaje no encontrado';
+    LEAVE p;
+  END IF;
+  DELETE FROM expenses WHERE trip_id = p_trip_id;
+  DELETE FROM advances WHERE trip_id = p_trip_id;
+  DELETE FROM incidents WHERE trip_id = p_trip_id;
+  DELETE FROM deliveries WHERE trip_id = p_trip_id;
+  UPDATE fuel_loads SET trip_id = NULL WHERE trip_id = p_trip_id;
+  DELETE FROM audit_log WHERE entity = 'trip' AND entity_id = p_trip_id;
+  DELETE FROM trips WHERE id = p_trip_id;
+  UPDATE service_requests SET status = 'scheduled', updated_by = p_user_id
+  WHERE id = v_request AND status IN ('assigned', 'in_transit');
+END$$
+
+CREATE PROCEDURE sp_trip_set_status(IN p_id BIGINT, IN p_status VARCHAR(20), IN p_user_id BIGINT)
+p: BEGIN
+  UPDATE trips SET status = p_status, updated_by = p_user_id WHERE id = p_id;
+END$$
+
+CREATE PROCEDURE sp_sweep_lifecycle(IN p_user_id BIGINT, OUT p_changes INT)
+p: BEGIN
+  DECLARE done INT DEFAULT 0;
+  DECLARE v_trip BIGINT;
+  DECLARE v_vehicle BIGINT;
+  DECLARE v_employee BIGINT;
+  DECLARE v_request BIGINT;
+  DECLARE v_audit BIGINT;
+  DECLARE v_now DATETIME;
+  DECLARE v_scheduled INT DEFAULT 0;
+  DECLARE cur CURSOR FOR
+    SELECT t.id, t.vehicle_id, t.employee_id, t.service_request_id
+    FROM trips t JOIN service_requests sr ON sr.id = t.service_request_id
+    WHERE t.status = 'scheduled' AND sr.status = 'assigned'
+      AND t.planned_start IS NOT NULL AND t.planned_start <= NOW();
+  DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = 1;
+
+  SET v_now = NOW();
+  UPDATE service_requests SET status = 'scheduled', updated_by = p_user_id
+  WHERE status = 'authorized' AND pickup_date_scheduled IS NOT NULL
+    AND delivery_date_scheduled IS NOT NULL
+    AND delivery_date_scheduled > pickup_date_scheduled;
+  SET v_scheduled = ROW_COUNT();
+
+  SET p_changes = 0;
+  OPEN cur;
+  depart_loop: LOOP
+    FETCH cur INTO v_trip, v_vehicle, v_employee, v_request;
+    IF done = 1 THEN LEAVE depart_loop; END IF;
+    UPDATE trips SET departure_datetime = v_now, status = 'in_transit', updated_by = p_user_id
+    WHERE id = v_trip;
+    UPDATE vehicles SET status = 'on_trip' WHERE id = v_vehicle;
+    UPDATE employees SET status = 'on_trip' WHERE id = v_employee;
+    UPDATE service_requests SET status = 'in_transit', updated_by = p_user_id WHERE id = v_request;
+    CALL sp_next_id('audit_log', v_audit);
+    INSERT INTO audit_log (id, user_id, entity, entity_id, action, details)
+    VALUES (v_audit, p_user_id, 'trip', v_trip, 'departed', 'auto: planned start reached');
+    SET p_changes = p_changes + 1;
+  END LOOP;
+  CLOSE cur;
+
+  SET p_changes = p_changes + v_scheduled;
+END$$
+
+-- ---------------------------------------------------------------- deliveries
+
+CREATE PROCEDURE sp_delivery_by_trip(IN p_trip_id BIGINT)
+p: BEGIN
+  SELECT d.id, d.trip_id, sr.folio, d.actual_datetime, d.received_by,
+         d.evidence_reference, d.status
+  FROM deliveries d
+  JOIN trips t ON t.id = d.trip_id
+  JOIN service_requests sr ON sr.id = t.service_request_id
+  WHERE d.trip_id = p_trip_id;
+END$$
+
+CREATE PROCEDURE sp_delivery_save(IN p_trip_id BIGINT, IN p_actual DATETIME,
+    IN p_received_by VARCHAR(150), IN p_evidence VARCHAR(255), IN p_status VARCHAR(20),
+    IN p_user_id BIGINT, OUT p_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  DECLARE v_request BIGINT;
+  DECLARE v_req_status VARCHAR(20);
+  DECLARE v_existing BIGINT;
+  SET p_problems = NULL;
+  IF p_trip_id IS NULL OR p_trip_id = 0 THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'Debe seleccionar un viaje');
+  END IF;
+  IF p_actual IS NULL THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La fecha y hora de entrega son obligatorias');
+  END IF;
+  IF p_received_by IS NULL OR p_received_by = '' THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'Debe indicar quien recibio la mercancia');
+  END IF;
+  IF p_evidence IS NULL OR p_evidence = '' THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La referencia de evidencia es obligatoria');
+  END IF;
+  IF p_problems IS NOT NULL THEN LEAVE p; END IF;
+
+  SELECT id INTO v_existing FROM deliveries WHERE trip_id = p_trip_id;
+  IF v_existing IS NULL THEN
+    CALL sp_next_id('deliveries', p_id);
+    INSERT INTO deliveries (id, trip_id, actual_datetime, received_by, evidence_reference, status, created_by)
+    VALUES (p_id, p_trip_id, p_actual, p_received_by, p_evidence, COALESCE(p_status, 'complete'), p_user_id);
+  ELSE
+    SET p_id = v_existing;
+    UPDATE deliveries SET actual_datetime = p_actual, received_by = p_received_by,
+                          evidence_reference = p_evidence, status = COALESCE(p_status, 'complete')
+    WHERE trip_id = p_trip_id;
+  END IF;
+
+  SELECT sr.id, sr.status INTO v_request, v_req_status
+    FROM trips t JOIN service_requests sr ON sr.id = t.service_request_id
+    WHERE t.id = p_trip_id;
+  IF v_req_status = 'in_transit' THEN
+    UPDATE service_requests SET status = 'delivered', updated_by = p_user_id WHERE id = v_request;
+  END IF;
+END$$
+
+CREATE PROCEDURE sp_delivery_delete(IN p_id BIGINT)
+p: BEGIN
+  DELETE FROM deliveries WHERE id = p_id;
+END$$
+
+-- ---------------------------------------------------------------- incidents
+
+CREATE PROCEDURE sp_incidents_by_trip(IN p_trip_id BIGINT)
+p: BEGIN
+  SELECT i.id, i.trip_id, sr.folio, i.incident_date, i.incident_time,
+         i.location, i.incident_type, i.description, i.actions_taken
+  FROM incidents i
+  JOIN trips t ON t.id = i.trip_id
+  JOIN service_requests sr ON sr.id = t.service_request_id
+  WHERE i.trip_id = p_trip_id
+  ORDER BY i.incident_date, i.incident_time;
+END$$
+
+CREATE PROCEDURE sp_incident_save(IN p_trip_id BIGINT, IN p_date DATE, IN p_time TIME,
+    IN p_location VARCHAR(150), IN p_type VARCHAR(30), IN p_description VARCHAR(500),
+    IN p_actions VARCHAR(500), IN p_user_id BIGINT, OUT p_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  SET p_problems = NULL;
+  IF p_trip_id IS NULL OR p_trip_id = 0 THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'Debe seleccionar un viaje');
+  END IF;
+  IF p_date IS NULL THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La fecha de la incidencia es obligatoria');
+  ELSEIF NOT fn_date_valid(p_date) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La fecha de la incidencia no es valida');
+  END IF;
+  IF p_description IS NULL OR p_description = '' THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La descripcion es obligatoria');
+  END IF;
+  IF p_problems IS NOT NULL THEN LEAVE p; END IF;
+  CALL sp_next_id('incidents', p_id);
+  INSERT INTO incidents (id, trip_id, incident_date, incident_time, location, incident_type,
+                         description, actions_taken, created_by)
+  VALUES (p_id, p_trip_id, p_date, p_time, p_location, p_type, p_description, p_actions, p_user_id);
+END$$
+
+CREATE PROCEDURE sp_incident_delete(IN p_id BIGINT)
+p: BEGIN
+  DELETE FROM incidents WHERE id = p_id;
+END$$
+
+-- ---------------------------------------------------------------- expenses
+
+CREATE PROCEDURE sp_expenses_by_trip(IN p_trip_id BIGINT)
+p: BEGIN
+  SELECT e.id, e.trip_id, sr.folio, e.expense_type, e.amount, e.expense_date, e.description
+  FROM expenses e
+  JOIN trips t ON t.id = e.trip_id
+  JOIN service_requests sr ON sr.id = t.service_request_id
+  WHERE e.trip_id = p_trip_id
+  ORDER BY e.expense_date;
+END$$
+
+CREATE PROCEDURE sp_expenses_list()
+p: BEGIN
+  SELECT e.id, e.trip_id, sr.folio, e.expense_type, e.amount, e.expense_date, e.description
+  FROM expenses e
+  JOIN trips t ON t.id = e.trip_id
+  JOIN service_requests sr ON sr.id = t.service_request_id
+  ORDER BY e.expense_date DESC;
+END$$
+
+CREATE PROCEDURE sp_expense_sum_by_trip(IN p_trip_id BIGINT)
+p: BEGIN
+  SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE trip_id = p_trip_id;
+END$$
+
+CREATE PROCEDURE sp_expense_save(IN p_trip_id BIGINT, IN p_type VARCHAR(20),
+    IN p_amount DECIMAL(12,2), IN p_date DATE, IN p_description VARCHAR(255),
+    IN p_user_id BIGINT, OUT p_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  DECLARE v_extra TEXT;
+  CALL sp_validate_expense(p_trip_id, p_type, p_amount, p_date, p_problems);
+  IF p_problems IS NOT NULL THEN LEAVE p; END IF;
+  IF NOT fn_date_valid(p_date) THEN
+    SET p_problems = 'La fecha del gasto no es valida';
+    LEAVE p;
+  END IF;
+  CALL sp_next_id('expenses', p_id);
+  INSERT INTO expenses (id, trip_id, expense_type, amount, expense_date, description, created_by)
+  VALUES (p_id, p_trip_id, p_type, p_amount, p_date, p_description, p_user_id);
+END$$
+
+CREATE PROCEDURE sp_expense_delete(IN p_id BIGINT)
+p: BEGIN
+  DELETE FROM expenses WHERE id = p_id;
+END$$
+
+-- ---------------------------------------------------------------- advances
+
+CREATE PROCEDURE sp_advances_by_trip(IN p_trip_id BIGINT)
+p: BEGIN
+  SELECT a.id, a.trip_id, sr.folio, a.employee_id, e.name AS employee_name,
+         a.amount_given, a.delivered_date, a.status, a.settled_at
+  FROM advances a
+  JOIN trips t ON t.id = a.trip_id
+  JOIN service_requests sr ON sr.id = t.service_request_id
+  JOIN employees e ON e.id = a.employee_id
+  WHERE a.trip_id = p_trip_id
+  ORDER BY a.delivered_date;
+END$$
+
+CREATE PROCEDURE sp_advances_list()
+p: BEGIN
+  SELECT a.id, a.trip_id, sr.folio, a.employee_id, e.name AS employee_name,
+         a.amount_given, a.delivered_date, a.status, a.settled_at
+  FROM advances a
+  JOIN trips t ON t.id = a.trip_id
+  JOIN service_requests sr ON sr.id = t.service_request_id
+  JOIN employees e ON e.id = a.employee_id
+  ORDER BY a.delivered_date DESC;
+END$$
+
+CREATE PROCEDURE sp_advance_save(IN p_trip_id BIGINT, IN p_employee_id BIGINT,
+    IN p_amount DECIMAL(12,2), IN p_date DATE, IN p_user_id BIGINT,
+    OUT p_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  CALL sp_validate_advance(p_trip_id, p_employee_id, p_amount, p_date, p_problems);
+  IF p_problems IS NOT NULL THEN LEAVE p; END IF;
+  IF NOT fn_date_valid(p_date) THEN
+    SET p_problems = 'La fecha del anticipo no es valida';
+    LEAVE p;
+  END IF;
+  CALL sp_next_id('advances', p_id);
+  INSERT INTO advances (id, trip_id, employee_id, amount_given, delivered_date, status, created_by)
+  VALUES (p_id, p_trip_id, p_employee_id, p_amount, p_date, 'pending', p_user_id);
+END$$
+
+CREATE PROCEDURE sp_advance_delete(IN p_id BIGINT)
+p: BEGIN
+  DELETE FROM advances WHERE id = p_id;
+END$$
+
+-- ---------------------------------------------------------------- fuel
+
+CREATE PROCEDURE sp_fuel_by_vehicle(IN p_vehicle_id BIGINT)
+p: BEGIN
+  SELECT f.id, f.vehicle_id, f.trip_id, f.fuel_station, f.load_date, f.liters,
+         f.price_per_liter, f.amount, f.odometer_reading,
+         CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label, sr.folio
+  FROM fuel_loads f
+  JOIN vehicles v ON v.id = f.vehicle_id
+  LEFT JOIN trips t ON t.id = f.trip_id
+  LEFT JOIN service_requests sr ON sr.id = t.service_request_id
+  WHERE f.vehicle_id = p_vehicle_id
+  ORDER BY f.load_date DESC;
+END$$
+
+CREATE PROCEDURE sp_fuel_by_trip(IN p_trip_id BIGINT)
+p: BEGIN
+  SELECT f.id, f.vehicle_id, f.trip_id, f.fuel_station, f.load_date, f.liters,
+         f.price_per_liter, f.amount, f.odometer_reading,
+         CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label, sr.folio
+  FROM fuel_loads f
+  JOIN vehicles v ON v.id = f.vehicle_id
+  LEFT JOIN trips t ON t.id = f.trip_id
+  LEFT JOIN service_requests sr ON sr.id = t.service_request_id
+  WHERE f.trip_id = p_trip_id
+  ORDER BY f.load_date;
+END$$
+
+CREATE PROCEDURE sp_fuel_list()
+p: BEGIN
+  SELECT f.id, f.vehicle_id, f.trip_id, f.fuel_station, f.load_date, f.liters,
+         f.price_per_liter, f.amount, f.odometer_reading,
+         CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label, sr.folio
+  FROM fuel_loads f
+  JOIN vehicles v ON v.id = f.vehicle_id
+  LEFT JOIN trips t ON t.id = f.trip_id
+  LEFT JOIN service_requests sr ON sr.id = t.service_request_id
+  ORDER BY f.load_date DESC;
+END$$
+
+CREATE PROCEDURE sp_fuel_sum_by_trip(IN p_trip_id BIGINT)
+p: BEGIN
+  SELECT COALESCE(SUM(amount), 0) AS total FROM fuel_loads WHERE trip_id = p_trip_id;
+END$$
+
+CREATE PROCEDURE sp_fuel_save(IN p_vehicle_id BIGINT, IN p_trip_id BIGINT, IN p_station VARCHAR(100),
+    IN p_load_date DATETIME, IN p_liters DECIMAL(8,2), IN p_price DECIMAL(8,3),
+    IN p_amount DECIMAL(12,2), IN p_odometer DECIMAL(10,1), IN p_user_id BIGINT,
+    OUT p_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  CALL sp_validate_fuel_load(p_vehicle_id, p_trip_id, p_liters, p_price, p_amount, p_odometer, p_problems);
+  IF p_problems IS NOT NULL THEN LEAVE p; END IF;
+  CALL sp_next_id('fuel_loads', p_id);
+  INSERT INTO fuel_loads (id, vehicle_id, trip_id, fuel_station, load_date, liters,
+                          price_per_liter, amount, odometer_reading, created_by)
+  VALUES (p_id, p_vehicle_id, p_trip_id, p_station, p_load_date, p_liters, p_price,
+          p_amount, p_odometer, p_user_id);
+  IF p_odometer IS NOT NULL THEN
+    UPDATE vehicles SET mileage = p_odometer WHERE id = p_vehicle_id AND mileage < p_odometer;
+  END IF;
+END$$
+
+CREATE PROCEDURE sp_fuel_delete(IN p_id BIGINT)
+p: BEGIN
+  DELETE FROM fuel_loads WHERE id = p_id;
+END$$
+
+-- ---------------------------------------------------------------- maintenance
+
+CREATE PROCEDURE sp_maintenance_by_vehicle(IN p_vehicle_id BIGINT)
+p: BEGIN
+  SELECT m.id, m.vehicle_id, m.maintenance_date, m.odometer_reading, m.maintenance_type,
+         m.work_performed, m.provider, m.cost, m.next_service_date, m.next_service_km,
+         CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label
+  FROM maintenance m JOIN vehicles v ON v.id = m.vehicle_id
+  WHERE m.vehicle_id = p_vehicle_id
+  ORDER BY m.maintenance_date DESC;
+END$$
+
+CREATE PROCEDURE sp_maintenance_save(IN p_vehicle_id BIGINT, IN p_date DATE,
+    IN p_odometer DECIMAL(10,1), IN p_type VARCHAR(20), IN p_work VARCHAR(500),
+    IN p_provider VARCHAR(150), IN p_cost DECIMAL(12,2), IN p_next_date DATE,
+    IN p_next_km DECIMAL(10,1), IN p_user_id BIGINT, OUT p_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  SET p_problems = NULL;
+  IF p_vehicle_id IS NULL OR p_vehicle_id = 0 THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'Debe seleccionar una unidad');
+  END IF;
+  IF p_date IS NULL THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La fecha de mantenimiento es obligatoria');
+  ELSEIF NOT fn_date_valid(p_date) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La fecha de mantenimiento no es valida');
+  END IF;
+  IF NOT fn_money_valid(p_cost) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'El costo es invalido o excede el maximo permitido');
+  END IF;
+  IF NOT fn_measure_valid(p_odometer) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'El odometro es invalido o excede el maximo permitido');
+  END IF;
+  IF NOT fn_measure_valid(p_next_km) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'El proximo kilometraje es invalido o excede el maximo permitido');
+  END IF;
+  IF p_next_date IS NOT NULL AND p_date IS NOT NULL AND p_next_date < p_date THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La proxima fecha de servicio no puede ser anterior a la del mantenimiento');
+  END IF;
+  IF p_next_km IS NOT NULL AND p_odometer IS NOT NULL AND p_next_km < p_odometer THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'El proximo kilometraje no puede ser menor al odometro actual');
+  END IF;
+  IF p_problems IS NOT NULL THEN LEAVE p; END IF;
+
+  CALL sp_next_id('maintenance', p_id);
+  INSERT INTO maintenance (id, vehicle_id, maintenance_date, odometer_reading, maintenance_type,
+                           work_performed, provider, cost, next_service_date, next_service_km, created_by)
+  VALUES (p_id, p_vehicle_id, p_date, p_odometer, COALESCE(p_type, 'preventive'), p_work,
+          p_provider, COALESCE(p_cost, 0), p_next_date, p_next_km, p_user_id);
+  IF p_odometer IS NOT NULL THEN
+    UPDATE vehicles SET mileage = p_odometer WHERE id = p_vehicle_id AND mileage < p_odometer;
+  END IF;
+END$$
+
+CREATE PROCEDURE sp_maintenance_delete(IN p_id BIGINT)
+p: BEGIN
+  DELETE FROM maintenance WHERE id = p_id;
+END$$
+
+-- ---------------------------------------------------------------- invoices
+
+CREATE PROCEDURE sp_invoices_search(IN p_status VARCHAR(20), IN p_client_id BIGINT)
+p: BEGIN
+  SELECT i.id, i.client_id, c.name AS client_name, i.service_request_id, sr.folio,
+         i.invoice_number, i.amount, i.issue_date, i.due_date, i.status,
+         COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.id), 0) AS paid
+  FROM invoices i
+  JOIN clients c ON c.id = i.client_id
+  JOIN service_requests sr ON sr.id = i.service_request_id
+  WHERE (p_status IS NULL OR i.status = p_status)
+    AND (p_client_id IS NULL OR i.client_id = p_client_id)
+  ORDER BY i.issue_date DESC;
+END$$
+
+CREATE PROCEDURE sp_invoice_by_id(IN p_id BIGINT)
+p: BEGIN
+  SELECT i.id, i.client_id, c.name AS client_name, i.service_request_id, sr.folio,
+         i.invoice_number, i.amount, i.issue_date, i.due_date, i.status,
+         COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.id), 0) AS paid
+  FROM invoices i
+  JOIN clients c ON c.id = i.client_id
+  JOIN service_requests sr ON sr.id = i.service_request_id
+  WHERE i.id = p_id;
+END$$
+
+CREATE PROCEDURE sp_invoice_by_request(IN p_request_id BIGINT)
+p: BEGIN
+  SELECT i.id, i.client_id, c.name AS client_name, i.service_request_id, sr.folio,
+         i.invoice_number, i.amount, i.issue_date, i.due_date, i.status,
+         COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.id), 0) AS paid
+  FROM invoices i
+  JOIN clients c ON c.id = i.client_id
+  JOIN service_requests sr ON sr.id = i.service_request_id
+  WHERE i.service_request_id = p_request_id;
+END$$
+
+CREATE PROCEDURE sp_invoice_delete(IN p_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  SET p_problems = NULL;
+  DELETE FROM payments WHERE invoice_id = p_id;
+  DELETE FROM invoices WHERE id = p_id;
+END$$
+
+CREATE PROCEDURE sp_invoice_set_status(IN p_id BIGINT, IN p_status VARCHAR(20))
+p: BEGIN
+  UPDATE invoices SET status = p_status WHERE id = p_id;
+END$$
+
+-- ---------------------------------------------------------------- payments
+
+CREATE PROCEDURE sp_payments_by_invoice(IN p_invoice_id BIGINT)
+p: BEGIN
+  SELECT p.id, p.invoice_id, i.invoice_number, p.amount, p.payment_date, p.payment_method
+  FROM payments p JOIN invoices i ON i.id = p.invoice_id
+  WHERE p.invoice_id = p_invoice_id
+  ORDER BY p.payment_date;
+END$$
+
+CREATE PROCEDURE sp_payments_list()
+p: BEGIN
+  SELECT p.id, p.invoice_id, i.invoice_number, p.amount, p.payment_date, p.payment_method
+  FROM payments p JOIN invoices i ON i.id = p.invoice_id
+  ORDER BY p.payment_date DESC;
+END$$
+
+CREATE PROCEDURE sp_payment_sum_by_invoice(IN p_invoice_id BIGINT)
+p: BEGIN
+  SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE invoice_id = p_invoice_id;
+END$$
+
+CREATE PROCEDURE sp_payment_delete(IN p_id BIGINT)
+p: BEGIN
+  DELETE FROM payments WHERE id = p_id;
+END$$
+
+-- ---------------------------------------------------------------- dashboard
+
+CREATE PROCEDURE sp_dashboard(IN p_today DATE, OUT p_expiring_licenses INT,
+    OUT p_overdue_invoices INT, OUT p_maintenance_due INT, OUT p_pending_assignments INT)
+p: BEGIN
+  SELECT COUNT(*) INTO p_expiring_licenses
+  FROM employees e JOIN licenses l ON l.id = e.license_id
+  WHERE l.expiration_date <= DATE_ADD(p_today, INTERVAL 30 DAY);
+
+  SELECT COUNT(*) INTO p_overdue_invoices
+  FROM invoices i
+  WHERE i.status <> 'cancelled' AND i.due_date < p_today
+    AND i.amount > COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.id), 0);
+
+  SELECT COUNT(DISTINCT m.vehicle_id) INTO p_maintenance_due
+  FROM maintenance m JOIN vehicles v ON v.id = m.vehicle_id
+  WHERE (m.next_service_date IS NOT NULL AND m.next_service_date <= p_today)
+     OR (m.next_service_km IS NOT NULL AND m.next_service_km <= v.mileage);
+
+  SELECT COUNT(*) INTO p_pending_assignments
+  FROM service_requests WHERE status = 'scheduled';
+END$$
+
+DELIMITER ;
+
+-- ================================================================ extras
+
+DELIMITER $$
+
+-- BR-04: newest rate valid for the client/route on the given date.
+CREATE PROCEDURE sp_client_rate_suggest(IN p_client_id BIGINT, IN p_route_id BIGINT,
+    IN p_on_date DATE)
+p: BEGIN
+  SELECT cr.rate
+  FROM client_rates cr
+  WHERE cr.client_id = p_client_id AND cr.route_id = p_route_id
+    AND cr.valid_from <= p_on_date
+    AND (cr.valid_to IS NULL OR cr.valid_to >= p_on_date)
+  ORDER BY cr.valid_from DESC
+  LIMIT 1;
+END$$
+
+-- BR-13 / FR-DEL-2 is implemented by sp_close_request above.
 
 DELIMITER ;

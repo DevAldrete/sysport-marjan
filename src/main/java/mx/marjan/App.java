@@ -16,7 +16,7 @@ public final class App {
         if (!Database.testConnection()) {
             JOptionPane.showMessageDialog(null,
                     "No se pudo conectar a la base de datos.\n\nURL: " + Database.url()
-                            + "\n\nVerifique que MariaDB este corriendo (docker compose up -d).",
+                            + "\n\nVerifique que MySQL este corriendo (docker compose up -d).",
                     "SysPort MARJAN", JOptionPane.ERROR_MESSAGE);
             System.exit(1);
         }

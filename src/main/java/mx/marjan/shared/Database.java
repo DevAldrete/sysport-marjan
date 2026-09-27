@@ -1,10 +1,12 @@
 package mx.marjan.shared;
 
+import java.sql.CallableStatement;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -23,8 +25,9 @@ public final class Database {
     if (direct != null && !direct.isBlank()) {
       return direct;
     }
-    return "jdbc:mariadb://" + env("DB_HOST", "localhost") + ":" + env("DB_PORT", "3306")
-        + "/" + env("DB_NAME", "sysportdb");
+    return "jdbc:mysql://" + env("DB_HOST", "localhost") + ":" + env("DB_PORT", "3306")
+        + "/" + env("DB_NAME", "sysportdb")
+        + "?sslMode=DISABLED&allowPublicKeyRetrieval=true";
   }
 
   public static String user() {
@@ -154,6 +157,99 @@ public final class Database {
   public static int update(String sql, Object... params) {
     try (Connection connection = getConnection()) {
       return update(connection, sql, params);
+    } catch (SQLException failure) {
+      throw new DataException(translate(failure), failure);
+    }
+  }
+
+  // Convenience overloads for simple reads/writes that open their own connection.
+
+  /**
+   * Invokes a stored procedure, registering {@code outTypes.length} OUT parameters
+   * after the IN parameters, and returns their values in order.
+   */
+  public static Object[] call(String callSql, int[] outTypes, Object... inParams) {
+    try (Connection connection = getConnection();
+        CallableStatement statement = connection.prepareCall(callSql)) {
+      bind(statement, inParams);
+      for (int i = 0; i < outTypes.length; i++) {
+        statement.registerOutParameter(inParams.length + 1 + i, outTypes[i]);
+      }
+      statement.execute();
+      Object[] outs = new Object[outTypes.length];
+      for (int i = 0; i < outTypes.length; i++) {
+        outs[i] = statement.getObject(inParams.length + 1 + i);
+      }
+      return outs;
+    } catch (SQLException failure) {
+      throw new DataException(translate(failure), failure);
+    }
+  }
+
+  /** Runs a read procedure and maps all rows of its first result set. */
+  public static <T> List<T> callList(String callSql, RowMapper<T> mapper, Object... params) {
+    try (Connection connection = getConnection();
+        CallableStatement statement = connection.prepareCall(callSql)) {
+      bind(statement, params);
+      try (ResultSet rs = statement.executeQuery()) {
+        List<T> rows = new ArrayList<>();
+        while (rs.next()) {
+          rows.add(mapper.map(rs));
+        }
+        return rows;
+      }
+    } catch (SQLException failure) {
+      throw new DataException(translate(failure), failure);
+    }
+  }
+
+  /** Runs a read procedure and maps the first row of its first result set. */
+  public static <T> Optional<T> callOne(String callSql, RowMapper<T> mapper, Object... params) {
+    List<T> rows = callList(callSql, mapper, params);
+    return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
+  }
+
+  /** Calls a procedure with no OUT parameters (pure write). */
+  public static void callNoOut(String callSql, Object... inParams) {
+    call(callSql, new int[0], inParams);
+  }
+
+  /** Calls a procedure whose single OUT is {@code p_problems TEXT}. */
+  public static Result<Void> callVoid(String callSql, Object... inParams) {
+    Object[] out = call(callSql, new int[] { Types.VARCHAR }, inParams);
+    String problems = asProblems(out[0]);
+    return problems == null ? Result.ok(null) : Result.err(problems);
+  }
+
+  /** Calls a procedure shaped as {@code OUT p_id BIGINT, OUT p_problems TEXT}. */
+  public static Result<Long> callForId(String callSql, Object... inParams) {
+    Object[] out = call(callSql, new int[] { Types.BIGINT, Types.VARCHAR }, inParams);
+    Long id = asLong(out[0]);
+    String problems = asProblems(out[1]);
+    return problems == null ? Result.ok(id) : Result.err(problems);
+  }
+
+  public static Long asLong(Object value) {
+    return value == null ? null : ((Number) value).longValue();
+  }
+
+  public static String asProblems(Object value) {
+    if (value == null) {
+      return null;
+    }
+    String problems = value.toString().trim();
+    return problems.isEmpty() ? null : problems;
+  }
+
+  /** Runs a read procedure and returns the raw first result set as a report. */
+  public static <T> T callReport(java.util.function.Function<ResultSet, T> reader, String callSql,
+      Object... params) {
+    try (Connection connection = getConnection();
+        CallableStatement statement = connection.prepareCall(callSql)) {
+      bind(statement, params);
+      try (ResultSet rs = statement.executeQuery()) {
+        return reader.apply(rs);
+      }
     } catch (SQLException failure) {
       throw new DataException(translate(failure), failure);
     }

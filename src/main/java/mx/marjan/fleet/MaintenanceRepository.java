@@ -5,16 +5,10 @@ import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.List;
 import mx.marjan.shared.Database;
+import mx.marjan.shared.Result;
 
+/** Thin JDBC wrapper over the maintenance stored procedures. */
 public class MaintenanceRepository {
-
-    private static final String BASE = """
-            SELECT m.id, m.vehicle_id, m.maintenance_date, m.odometer_reading, m.maintenance_type,
-                   m.work_performed, m.provider, m.cost, m.next_service_date, m.next_service_km,
-                   CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label
-            FROM maintenance m
-            JOIN vehicles v ON v.id = m.vehicle_id
-            """;
 
     private Maintenance map(ResultSet rs) throws SQLException {
         return new Maintenance(
@@ -32,25 +26,17 @@ public class MaintenanceRepository {
     }
 
     public List<Maintenance> listByVehicle(long vehicleId) {
-        return Database.queryList(BASE + " WHERE m.vehicle_id = ? ORDER BY m.maintenance_date DESC",
-                this::map, vehicleId);
+        return Database.callList("{call sp_maintenance_by_vehicle(?)}", this::map, vehicleId);
     }
 
-    public long insert(java.sql.Connection connection, Maintenance maintenance) throws SQLException {
-        long id = mx.marjan.shared.Sequences.next(connection, "maintenance");
-        Database.update(connection, """
-                INSERT INTO maintenance
-                  (id, vehicle_id, maintenance_date, odometer_reading, maintenance_type, work_performed,
-                   provider, cost, next_service_date, next_service_km)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                id, maintenance.vehicleId(), maintenance.maintenanceDate(), maintenance.odometerReading(),
-                maintenance.type().dbValue(), maintenance.workPerformed(), maintenance.provider(),
-                maintenance.cost(), maintenance.nextServiceDate(), maintenance.nextServiceKm());
-        return id;
+    public Result<Long> save(Maintenance record, long userId) {
+        return Database.callForId("{call sp_maintenance_save(?,?,?,?,?,?,?,?,?,?,?,?)}",
+                record.vehicleId(), record.maintenanceDate(), record.odometerReading(),
+                record.type().dbValue(), record.workPerformed(), record.provider(), record.cost(),
+                record.nextServiceDate(), record.nextServiceKm(), userId);
     }
 
     public void delete(long id) {
-        Database.update("DELETE FROM maintenance WHERE id = ?", id);
+        Database.callNoOut("{call sp_maintenance_delete(?)}", id);
     }
 }

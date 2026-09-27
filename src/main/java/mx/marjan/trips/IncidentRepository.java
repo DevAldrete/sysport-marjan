@@ -6,16 +6,10 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
 import mx.marjan.shared.Database;
+import mx.marjan.shared.Result;
 
+/** Thin JDBC wrapper over the incident stored procedures. */
 public class IncidentRepository {
-
-    private static final String BASE = """
-            SELECT i.id, i.trip_id, sr.folio, i.incident_date, i.incident_time,
-                   i.location, i.incident_type, i.description, i.actions_taken
-            FROM incidents i
-            JOIN trips t ON t.id = i.trip_id
-            JOIN service_requests sr ON sr.id = t.service_request_id
-            """;
 
     private Incident map(ResultSet rs) throws SQLException {
         return new Incident(
@@ -31,25 +25,17 @@ public class IncidentRepository {
     }
 
     public List<Incident> listByTrip(long tripId) {
-        return Database.queryList(BASE + " WHERE i.trip_id = ? ORDER BY i.incident_date, i.incident_time",
-                this::map, tripId);
+        return Database.callList("{call sp_incidents_by_trip(?)}", this::map, tripId);
     }
 
-    public long insert(java.sql.Connection connection, Incident incident) throws SQLException {
-        long id = mx.marjan.shared.Sequences.next(connection, "incidents");
-        Database.update(connection, """
-                INSERT INTO incidents
-                  (id, trip_id, incident_date, incident_time, location, incident_type,
-                   description, actions_taken, created_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                id, incident.tripId(), incident.incidentDate(), incident.incidentTime(),
+    public Result<Long> save(Incident incident, long userId) {
+        return Database.callForId("{call sp_incident_save(?,?,?,?,?,?,?,?,?,?)}",
+                incident.tripId(), incident.incidentDate(), incident.incidentTime(),
                 incident.location(), incident.type().dbValue(), incident.description(),
-                incident.actionsTaken(), mx.marjan.security.Session.userId());
-        return id;
+                incident.actionsTaken(), userId);
     }
 
     public void delete(long id) {
-        Database.update("DELETE FROM incidents WHERE id = ?", id);
+        Database.callNoOut("{call sp_incident_delete(?)}", id);
     }
 }

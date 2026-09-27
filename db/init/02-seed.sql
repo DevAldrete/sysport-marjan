@@ -1,7 +1,8 @@
 -- SysPort - MARJAN :: seed data (development / demo)
--- All passwords are "admin123" (bcrypt, dev only). All data below is fake.
--- No AUTO_INCREMENT: ids are explicit here and the sequences table is primed
--- at the end so the application continues from the right numbers.
+-- Small, hand-picked dataset: ~10 rows per sample table so it is easy to reason
+-- about. All passwords are "admin123" (bcrypt, dev only). All data below is fake.
+-- No AUTO_INCREMENT: ids are explicit here and the sequences table is primed at
+-- the end so the application continues from the right numbers.
 
 -- ---------------------------------------------------------------- security
 
@@ -62,7 +63,11 @@ INSERT INTO licenses (id, license_number, license_type, issue_date, expiration_d
   (3, 'LIC-MRJ-0003', 'Federal C', '2023-06-10', '2026-12-10'),
   (4, 'LIC-MRJ-0004', 'Federal C', '2023-08-20', '2026-11-20'),
   (5, 'LIC-MRJ-0005', 'Federal B', '2024-02-01', '2028-05-05'),
-  (6, 'LIC-MRJ-0006', 'Federal C', '2023-10-10', '2027-09-09');
+  (6, 'LIC-MRJ-0006', 'Federal C', '2023-10-10', '2027-09-09'),
+  (7, 'LIC-MRJ-0007', 'Federal E', '2024-01-01', '2028-01-01'),
+  (8, 'LIC-MRJ-0008', 'Federal B', '2022-05-05', '2027-05-05'),
+  (9, 'LIC-MRJ-0009', 'Federal C', '2023-03-03', '2026-10-20'),
+  (10, 'LIC-MRJ-0010', 'Federal E', '2024-06-06', '2029-06-06');
 
 INSERT INTO employees
   (id, name, address, phone, email, rfc, curp,
@@ -78,7 +83,15 @@ INSERT INTO employees
   (5, 'Miguel Angel Torres', 'Av. Juarez 55, Puebla', '5551000005', 'miguel.torres@marjan.mx',
    'TOMA820202MNO', 'TOMA820202HPLRRS05', 'Sara Torres', '5551000095', 5, 'resting'),
   (6, 'Fernando Castro Gil', 'Calle 20 de Noviembre 9, CDMX', '5551000006', 'fernando.castro@marjan.mx',
-   'CAGF880808PQR', 'CAGF880808HDFRRS06', 'Luz Gil', '5551000096', 6, 'available');
+   'CAGF880808PQR', 'CAGF880808HDFRRS06', 'Luz Gil', '5551000096', 6, 'available'),
+  (7, 'Ana Rivas Soto', 'Av. Universidad 200, CDMX', '5551000007', 'ana.rivas@marjan.mx',
+   'RISA800909AB1', 'RISA800909MDFRSN07', 'Jorge Soto', '5551000097', 7, 'available'),
+  (8, 'Carlos Mendez Ruiz', 'Calle Morelos 12, Puebla', '5551000008', 'carlos.mendez@marjan.mx',
+   'MERC910101TUV', 'MERC910101HPLRZR08', 'Sofia Ruiz', '5551000098', 8, 'available'),
+  (9, 'Diana Paredes Leon', 'Blvd. Diaz Ordaz 44, CDMX', '5551000009', 'diana.paredes@marjan.mx',
+   'PALD920202WXY', 'PALD920202MDFRLN09', 'Mario Leon', '5551000099', 9, 'available'),
+  (10, 'Erik Salinas Mora', 'Calle Zaragoza 7, Queretaro', '5551000010', 'erik.salinas@marjan.mx',
+   'SAME930303ZAB', 'SAME930303HQRLRM10', 'Rita Mora', '5551000100', 10, 'available');
 
 INSERT INTO users (id, employee_id, username, password_hash, role_id, status) VALUES
   (1, NULL, 'admin',       '$2a$10$eyAVHtcAySDTLjNDlIGuROCBMcOg3GfQrm9pWOYuAISimjSIJjd.y', 1, 'active'),
@@ -103,7 +116,15 @@ INSERT INTO clients
   (5, 'Comercializadora del Golfo SA de CV', 'CGO100505EEE', 'Veracruz, VER', '2291000005',
    'trafico@cgolfo.mx', 'Paola Cruz', 'frequent', 'credit', 200000.00, 45, 'active'),
   (6, 'Servicios Logisticos del Centro SA de CV', 'SLC150606FFF', 'Queretaro, QRO', '4421000006',
-   'operaciones@slcentro.mx', 'Ramon Vega', 'occasional', 'cash', 0.00, 0, 'active');
+   'operaciones@slcentro.mx', 'Ramon Vega', 'occasional', 'cash', 0.00, 0, 'active'),
+  (7, 'Refacciones del Sureste SA de CV', 'RSU200707GGG', 'Merida, YUC', '9991000007',
+   'compras@rsureste.mx', 'Ana Pena', 'frequent', 'credit', 120000.00, 30, 'active'),
+  (8, 'Farmacias del Centro SA de CV', 'FCE210808HHH', 'Toluca, MEX', '7221000008',
+   'logistica@fcentro.mx', 'Jorge Silva', 'occasional', 'cash', 0.00, 0, 'active'),
+  (9, 'Bebidas del Pacifico SA de CV', 'BPA220909III', 'Culiacan, SIN', '6671000009',
+   'trafico@bpacifico.mx', 'Rosa Ibarra', 'frequent', 'credit', 90000.00, 15, 'inactive'),
+  (10, 'Minera del Norte SA de CV', 'MNO231010JJJ', 'Torreon, COAH', '8711000010',
+   'compras@mnorte.mx', 'Ivan Aguilar', 'occasional', 'cash', 0.00, 0, 'active');
 
 INSERT INTO routes (id, origin, destination, estimated_km, description) VALUES
   (1, 'CDMX', 'Monterrey, NL', 900.0, 'Corredor federal via Queretaro'),
@@ -111,7 +132,11 @@ INSERT INTO routes (id, origin, destination, estimated_km, description) VALUES
   (3, 'Monterrey, NL', 'Puebla, PUE', 1000.0, 'Retorno cargado'),
   (4, 'Leon, GTO', 'CDMX', 380.0, 'Tramo corto'),
   (5, 'CDMX', 'Merida, YUC', 1300.0, 'Ruta larga sureste'),
-  (6, 'Guadalajara, JAL', 'Monterrey, NL', 750.0, 'Ruta centro-norte');
+  (6, 'Guadalajara, JAL', 'Monterrey, NL', 750.0, 'Ruta centro-norte'),
+  (7, 'Puebla, PUE', 'Veracruz, VER', 280.0, 'Corredor Golfo'),
+  (8, 'CDMX', 'Queretaro, QRO', 220.0, 'Tramo corto Bajio'),
+  (9, 'Monterrey, NL', 'Saltillo, COAH', 90.0, 'Ruta regional'),
+  (10, 'CDMX', 'Puebla, PUE', 130.0, 'Ruta metropolitana');
 
 INSERT INTO client_rates (id, client_id, route_id, rate, valid_from, valid_to) VALUES
   (1, 1, 1, 42000.00, '2026-01-01', NULL),
@@ -136,7 +161,10 @@ INSERT INTO vehicles
   (4, 'ECO-04', 'JKL-012-D', 'Volvo', 'VNL', 2019, 'SN0004', 'Tractocamion', 34000.0, 260000.0, 'out_of_service'),
   (5, 'ECO-05', 'MNO-345-E', 'International', 'LT', 2022, 'SN0005', 'Tractocamion', 37000.0, 60000.0, 'available'),
   (6, 'ECO-06', 'PQR-678-F', 'Kenworth', 'T800', 2017, 'SN0006', 'Tractocamion', 33000.0, 320000.0, 'available'),
-  (7, 'ECO-07', 'STU-901-G', 'Ford', 'F-350', 2016, 'SN0007', 'Camioneta', 3000.0, 150000.0, 'decommissioned');
+  (7, 'ECO-07', 'STU-901-G', 'Ford', 'F-350', 2016, 'SN0007', 'Camioneta', 3000.0, 150000.0, 'decommissioned'),
+  (8, 'ECO-08', 'VWX-234-H', 'Scania', 'R450', 2023, 'SN0008', 'Tractocamion', 38000.0, 40000.0, 'available'),
+  (9, 'ECO-09', 'YZA-567-I', 'MAN', 'TGX', 2020, 'SN0009', 'Tractocamion', 36000.0, 120000.0, 'available'),
+  (10, 'ECO-10', 'BCD-890-J', 'Isuzu', 'NPR', 2019, 'SN0010', 'Camion 3.5t', 3500.0, 85000.0, 'available');
 
 -- ---------------------------------------------------------------- requests
 
@@ -162,15 +190,7 @@ INSERT INTO service_requests
   (9, 'SR-2026-000009', 5, 6, 'Envases de vidrio', 14000.0, '2026-09-28 07:00:00', '2026-09-30 19:00:00',
    39000.00, TRUE, 'scheduled', NULL, 1),
   (10, 'SR-2026-000010', 1, 2, 'Partes automotrices', 7000.0, '2026-10-01 06:00:00', '2026-10-03 18:00:00',
-   30000.00, TRUE, 'assigned', NULL, 1),
-  (11, 'SR-2026-000011', 6, 2, 'Papeleria', 2000.0, '2026-10-05 08:00:00', '2026-10-06 18:00:00',
-   NULL, TRUE, 'requested', 'Solicitud nueva', 1),
-  (12, 'SR-2026-000012', 4, 1, 'Perfiles de aluminio', 11000.0, NULL, NULL,
-   45000.00, TRUE, 'authorized', 'Falta programar', 1),
-  (13, 'SR-2026-000013', 3, 2, 'Salas y sillones', 12000.0, '2026-08-01 07:00:00', '2026-08-03 19:00:00',
-   28000.00, TRUE, 'closed', NULL, 1),
-  (14, 'SR-2026-000014', 6, 4, 'Herramienta', 1800.0, '2026-09-05 08:00:00', '2026-09-05 20:00:00',
-   16000.00, TRUE, 'delivered', NULL, 1);
+   30000.00, TRUE, 'assigned', NULL, 1);
 
 -- ---------------------------------------------------------------- trips
 
@@ -188,19 +208,13 @@ INSERT INTO trips
   (5, 8, 5, 1, 1300.0, 1310.0, '2026-09-10 05:30:00', '2026-09-13 22:00:00',
    '2026-09-10 05:45:00', '2026-09-13 21:20:00', 'completed', 1),
   (6, 10, 1, 6, 550.0, NULL, '2026-10-01 06:00:00', '2026-10-03 18:00:00',
-   NULL, NULL, 'scheduled', 1),
-  (7, 13, 6, 5, 550.0, 553.0, '2026-08-01 07:00:00', '2026-08-03 19:00:00',
-   '2026-08-01 07:10:00', '2026-08-03 18:40:00', 'completed', 1),
-  (8, 14, 1, 6, 380.0, 378.0, '2026-09-05 08:00:00', '2026-09-05 20:00:00',
-   '2026-09-05 08:10:00', '2026-09-05 19:50:00', 'completed', 1);
+   NULL, NULL, 'scheduled', 1);
 
 INSERT INTO deliveries (id, trip_id, actual_datetime, received_by, evidence_reference, status, created_by) VALUES
   (1, 1, '2026-05-04 17:30:00', 'Almacen Central', 'PO-88231', 'complete', 1),
   (2, 2, '2026-05-12 16:40:00', 'Sofia Ramirez', 'PO-88232', 'complete', 1),
   (3, 4, '2026-07-07 19:30:00', 'Diego Luna', 'PO-88233', 'complete', 1),
-  (4, 5, '2026-09-13 21:20:00', 'Paola Cruz', 'PO-88234', 'complete', 1),
-  (5, 7, '2026-08-03 18:40:00', 'Sofia Ramirez', 'PO-88235', 'complete', 1),
-  (6, 8, '2026-09-05 19:50:00', 'Ramon Vega', 'PO-88236', 'complete', 1);
+  (4, 5, '2026-09-13 21:20:00', 'Paola Cruz', 'PO-88234', 'complete', 1);
 
 -- ---------------------------------------------------------------- costs
 
@@ -214,12 +228,7 @@ INSERT INTO expenses (id, trip_id, expense_type, amount, expense_date, descripti
   (7, 4, 'tolls', 1900.00, '2026-07-05', 'Casetas CDMX-Monterrey', 1),
   (8, 4, 'food', 520.00, '2026-07-06', 'Comidas', 1),
   (9, 5, 'tolls', 2400.00, '2026-09-10', 'Casetas a Merida', 1),
-  (10, 5, 'lodging', 1400.00, '2026-09-11', 'Hospedaje', 1),
-  (11, 5, 'food', 700.00, '2026-09-12', 'Comidas', 1),
-  (12, 7, 'tolls', 1150.00, '2026-08-01', 'Casetas a Guadalajara', 1),
-  (13, 8, 'parking', 180.00, '2026-09-05', 'Estacionamiento', 1),
-  (14, 4, 'permits', 850.00, '2026-07-05', 'Permiso de transporte', 1),
-  (15, 3, 'handling', 600.00, '2026-09-21', 'Maniobras de carga', 1);
+  (10, 5, 'lodging', 1400.00, '2026-09-11', 'Hospedaje', 1);
 
 INSERT INTO advances
   (id, trip_id, employee_id, amount_given, delivered_date, status, settled_at, settled_by, created_by) VALUES
@@ -227,7 +236,10 @@ INSERT INTO advances
   (2, 3, 2, 4000.00, '2026-09-20', 'pending', NULL, NULL, 1),
   (3, 4, 6, 3500.00, '2026-07-05', 'settled', '2026-07-08 09:00:00', 1, 1),
   (4, 5, 1, 6000.00, '2026-09-10', 'pending', NULL, NULL, 1),
-  (5, 6, 6, 3000.00, '2026-10-01', 'pending', NULL, NULL, 1);
+  (5, 6, 6, 3000.00, '2026-10-01', 'pending', NULL, NULL, 1),
+  (6, 2, 1, 2500.00, '2026-05-10', 'settled', '2026-05-13 09:00:00', 1, 1),
+  (7, 3, 2, 1500.00, '2026-09-20', 'pending', NULL, NULL, 1),
+  (8, 5, 1, 1200.00, '2026-09-10', 'pending', NULL, NULL, 1);
 
 INSERT INTO fuel_loads
   (id, vehicle_id, trip_id, fuel_station, load_date, liters, price_per_liter, amount, odometer_reading, created_by) VALUES
@@ -236,8 +248,8 @@ INSERT INTO fuel_loads
   (3, 2, 3, 'Pemex Saltillo', '2026-09-20 07:00:00', 250.00, 24.800, 6200.00, 185200.0, 1),
   (4, 6, 4, 'Pemex Queretaro', '2026-07-05 07:00:00', 280.00, 24.100, 6748.00, 320150.0, 1),
   (5, 5, 5, 'Pemex Oriente', '2026-09-10 06:30:00', 400.00, 24.400, 9760.00, 60200.0, 1),
-  (6, 1, 8, 'Pemex Norte', '2026-09-05 07:30:00', 150.00, 24.600, 3690.00, 210220.0, 1),
-  (7, 6, 7, 'Pemex Bajio', '2026-08-01 07:00:00', 170.00, 24.200, 4114.00, 320400.0, 1),
+  (6, 1, 6, 'Pemex Norte', '2026-10-01 07:30:00', 150.00, 24.600, 3690.00, 210220.0, 1),
+  (7, 6, NULL, 'Pemex Bajio', '2026-08-01 07:00:00', 170.00, 24.200, 4114.00, 320400.0, 1),
   (8, 2, NULL, 'Pemex Saltillo', '2026-09-19 18:00:00', 120.00, 24.700, 2964.00, 185050.0, 1),
   (9, 5, NULL, 'Pemex Oriente', '2026-09-08 18:00:00', 90.00, 24.400, 2196.00, 59900.0, 1),
   (10, 1, NULL, 'Pemex Norte', '2026-09-02 18:00:00', 100.00, 24.600, 2460.00, 210130.0, 1);
@@ -254,7 +266,9 @@ INSERT INTO maintenance
   (4, 5, '2026-08-10', 59000.0, 'preventive', 'Afinacion menor', 'Taller Autorizado', 4800.00,
    '2026-11-10', 69000.0, 1),
   (5, 2, '2026-03-05', 180000.0, 'corrective', 'Reparacion de frenos', 'Taller Norte', 12000.00,
-   '2026-09-05', 190000.0, 1);
+   '2026-09-05', 190000.0, 1),
+  (6, 8, '2026-07-01', 38000.0, 'preventive', 'Servicio de 40 mil km', 'Taller Central', 7200.00,
+   '2027-01-01', 48000.0, 1);
 
 INSERT INTO incidents
   (id, trip_id, incident_date, incident_time, location, incident_type, description, actions_taken, created_by) VALUES
@@ -264,24 +278,29 @@ INSERT INTO incidents
    'Se desvio por ruta alterna', 1),
   (3, 5, '2026-09-12', '09:15:00', 'Villahermosa, TAB', 'road_closure', 'Manifestacion bloquea la carretera',
    'Se espero 3 horas', 1),
-  (4, 8, '2026-09-05', '13:40:00', 'San Juan del Rio, QRO', 'cargo_damage', 'Caja con herramienta danada',
-   'Se documento con el cliente', 1);
+  (4, 4, '2026-07-06', '13:40:00', 'San Juan del Rio, QRO', 'cargo_damage', 'Caja con herramienta danada',
+   'Se documento con el cliente', 1),
+  (5, 2, '2026-05-11', '10:20:00', 'Lagos de Moreno, JAL', 'delay', 'Trafico intenso',
+   'Se notifico al cliente', 1),
+  (6, 1, '2026-05-02', '12:00:00', 'Saltillo, COAH', 'other', 'Revision de documentos en reten',
+   'Se mostro documentacion', 1);
 
 -- ---------------------------------------------------------------- finance
 
 INSERT INTO invoices
   (id, client_id, service_request_id, invoice_number, amount, issue_date, due_date, status, created_by) VALUES
-  (1, 1, 1, 'INV-2026-0001', 42000.00, '2026-06-01', '2026-07-01', 'overdue', 1),
-  (2, 3, 2, 'INV-2026-0002', 28000.00, '2026-05-15', '2026-05-15', 'paid', 1),
-  (3, 4, 7, 'INV-2026-0003', 45000.00, '2026-08-01', '2026-08-16', 'pending', 1),
-  (4, 5, 8, 'INV-2026-0004', 58000.00, '2026-09-15', '2026-10-30', 'pending', 1),
-  (5, 3, 13, 'INV-2026-0005', 28000.00, '2026-08-20', '2026-08-20', 'paid', 1);
+  (1, 1, 1, 'INV-2026-000001', 42000.00, '2026-06-01', '2026-07-01', 'overdue', 1),
+  (2, 3, 2, 'INV-2026-000002', 28000.00, '2026-05-15', '2026-05-15', 'paid', 1),
+  (3, 4, 7, 'INV-2026-000003', 45000.00, '2026-08-01', '2026-08-16', 'pending', 1),
+  (4, 5, 8, 'INV-2026-000004', 58000.00, '2026-09-15', '2026-10-30', 'pending', 1);
 
 INSERT INTO payments (id, invoice_id, amount, payment_date, payment_method, created_by) VALUES
   (1, 2, 28000.00, '2026-05-15', 'cash', 1),
   (2, 3, 20000.00, '2026-08-10', 'transfer', 1),
-  (3, 5, 28000.00, '2026-08-20', 'check', 1),
-  (4, 4, 10000.00, '2026-09-20', 'transfer', 1);
+  (3, 4, 10000.00, '2026-09-20', 'transfer', 1),
+  (4, 1, 15000.00, '2026-07-15', 'check', 1),
+  (5, 3, 5000.00, '2026-08-20', 'cash', 1),
+  (6, 4, 8000.00, '2026-09-22', 'card', 1);
 
 -- ---------------------------------------------------------------- sequences
 -- Prime ids from the data above so the app continues without collisions.

@@ -22,7 +22,7 @@ public class OperatorsView extends BaseView {
             RecordTableModel.Column.of("Telefono", Employee::phone),
             RecordTableModel.Column.of("Licencia", employee -> employee.license() == null
                     ? "Sin licencia" : employee.license().licenseNumber()),
-            RecordTableModel.Column.of("Vence", employee -> LicenseRules.expiryLabel(employee.license(), today)),
+            RecordTableModel.Column.of("Vence", employee -> licenseLabel(employee.license(), today)),
             RecordTableModel.Column.of("Estado", employee -> employee.status().label())));
     private final JTable table = Ui.table(model);
     private final JTextField searchField = new JTextField(18);
@@ -43,6 +43,19 @@ public class OperatorsView extends BaseView {
     public void reload() {
         String term = searchField.getText();
         load(() -> service.search(term), model::setRows);
+    }
+
+    private static String licenseLabel(License license, LocalDate today) {
+        if (license == null || license.expirationDate() == null) {
+            return "Sin licencia";
+        }
+        if (license.expirationDate().isBefore(today)) {
+            return "VENCIDA (" + license.expirationDate() + ")";
+        }
+        if (!license.expirationDate().isAfter(today.plusDays(30))) {
+            return "Por vencer (" + license.expirationDate() + ")";
+        }
+        return license.expirationDate().toString();
     }
 
     private Employee selected() {

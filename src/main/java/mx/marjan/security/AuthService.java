@@ -68,10 +68,7 @@ public class AuthService {
         }
         String name = username.trim();
         String hash = BCrypt.hashpw(password, BCrypt.gensalt(12));
-        mx.marjan.shared.Database.inTransaction(connection -> {
-            users.insert(connection, name, hash, roleId, employeeId, status);
-            return null;
-        });
+        users.insert(name, hash, roleId, employeeId, status);
         return Result.ok(null);
     }
 

@@ -5,19 +5,10 @@ import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.List;
 import mx.marjan.shared.Database;
+import mx.marjan.shared.Result;
 
+/** Thin JDBC wrapper over the fuel-load stored procedures. */
 public class FuelLoadRepository {
-
-    private static final String BASE = """
-            SELECT f.id, f.vehicle_id, f.trip_id, f.fuel_station, f.load_date, f.liters,
-                   f.price_per_liter, f.amount, f.odometer_reading,
-                   CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label,
-                   sr.folio
-            FROM fuel_loads f
-            JOIN vehicles v ON v.id = f.vehicle_id
-            LEFT JOIN trips t ON t.id = f.trip_id
-            LEFT JOIN service_requests sr ON sr.id = t.service_request_id
-            """;
 
     private FuelLoad map(ResultSet rs) throws SQLException {
         Long tripId = rs.getObject("trip_id", Long.class);
@@ -36,44 +27,35 @@ public class FuelLoadRepository {
     }
 
     public List<FuelLoad> listByVehicle(long vehicleId) {
-        return Database.queryList(BASE + " WHERE f.vehicle_id = ? ORDER BY f.load_date DESC",
-                this::map, vehicleId);
+        return Database.callList("{call sp_fuel_by_vehicle(?)}", this::map, vehicleId);
     }
 
     public List<FuelLoad> listByTrip(long tripId) {
-        return Database.queryList(BASE + " WHERE f.trip_id = ? ORDER BY f.load_date", this::map, tripId);
+        return Database.callList("{call sp_fuel_by_trip(?)}", this::map, tripId);
     }
 
     public List<FuelLoad> listAll() {
-        return Database.queryList(BASE + " ORDER BY f.load_date DESC", this::map);
+        return Database.callList("{call sp_fuel_list()}", this::map);
     }
 
     public java.util.OptionalLong vehicleIdForTrip(long tripId) {
-        java.util.Optional<Long> id = Database.queryOne(
-                "SELECT vehicle_id FROM trips WHERE id = ?", rs -> rs.getLong("vehicle_id"), tripId);
-        return id.isPresent() ? java.util.OptionalLong.of(id.get()) : java.util.OptionalLong.empty();
+        return Database.callOne("{call sp_trip_vehicle(?)}",
+                rs -> rs.getLong("vehicle_id"), tripId)
+                .map(java.util.OptionalLong::of).orElse(java.util.OptionalLong.empty());
     }
 
     public java.math.BigDecimal sumByTrip(long tripId) {
-        return Database.queryOne(
-                "SELECT COALESCE(SUM(amount), 0) AS total FROM fuel_loads WHERE trip_id = ?",
+        return Database.callOne("{call sp_fuel_sum_by_trip(?)}",
                 rs -> rs.getBigDecimal("total"), tripId).orElse(java.math.BigDecimal.ZERO);
     }
 
-    public long insert(java.sql.Connection connection, FuelLoad load) throws SQLException {
-        long id = mx.marjan.shared.Sequences.next(connection, "fuel_loads");
-        Database.update(connection, """
-                INSERT INTO fuel_loads
-                  (id, vehicle_id, trip_id, fuel_station, load_date, liters, price_per_liter,
-                   amount, odometer_reading)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                id, load.vehicleId(), load.tripId(), load.fuelStation(), load.loadDate(),
-                load.liters(), load.pricePerLiter(), load.amount(), load.odometerReading());
-        return id;
+    public Result<Long> save(FuelLoad load, long userId) {
+        return Database.callForId("{call sp_fuel_save(?,?,?,?,?,?,?,?,?,?,?)}",
+                load.vehicleId(), load.tripId(), load.fuelStation(), load.loadDate(),
+                load.liters(), load.pricePerLiter(), load.amount(), load.odometerReading(), userId);
     }
 
     public void delete(long id) {
-        Database.update("DELETE FROM fuel_loads WHERE id = ?", id);
+        Database.callNoOut("{call sp_fuel_delete(?)}", id);
     }
 }

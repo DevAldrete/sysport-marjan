@@ -1,25 +1,16 @@
 package mx.marjan.requests;
 
+import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import mx.marjan.shared.Database;
+import mx.marjan.shared.Result;
 
+/** Thin JDBC wrapper over the service-request stored procedures. */
 public class ServiceRequestRepository {
-
-    private static final String BASE = """
-            SELECT sr.id, sr.folio, sr.client_id, c.name AS client_name, sr.route_id,
-                   CONCAT(r.origin, ' -> ', r.destination) AS route_label,
-                   sr.cargo_description, sr.estimated_weight, sr.pickup_date_scheduled,
-                   sr.delivery_date_scheduled, sr.agreed_rate, sr.requires_documents,
-                   sr.status, sr.notes, sr.created_at
-            FROM service_requests sr
-            JOIN clients c ON c.id = sr.client_id
-            JOIN routes r ON r.id = sr.route_id
-            """;
 
     private ServiceRequest map(ResultSet rs) throws SQLException {
         return new ServiceRequest(
@@ -41,114 +32,69 @@ public class ServiceRequestRepository {
     }
 
     public List<ServiceRequest> search(RequestFilter filter) {
-        List<String> conditions = new ArrayList<>();
-        List<Object> params = new ArrayList<>();
-        if (filter.folio() != null && !filter.folio().isBlank()) {
-            conditions.add("sr.folio LIKE ?");
-            params.add("%" + filter.folio().trim() + "%");
-        }
-        if (filter.clientId() != null) {
-            conditions.add("sr.client_id = ?");
-            params.add(filter.clientId());
-        }
-        if (filter.status() != null) {
-            conditions.add("sr.status = ?");
-            params.add(filter.status().dbValue());
-        }
-        if (filter.from() != null) {
-            conditions.add("sr.pickup_date_scheduled >= ?");
-            params.add(filter.from().atStartOfDay());
-        }
-        if (filter.to() != null) {
-            conditions.add("sr.pickup_date_scheduled <= ?");
-            params.add(filter.to().atTime(23, 59, 59));
-        }
-        String sql = BASE
-                + (conditions.isEmpty() ? "" : " WHERE " + String.join(" AND ", conditions))
-                + " ORDER BY sr.created_at DESC";
-        return Database.queryList(sql, this::map, params.toArray());
+        String folio = filter.folio() == null || filter.folio().isBlank() ? null : filter.folio().trim();
+        Long clientId = filter.clientId();
+        String status = filter.status() == null ? null : filter.status().dbValue();
+        LocalDateTime from = filter.from() == null ? null : filter.from().atStartOfDay();
+        LocalDateTime to = filter.to() == null ? null : filter.to().atTime(23, 59, 59);
+        return Database.callList("{call sp_requests_search(?,?,?,?,?)}",
+                this::map, folio, clientId, status, from, to);
     }
 
     public Optional<ServiceRequest> findById(long id) {
-        return Database.queryOne(BASE + " WHERE sr.id = ?", this::map, id);
-    }
-
-    public Optional<ServiceRequest> findById(java.sql.Connection connection, long id) throws SQLException {
-        return Database.queryOne(connection, BASE + " WHERE sr.id = ?", this::map, id);
+        return Database.callOne("{call sp_request_by_id(?)}", this::map, id);
     }
 
     public List<ServiceRequest> listByStatus(RequestStatus status) {
-        return Database.queryList(BASE + " WHERE sr.status = ? ORDER BY sr.pickup_date_scheduled",
-                this::map, status.dbValue());
+        return Database.callList("{call sp_requests_by_status(?)}", this::map, status.dbValue());
     }
 
-    /** Requests waiting to be scheduled by the lifecycle sweep. */
-    public List<ServiceRequest> listAuthorized(java.sql.Connection connection) throws SQLException {
-        return Database.queryList(connection, BASE + " WHERE sr.status = 'authorized'", this::map);
+    public List<ServiceRequest> listAuthorized() {
+        return Database.callList("{call sp_requests_authorized()}", this::map);
     }
 
     /** FR-INV-1: authorized rates without an invoice yet, so collections can see what is billable. */
     public List<ServiceRequest> listPendingBilling() {
-        return Database.queryList(BASE + """
-                WHERE sr.agreed_rate IS NOT NULL AND sr.agreed_rate > 0
-                  AND sr.status <> 'cancelled'
-                  AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.service_request_id = sr.id)
-                ORDER BY sr.created_at DESC
-                """, this::map);
+        return Database.callList("{call sp_requests_pending_billing()}", this::map);
     }
 
-    public long nextSequence(int year) {
-        return Database.queryOne("""
-                SELECT COALESCE(MAX(CAST(SUBSTRING(folio, 9) AS UNSIGNED)), 0) + 1 AS next_seq
-                FROM service_requests WHERE folio LIKE ?
-                """, rs -> rs.getLong("next_seq"), "SR-" + year + "-%").orElse(1L);
-    }
-
-    public long insert(java.sql.Connection connection, ServiceRequest request, long userId) throws SQLException {
-        long id = mx.marjan.shared.Sequences.next(connection, "service_requests");
-        Database.update(connection, """
-                INSERT INTO service_requests
-                  (id, folio, client_id, route_id, cargo_description, estimated_weight,
-                   pickup_date_scheduled, delivery_date_scheduled, agreed_rate,
-                   requires_documents, status, notes, created_by, updated_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                id, request.folio(), request.clientId(), request.routeId(), request.cargoDescription(),
-                request.estimatedWeight(), request.pickupScheduled(), request.deliveryScheduled(),
-                request.agreedRate(), request.requiresDocuments(), request.status().dbValue(),
-                request.notes(), userId, userId);
-        return id;
-    }
-
-    public void delete(java.sql.Connection connection, long id) throws SQLException {
-        Database.update(connection, "DELETE FROM service_requests WHERE id = ?", id);
-    }
-
-    public void update(ServiceRequest request, long userId) {
-        Database.update("""
-                UPDATE service_requests SET
-                  client_id = ?, route_id = ?, cargo_description = ?, estimated_weight = ?,
-                  pickup_date_scheduled = ?, delivery_date_scheduled = ?, agreed_rate = ?,
-                  requires_documents = ?, status = ?, notes = ?, updated_by = ?
-                WHERE id = ?
-                """,
+    public Result<Long> create(ServiceRequest request, long userId) {
+        return Database.callForId("{call sp_request_create(?,?,?,?,?,?,?,?,?,?,?,?)}",
                 request.clientId(), request.routeId(), request.cargoDescription(),
                 request.estimatedWeight(), request.pickupScheduled(), request.deliveryScheduled(),
-                request.agreedRate(), request.requiresDocuments(), request.status().dbValue(),
-                request.notes(), userId, request.id());
+                request.agreedRate(), request.requiresDocuments(), request.notes(), userId);
     }
 
-    public void update(java.sql.Connection connection, ServiceRequest request, long userId) throws SQLException {
-        Database.update(connection, """
-                UPDATE service_requests SET
-                  client_id = ?, route_id = ?, cargo_description = ?, estimated_weight = ?,
-                  pickup_date_scheduled = ?, delivery_date_scheduled = ?, agreed_rate = ?,
-                  requires_documents = ?, status = ?, notes = ?, updated_by = ?
-                WHERE id = ?
-                """,
-                request.clientId(), request.routeId(), request.cargoDescription(),
+    public Result<Void> update(ServiceRequest request, long userId) {
+        return Database.callVoid("{call sp_request_update(?,?,?,?,?,?,?,?,?,?,?,?,?)}",
+                request.id(), request.clientId(), request.routeId(), request.cargoDescription(),
                 request.estimatedWeight(), request.pickupScheduled(), request.deliveryScheduled(),
                 request.agreedRate(), request.requiresDocuments(), request.status().dbValue(),
-                request.notes(), userId, request.id());
+                request.notes(), userId);
+    }
+
+    public Result<Void> delete(long id) {
+        return Database.callVoid("{call sp_request_delete(?,?)}", id);
+    }
+
+    /** BR-03 + BR-04: authorize only from requested, with a positive rate. */
+    public Result<Void> authorize(long id, BigDecimal rate, long userId) {
+        return Database.callVoid("{call sp_authorize_request(?,?,?,?)}", id, rate, userId);
+    }
+
+    /** BR-03: schedule only from authorized; delivery must be after pickup. */
+    public Result<Void> schedule(long id, LocalDateTime pickup, LocalDateTime delivery, long userId) {
+        return Database.callVoid("{call sp_schedule_request(?,?,?,?,?)}",
+                id, pickup, delivery, userId);
+    }
+
+    /** BR-03: cancel a request that has not started; a reason is required. */
+    public Result<Void> cancel(long id, String reason, long userId) {
+        return Database.callVoid("{call sp_cancel_request(?,?,?,?)}", id, reason, userId);
+    }
+
+    /** FR-DEL-2 / BR-13: close a delivered request only when its delivery is complete. */
+    public Result<Void> close(long id, long userId) {
+        return Database.callVoid("{call sp_close_request(?,?,?)}", id, userId);
     }
 }
