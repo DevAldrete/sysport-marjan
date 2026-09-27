@@ -2,9 +2,15 @@
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
+// When deploying to GitHub Pages the site is served from a project path
+// (https://<owner>.github.io/<repo>/), so `base` must be set. Locally we keep
+// the root so `npm run dev` serves at http://localhost:4321/.
+const onGitHubPages = process.env.GITHUB_PAGES === 'true';
+
 // https://astro.build/config
 export default defineConfig({
-	site: 'https://dev.aldrete.dev',
+	site: onGitHubPages ? 'https://dev.aldrete.github.io' : 'http://localhost:4321',
+	base: onGitHubPages ? '/sysport-marjan' : undefined,
 	integrations: [
 		starlight({
 			title: 'SysPort MARJAN',

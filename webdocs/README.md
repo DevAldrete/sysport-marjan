@@ -19,6 +19,30 @@ npm run dev        # http://localhost:4321
 | `npm run preview` | Preview the built site |
 | `npm run astro check` | Type-check content |
 
+## Deploy to GitHub Pages
+
+The site is published by the workflow at
+[`.github/workflows/deploy-docs.yml`](../.github/workflows/deploy-docs.yml) to
+**<https://dev.aldrete.github.io/sysport-marjan/>**.
+
+- Triggers on pushes to `main` that touch `webdocs/**` (and on manual dispatch).
+- Builds with `GITHUB_PAGES=true`, which makes `astro.config.mjs` set
+  `site: https://dev.aldrete.github.io` and `base: /sysport-marjan`.
+- Deploys via the official Pages actions (`configure-pages` → `upload-pages-artifact` → `deploy-pages`).
+
+### One-time setup
+
+In the repository: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+No `gh-pages` branch is needed.
+
+### Deploying from another branch
+
+The default trigger is `main`. To publish a preview from `develop`, run the workflow manually
+(**Actions → Deploy docs to GitHub Pages → Run workflow**) and pick the branch.
+
+> Locally, `base` is `/`, so the dev server stays at <http://localhost:4321/>. The `base` is only
+> applied when `GITHUB_PAGES=true`.
+
 ## What's inside
 
 Content lives in `src/content/docs/` as Markdown/MDX. The sidebar is defined in `astro.config.mjs`.
