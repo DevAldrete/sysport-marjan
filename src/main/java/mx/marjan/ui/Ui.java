@@ -120,12 +120,6 @@ public final class Ui {
         return label;
     }
 
-    public static Label fieldLabel(String text) {
-        Label label = new Label(text);
-        label.getStyleClass().add("form-hint");
-        return label;
-    }
-
     /** Calls the action with the selected row when a table row is double-clicked. */
     public static <T> void onDoubleClick(TableView<T> table, Consumer<T> action) {
         table.setRowFactory(view -> {

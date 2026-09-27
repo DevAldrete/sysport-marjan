@@ -52,15 +52,6 @@ public class RecordTable<T> extends TableView<T> {
                     row -> StatusBadge.of(text.apply(row), tone.apply(row)));
         }
 
-        public static <T> Column<T> styled(String title, Function<T, String> text,
-                Function<T, String> styleClass) {
-            return new Column<>(title, row -> text.apply(row), Pos.CENTER_LEFT, 140, row -> {
-                Label label = new Label(text.apply(row));
-                label.getStyleClass().add(styleClass.apply(row));
-                return label;
-            });
-        }
-
         private static java.math.BigDecimal toBigDecimal(Object value) {
             return value instanceof java.math.BigDecimal decimal ? decimal : null;
         }
