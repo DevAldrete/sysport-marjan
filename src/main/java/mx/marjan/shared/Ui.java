@@ -61,6 +61,30 @@ public final class Ui {
         return button;
     }
 
+    /** A button with a hover hint, for actions whose label is not self-explanatory. */
+    public static JButton button(String text, String tooltip, Runnable action) {
+        JButton button = button(text, action);
+        button.setToolTipText(tooltip);
+        return button;
+    }
+
+    /** Runs an action when the user presses Enter in a search field. */
+    public static void onEnter(JTextField field, Runnable action) {
+        field.addActionListener(event -> action.run());
+    }
+
+    /** Runs an action when the user double-clicks a row (empty space is ignored). */
+    public static void onDoubleClick(JTable table, Runnable action) {
+        table.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent event) {
+                if (event.getClickCount() == 2 && table.rowAtPoint(event.getPoint()) >= 0) {
+                    action.run();
+                }
+            }
+        });
+    }
+
     public static JPanel row(Component... components) {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
         for (Component component : components) {

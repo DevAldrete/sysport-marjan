@@ -67,6 +67,7 @@ public final class ModalForm {
         dialog.getRootPane().setDefaultButton(save);
         dialog.pack();
         dialog.setLocationRelativeTo(parent);
+        form.focusFirst();
         dialog.setVisible(true);
     }
 }

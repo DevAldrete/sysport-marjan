@@ -1,10 +1,16 @@
 package mx.marjan.shared;
 
+import java.awt.Color;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import javax.swing.BorderFactory;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
@@ -15,24 +21,56 @@ import javax.swing.JPasswordField;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.swing.border.Border;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 
-/** Builds a labelled form with a stable set of fields. Views read values by key. */
+/**
+ * Builds a labelled form with a stable set of fields. Views read values by key.
+ *
+ * <p>Fields can carry an inline hint, a live validator (the field is outlined in
+ * red and the hint explains the problem as the user types) and read-only
+ * computed fields that update from the other inputs. Nothing here validates
+ * business rules; those remain in the database.</p>
+ */
 public final class FormPanel {
 
-    private static final Insets INSETS = new Insets(3, 3, 3, 3);
+    private static final Insets INSETS = new Insets(3, 3, 1, 3);
+    private static final Color HINT_COLOR = new Color(110, 110, 110);
+    private static final Color ERROR_COLOR = new Color(180, 0, 0);
+    private static final Color INVALID_BORDER = new Color(205, 70, 70);
 
     private final JPanel panel = new JPanel(new GridBagLayout());
     private final Map<String, JComponent> fields = new LinkedHashMap<>();
+    private final Map<String, JLabel> hints = new LinkedHashMap<>();
+    private final Map<String, String> baseHints = new LinkedHashMap<>();
+    private final Map<String, Function<String, String>> validators = new LinkedHashMap<>();
+    private final Map<String, Supplier<String>> computed = new LinkedHashMap<>();
+    private final Map<String, Border> originalBorders = new LinkedHashMap<>();
+    private final List<Runnable> changeListeners = new ArrayList<>();
+    private final java.util.Set<String> touched = new java.util.HashSet<>();
+    private boolean refreshing;
     private int row;
 
     public FormPanel addText(String key, String label, String value) {
+        return addText(key, label, value, null);
+    }
+
+    public FormPanel addText(String key, String label, String value, String hint) {
         JTextField field = new JTextField(value == null ? "" : value, 24);
-        put(key, label, field);
+        watch(key, field);
+        put(key, label, field, hint);
         return this;
     }
 
     public FormPanel addPassword(String key, String label) {
-        put(key, label, new JPasswordField(24));
+        return addPassword(key, label, null);
+    }
+
+    public FormPanel addPassword(String key, String label, String hint) {
+        JPasswordField field = new JPasswordField(24);
+        watch(key, field);
+        put(key, label, field, hint);
         return this;
     }
 
@@ -43,31 +81,144 @@ public final class FormPanel {
         if (selected != null) {
             combo.setSelectedItem(selected);
         }
-        put(key, label, combo);
+        combo.addActionListener(event -> {
+            touched.add(key);
+            refresh();
+        });
+        put(key, label, combo, null);
         return this;
     }
 
     public FormPanel addCheck(String key, String label, boolean value) {
         JCheckBox box = new JCheckBox();
         box.setSelected(value);
-        put(key, label, box);
+        box.addActionListener(event -> {
+            touched.add(key);
+            refresh();
+        });
+        put(key, label, box, null);
         return this;
     }
 
     public FormPanel addArea(String key, String label, String value) {
+        return addArea(key, label, value, null);
+    }
+
+    public FormPanel addArea(String key, String label, String value, String hint) {
         JTextArea area = new JTextArea(value == null ? "" : value, 3, 24);
         area.setLineWrap(true);
         area.setWrapStyleWord(true);
+        watch(key, area);
         // Store the text area (so text()/setText() can read it) but display a scroll pane.
-        put(key, label, area, new JScrollPane(area));
+        put(key, label, area, new JScrollPane(area), hint);
         return this;
     }
 
-    private void put(String key, String label, JComponent field) {
-        put(key, label, field, field);
+    /** A read-only field whose value is recomputed from the other fields on every change. */
+    public FormPanel addComputed(String key, String label, Supplier<String> supplier) {
+        JTextField field = new JTextField(24);
+        field.setEditable(false);
+        field.setFocusable(false);
+        put(key, label, field, null);
+        computed.put(key, supplier);
+        return this;
     }
 
-    private void put(String key, String label, JComponent fieldToStore, JComponent fieldToDisplay) {
+    /** A live format check. The message is shown once the user has edited the field. */
+    public FormPanel validate(String key, Function<String, String> validator) {
+        validators.put(key, validator);
+        return this;
+    }
+
+    /** Sets the persistent hint shown under a field when it is not reporting an error. */
+    public FormPanel hint(String key, String text) {
+        baseHints.put(key, text);
+        refresh();
+        return this;
+    }
+
+    /** Runs an action when a combo's selection changes (e.g. to prefill a dependent field). */
+    public FormPanel onSelect(String key, Runnable action) {
+        JComponent component = fields.get(key);
+        if (component instanceof JComboBox<?> combo) {
+            combo.addActionListener(event -> {
+                if (!refreshing) {
+                    action.run();
+                }
+            });
+        }
+        return this;
+    }
+
+    /** Notified after every change, once computed fields and validators have refreshed. */
+    public FormPanel onChange(Runnable listener) {
+        changeListeners.add(listener);
+        return this;
+    }
+
+    /** Recomputes computed fields, re-runs validators and notifies listeners. */
+    public void refresh() {
+        if (refreshing) {
+            return;
+        }
+        refreshing = true;
+        try {
+            for (Map.Entry<String, Supplier<String>> entry : computed.entrySet()) {
+                JComponent component = fields.get(entry.getKey());
+                if (component instanceof JTextField field) {
+                    field.setText(entry.getValue().get());
+                }
+            }
+        } finally {
+            refreshing = false;
+        }
+        for (Map.Entry<String, Function<String, String>> entry : validators.entrySet()) {
+            String message = entry.getValue().apply(text(entry.getKey()));
+            showValidation(entry.getKey(), touched.contains(entry.getKey()) ? message : null);
+        }
+        for (Runnable listener : changeListeners) {
+            listener.run();
+        }
+    }
+
+    /** Puts the keyboard focus on the first editable field, ready for typing. */
+    public void focusFirst() {
+        JComponent target = null;
+        for (JComponent component : fields.values()) {
+            if (component.isEnabled() && component.isFocusable() && component.isVisible()) {
+                target = component;
+                break;
+            }
+        }
+        if (target == null) {
+            return;
+        }
+        final JComponent focus = target;
+        javax.swing.SwingUtilities.invokeLater(() -> {
+            focus.requestFocusInWindow();
+            if (focus instanceof JTextField field) {
+                field.selectAll();
+            }
+        });
+    }
+
+    private void watch(String key, JTextArea area) {
+        area.getDocument().addDocumentListener(new SimpleDocumentListener(key));
+    }
+
+    private void watch(String key, javax.swing.text.JTextComponent field) {
+        field.getDocument().addDocumentListener(new SimpleDocumentListener(key));
+    }
+
+    private void put(String key, String label, JComponent field) {
+        put(key, label, field, field, null);
+    }
+
+    private void put(String key, String label, JComponent field, String hint) {
+        put(key, label, field, field, hint);
+    }
+
+    private void put(String key, String label, JComponent fieldToStore, JComponent fieldToDisplay, String hint) {
         GridBagConstraints labelConstraints = new GridBagConstraints();
         labelConstraints.gridx = 0;
         labelConstraints.gridy = row;
@@ -83,8 +234,46 @@ public final class FormPanel {
         fieldConstraints.insets = INSETS;
         panel.add(fieldToDisplay, fieldConstraints);
 
+        JLabel hintLabel = new JLabel(hint == null ? " " : hint);
+        hintLabel.setFont(hintLabel.getFont().deriveFont(11f));
+        hintLabel.setForeground(HINT_COLOR);
+        hintLabel.setVisible(hint != null);
+        GridBagConstraints hintConstraints = new GridBagConstraints();
+        hintConstraints.gridx = 1;
+        hintConstraints.gridy = row + 1;
+        hintConstraints.anchor = GridBagConstraints.WEST;
+        hintConstraints.insets = new Insets(0, 3, 3, 3);
+        panel.add(hintLabel, hintConstraints);
+
         fields.put(key, fieldToStore);
-        row++;
+        hints.put(key, hintLabel);
+        originalBorders.put(key, fieldToStore.getBorder());
+        if (hint != null) {
+            baseHints.put(key, hint);
+        }
+        row += 2;
+    }
+
+    private void showValidation(String key, String message) {
+        JLabel hintLabel = hints.get(key);
+        JComponent field = fields.get(key);
+        if (hintLabel == null || field == null) {
+            return;
+        }
+        if (message == null) {
+            String base = baseHints.get(key);
+            hintLabel.setText(base == null ? " " : base);
+            hintLabel.setForeground(HINT_COLOR);
+            hintLabel.setVisible(base != null);
+            field.setBorder(originalBorders.get(key));
+        } else {
+            hintLabel.setText(message);
+            hintLabel.setForeground(ERROR_COLOR);
+            hintLabel.setVisible(true);
+            Border original = originalBorders.get(key);
+            field.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(INVALID_BORDER), original == null ? BorderFactory.createEmptyBorder() : original));
+        }
     }
 
     public String text(String key) {
@@ -127,6 +316,38 @@ public final class FormPanel {
 
     public JPanel panel() {
         return panel;
+    }
+
+    /** Marks a field as edited and refreshes dependents and validators. */
+    private final class SimpleDocumentListener implements DocumentListener {
+        private final String key;
+
+        private SimpleDocumentListener(String key) {
+            this.key = key;
+        }
+
+        @Override
+        public void insertUpdate(DocumentEvent event) {
+            changed();
+        }
+
+        @Override
+        public void removeUpdate(DocumentEvent event) {
+            changed();
+        }
+
+        @Override
+        public void changedUpdate(DocumentEvent event) {
+            changed();
+        }
+
+        private void changed() {
+            if (refreshing) {
+                return;
+            }
+            touched.add(key);
+            refresh();
+        }
     }
 
     /** One-line, fixed-length combo label: keeps long record values from widening the dialog. */
