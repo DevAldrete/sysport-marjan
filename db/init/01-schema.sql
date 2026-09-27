@@ -927,9 +927,10 @@ p: BEGIN
   UPDATE trips SET arrival_datetime = NOW(), actual_km = p_actual_km, status = 'completed',
                    updated_by = p_user_id
     WHERE id = p_trip_id;
-  UPDATE vehicles SET status = 'available' WHERE id = v_vehicle;
-  UPDATE vehicles SET mileage = p_actual_km WHERE id = v_vehicle AND p_actual_km IS NOT NULL
-    AND mileage < p_actual_km;
+  -- BR-21: the trip's actual km is a distance, so add it to the odometer.
+  UPDATE vehicles SET status = 'available',
+                      mileage = mileage + COALESCE(p_actual_km, 0)
+    WHERE id = v_vehicle;
   UPDATE employees SET status = 'available' WHERE id = v_employee;
   COMMIT;
 END$$
