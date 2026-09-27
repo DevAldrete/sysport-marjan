@@ -1585,7 +1585,16 @@ END$$
 CREATE PROCEDURE sp_client_delete(IN p_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
   SET p_problems = NULL;
+  IF (SELECT COUNT(*) FROM service_requests WHERE client_id = p_id) > 0
+     OR (SELECT COUNT(*) FROM client_rates WHERE client_id = p_id) > 0
+     OR (SELECT COUNT(*) FROM invoices WHERE client_id = p_id) > 0 THEN
+    SET p_problems = 'No se puede eliminar: el cliente tiene solicitudes, tarifas o facturas';
+    LEAVE p;
+  END IF;
   DELETE FROM clients WHERE id = p_id;
+  IF ROW_COUNT() = 0 THEN
+    SET p_problems = 'Cliente no encontrado';
+  END IF;
 END$$
 
 -- Only the manual lifecycle states can be set by hand; 'active'/'inactive'.
@@ -1628,6 +1637,17 @@ p: BEGIN
   IF p_valid_to IS NOT NULL AND p_valid_to < p_valid_from THEN
     SET p_problems = CONCAT_WS('; ', p_problems, 'La vigencia final no puede ser anterior a la inicial');
   END IF;
+  -- BR-04: one unambiguous rate per client/route at any point in time.
+  IF p_client_id IS NOT NULL AND p_client_id <> 0 AND p_route_id IS NOT NULL
+     AND p_route_id <> 0 AND p_valid_from IS NOT NULL
+     AND (SELECT COUNT(*) FROM client_rates
+          WHERE client_id = p_client_id AND route_id = p_route_id
+            AND (p_id IS NULL OR p_id = 0 OR id <> p_id)
+            AND valid_from <= COALESCE(p_valid_to, '9999-12-31')
+            AND COALESCE(valid_to, '9999-12-31') >= p_valid_from) > 0 THEN
+    SET p_problems = CONCAT_WS('; ', p_problems,
+        'Ya existe una tarifa vigente para esa ruta en ese periodo');
+  END IF;
   IF p_problems IS NOT NULL THEN LEAVE p; END IF;
 
   IF p_id IS NULL OR p_id = 0 THEN
@@ -1646,6 +1666,9 @@ CREATE PROCEDURE sp_client_rate_delete(IN p_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
   SET p_problems = NULL;
   DELETE FROM client_rates WHERE id = p_id;
+  IF ROW_COUNT() = 0 THEN
+    SET p_problems = 'Tarifa no encontrada';
+  END IF;
 END$$
 
 -- ---------------------------------------------------------------- routes
@@ -1695,7 +1718,15 @@ END$$
 CREATE PROCEDURE sp_route_delete(IN p_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
   SET p_problems = NULL;
+  IF (SELECT COUNT(*) FROM service_requests WHERE route_id = p_id) > 0
+     OR (SELECT COUNT(*) FROM client_rates WHERE route_id = p_id) > 0 THEN
+    SET p_problems = 'No se puede eliminar: la ruta tiene solicitudes o tarifas';
+    LEAVE p;
+  END IF;
   DELETE FROM routes WHERE id = p_id;
+  IF ROW_COUNT() = 0 THEN
+    SET p_problems = 'Ruta no encontrada';
+  END IF;
 END$$
 
 -- ---------------------------------------------------------------- vehicles
@@ -1754,10 +1785,11 @@ p: BEGIN
             p_capacity, COALESCE(p_mileage, 0), 'available');
   ELSE
     SET p_new_id = p_id;
+    -- BR-21: an edit never lowers the odometer.
     UPDATE vehicles SET internal_code = p_code, plates = p_plates, brand = p_brand,
                         model = p_model, year = p_year, serial_number = p_serial,
                         vehicle_type = p_type, load_capacity = p_capacity,
-                        mileage = COALESCE(p_mileage, 0)
+                        mileage = GREATEST(mileage, COALESCE(p_mileage, mileage))
     WHERE id = p_id;
   END IF;
 END$$
@@ -1789,7 +1821,16 @@ END$$
 CREATE PROCEDURE sp_vehicle_delete(IN p_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
   SET p_problems = NULL;
+  IF (SELECT COUNT(*) FROM trips WHERE vehicle_id = p_id) > 0
+     OR (SELECT COUNT(*) FROM fuel_loads WHERE vehicle_id = p_id) > 0
+     OR (SELECT COUNT(*) FROM maintenance WHERE vehicle_id = p_id) > 0 THEN
+    SET p_problems = 'No se puede eliminar: la unidad tiene viajes, cargas o mantenimientos';
+    LEAVE p;
+  END IF;
   DELETE FROM vehicles WHERE id = p_id;
+  IF ROW_COUNT() = 0 THEN
+    SET p_problems = 'Unidad no encontrada';
+  END IF;
 END$$
 
 CREATE PROCEDURE sp_eligible_vehicles_full(IN p_start DATETIME, IN p_end DATETIME)
@@ -1863,6 +1904,10 @@ CREATE PROCEDURE sp_employee_save(IN p_id BIGINT, IN p_name VARCHAR(150), IN p_a
     OUT p_new_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
   DECLARE v_license_id BIGINT DEFAULT NULL;
+  DECLARE EXIT HANDLER FOR SQLEXCEPTION
+  BEGIN
+    ROLLBACK; SET p_problems = 'Error inesperado al guardar el operador';
+  END;
   SET p_problems = NULL;
   IF p_name IS NULL OR p_name = '' THEN
     SET p_problems = CONCAT_WS('; ', p_problems, 'El nombre es obligatorio');
@@ -1899,6 +1944,14 @@ p: BEGIN
   END IF;
   IF p_problems IS NOT NULL THEN LEAVE p; END IF;
 
+  -- License and employee are written together so a failure cannot leave an
+  -- orphan license (or an employee pointing at a half-written one).
+  START TRANSACTION;
+  -- Start from the currently linked license, so editing other fields with a
+  -- blank license number keeps it instead of silently clearing license_id.
+  IF p_id IS NOT NULL AND p_id <> 0 THEN
+    SELECT license_id INTO v_license_id FROM employees WHERE id = p_id;
+  END IF;
   IF p_license_number IS NOT NULL AND p_license_number <> '' THEN
     IF p_license_id IS NULL OR p_license_id = 0 THEN
       CALL sp_next_id('licenses', v_license_id);
@@ -1910,6 +1963,9 @@ p: BEGIN
                           issue_date = p_license_issue, expiration_date = p_license_expiry
       WHERE id = p_license_id;
     END IF;
+  ELSEIF p_license_id IS NOT NULL AND p_license_id <> 0 THEN
+    -- Blank number means "leave the license as it is", not "clear it".
+    SET v_license_id = p_license_id;
   END IF;
 
   IF p_id IS NULL OR p_id = 0 THEN
@@ -1925,17 +1981,34 @@ p: BEGIN
                          emergency_contact_phone = p_ec_phone, license_id = v_license_id
     WHERE id = p_id;
   END IF;
+  COMMIT;
 END$$
 
 CREATE PROCEDURE sp_employee_delete(IN p_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
   DECLARE v_license BIGINT DEFAULT NULL;
+  DECLARE EXIT HANDLER FOR SQLEXCEPTION
+  BEGIN
+    ROLLBACK; SET p_problems = 'No se puede eliminar el operador: tiene registros relacionados';
+  END;
   SET p_problems = NULL;
+  IF (SELECT COUNT(*) FROM trips WHERE employee_id = p_id) > 0
+     OR (SELECT COUNT(*) FROM advances WHERE employee_id = p_id) > 0
+     OR (SELECT COUNT(*) FROM users WHERE employee_id = p_id) > 0 THEN
+    SET p_problems = 'No se puede eliminar: el operador tiene viajes, anticipos o un usuario asociado';
+    LEAVE p;
+  END IF;
   SELECT license_id INTO v_license FROM employees WHERE id = p_id;
+  IF v_license IS NULL AND (SELECT COUNT(*) FROM employees WHERE id = p_id) = 0 THEN
+    SET p_problems = 'Operador no encontrado';
+    LEAVE p;
+  END IF;
+  START TRANSACTION;
   DELETE FROM employees WHERE id = p_id;
   IF v_license IS NOT NULL THEN
     DELETE FROM licenses WHERE id = v_license;
   END IF;
+  COMMIT;
 END$$
 
 -- Manual conditions only: 'on_trip' is owned by the trip lifecycle, and an
@@ -1971,8 +2044,10 @@ p: BEGIN
   WHERE (p_folio IS NULL OR p_folio = '' OR sr.folio LIKE CONCAT('%', p_folio, '%'))
     AND (p_client_id IS NULL OR sr.client_id = p_client_id)
     AND (p_status IS NULL OR sr.status = p_status)
-    AND (p_from IS NULL OR sr.pickup_date_scheduled >= p_from)
-    AND (p_to IS NULL OR sr.pickup_date_scheduled <= p_to)
+    -- A date range filters scheduled work without hiding requests that still
+    -- have no scheduled dates (NULL never matches a comparison).
+    AND (p_from IS NULL OR sr.pickup_date_scheduled IS NULL OR sr.pickup_date_scheduled >= p_from)
+    AND (p_to IS NULL OR sr.pickup_date_scheduled IS NULL OR sr.pickup_date_scheduled <= p_to)
   ORDER BY sr.created_at DESC;
 END$$
 
@@ -2090,9 +2165,19 @@ p: BEGIN
   WHERE id = p_id;
 END$$
 
+-- BR-14: careful cascade in one transaction. Audit rows are intentionally kept
+-- (BR-22), even for a hard delete.
 CREATE PROCEDURE sp_request_delete(IN p_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
+  DECLARE EXIT HANDLER FOR SQLEXCEPTION
+  BEGIN
+    ROLLBACK; SET p_problems = 'No se puede eliminar la solicitud: tiene registros relacionados';
+  END;
   SET p_problems = NULL;
+  IF (SELECT COUNT(*) FROM service_requests WHERE id = p_id) = 0 THEN
+    SET p_problems = 'Solicitud no encontrada'; LEAVE p;
+  END IF;
+  START TRANSACTION;
   DELETE FROM payments WHERE invoice_id IN (SELECT id FROM invoices WHERE service_request_id = p_id);
   DELETE FROM invoices WHERE service_request_id = p_id;
   DELETE FROM expenses WHERE trip_id IN (SELECT id FROM trips WHERE service_request_id = p_id);
@@ -2100,11 +2185,9 @@ p: BEGIN
   DELETE FROM incidents WHERE trip_id IN (SELECT id FROM trips WHERE service_request_id = p_id);
   DELETE FROM deliveries WHERE trip_id IN (SELECT id FROM trips WHERE service_request_id = p_id);
   UPDATE fuel_loads SET trip_id = NULL WHERE trip_id IN (SELECT id FROM trips WHERE service_request_id = p_id);
-  DELETE FROM audit_log WHERE entity = 'trip'
-    AND entity_id IN (SELECT id FROM trips WHERE service_request_id = p_id);
   DELETE FROM trips WHERE service_request_id = p_id;
-  DELETE FROM audit_log WHERE entity = 'service_request' AND entity_id = p_id;
   DELETE FROM service_requests WHERE id = p_id;
+  COMMIT;
 END$$
 
 -- ---------------------------------------------------------------- trips
@@ -2412,6 +2495,10 @@ p: BEGIN
   IF p_description IS NULL OR p_description = '' THEN
     SET p_problems = CONCAT_WS('; ', p_problems, 'La descripcion es obligatoria');
   END IF;
+  IF p_type IS NULL OR p_type NOT IN ('accident','mechanical_failure','delay',
+      'road_closure','cargo_damage','documentation_issue','other') THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'El tipo de incidencia no es valido');
+  END IF;
   IF p_problems IS NOT NULL THEN LEAVE p; END IF;
   CALL sp_next_id('incidents', p_id);
   INSERT INTO incidents (id, trip_id, incident_date, incident_time, location, incident_type,
@@ -2672,9 +2759,18 @@ END$$
 
 CREATE PROCEDURE sp_invoice_delete(IN p_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
+  DECLARE EXIT HANDLER FOR SQLEXCEPTION
+  BEGIN
+    ROLLBACK; SET p_problems = 'No se puede eliminar la factura';
+  END;
   SET p_problems = NULL;
+  IF (SELECT COUNT(*) FROM invoices WHERE id = p_id) = 0 THEN
+    SET p_problems = 'Factura no encontrada'; LEAVE p;
+  END IF;
+  START TRANSACTION;
   DELETE FROM payments WHERE invoice_id = p_id;
   DELETE FROM invoices WHERE id = p_id;
+  COMMIT;
 END$$
 
 -- ---------------------------------------------------------------- payments
