@@ -1,5 +1,7 @@
 package mx.marjan.fleet;
 
+import mx.marjan.shared.Numbers;
+
 import java.awt.BorderLayout;
 import java.awt.Dialog;
 import java.math.BigDecimal;
@@ -82,8 +84,8 @@ public class VehiclesView extends BaseView {
                 .addText("year", "Anio", vehicle.year() == null ? "" : vehicle.year().toString())
                 .addText("serial", "No. de serie", vehicle.serialNumber())
                 .addText("type", "Tipo de unidad", vehicle.vehicleType())
-                .addText("capacity", "Capacidad de carga (kg)", plain(vehicle.loadCapacity()))
-                .addText("mileage", "Kilometraje", plain(vehicle.mileage()));
+                .addText("capacity", "Capacidad de carga (kg)", Numbers.plain(vehicle.loadCapacity()))
+                .addText("mileage", "Kilometraje", Numbers.plain(vehicle.mileage()));
         ModalForm.show(this, isNew ? "Nueva unidad" : "Editar unidad", form, () -> {
             Integer year = null;
             if (!form.text("year").isBlank()) {
@@ -93,8 +95,8 @@ public class VehiclesView extends BaseView {
                     return Result.err("El anio debe ser un numero");
                 }
             }
-            BigDecimal capacity = number(form.text("capacity"));
-            BigDecimal mileage = number(form.text("mileage"));
+            BigDecimal capacity = Numbers.parseOrZero(form.text("capacity"));
+            BigDecimal mileage = Numbers.parseOrZero(form.text("mileage"));
             if (capacity == null || mileage == null) {
                 return Result.err("Capacidad y kilometraje deben ser numeros");
             }
@@ -174,7 +176,7 @@ public class VehiclesView extends BaseView {
     private void openMaintenanceForm(Vehicle vehicle, Runnable onSaved) {
         FormPanel form = new FormPanel()
                 .addText("date", "Fecha (yyyy-MM-dd)", Dates.format(Dates.today()))
-                .addText("odometer", "Odometro", plain(vehicle.mileage()))
+                .addText("odometer", "Odometro", Numbers.plain(vehicle.mileage()))
                 .addCombo("type", "Tipo", MaintenanceType.values(), MaintenanceType.PREVENTIVE)
                 .addArea("work", "Trabajos realizados", "")
                 .addText("provider", "Proveedor / taller", "")
@@ -186,30 +188,15 @@ public class VehiclesView extends BaseView {
             if (date == null) {
                 return Result.err("La fecha es obligatoria (yyyy-MM-dd)");
             }
-            BigDecimal odometer = number(form.text("odometer"));
+            BigDecimal odometer = Numbers.parseOrZero(form.text("odometer"));
             BigDecimal cost = Money.parse(form.text("cost")).orElse(BigDecimal.ZERO);
             LocalDate nextDate = form.text("nextDate").isBlank() ? null
                     : Dates.parseDate(form.text("nextDate")).orElse(null);
-            BigDecimal nextKm = form.text("nextKm").isBlank() ? null : number(form.text("nextKm"));
+            BigDecimal nextKm = form.text("nextKm").isBlank() ? null : Numbers.parseOrZero(form.text("nextKm"));
             Maintenance record = new Maintenance(0, vehicle.id(), vehicle.label(), date, odometer,
                     (MaintenanceType) form.selected("type"), form.text("work"), form.text("provider"),
                     cost, nextDate, nextKm);
             return maintenanceService.register(record);
         }, onSaved);
-    }
-
-    private BigDecimal number(String text) {
-        if (text == null || text.isBlank()) {
-            return BigDecimal.ZERO;
-        }
-        try {
-            return new BigDecimal(text.replace(",", ""));
-        } catch (NumberFormatException failure) {
-            return null;
-        }
-    }
-
-    private String plain(BigDecimal value) {
-        return value == null ? "0" : value.toPlainString();
     }
 }

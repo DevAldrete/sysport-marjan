@@ -1,5 +1,7 @@
 package mx.marjan.fleet;
 
+import mx.marjan.shared.Numbers;
+
 import java.awt.BorderLayout;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -99,10 +101,10 @@ public class FuelLoadsView extends BaseView {
             if (date == null) {
                 return Result.err("La fecha es obligatoria (yyyy-MM-dd HH:mm)");
             }
-            BigDecimal liters = number(form.text("liters"));
-            BigDecimal price = number(form.text("price"));
-            BigDecimal amount = number(form.text("amount"));
-            BigDecimal odometer = number(form.text("odometer"));
+            BigDecimal liters = Numbers.parseOrZero(form.text("liters"));
+            BigDecimal price = Numbers.parseOrZero(form.text("price"));
+            BigDecimal amount = Numbers.parseOrZero(form.text("amount"));
+            BigDecimal odometer = Numbers.parseOrZero(form.text("odometer"));
             if (liters == null || price == null || amount == null || odometer == null) {
                 return Result.err("Litros, precio, importe y odometro deben ser numeros");
             }
@@ -111,16 +113,5 @@ public class FuelLoadsView extends BaseView {
                     date, liters, price, amount, odometer);
             return service.register(load);
         }, this::reload);
-    }
-
-    private BigDecimal number(String text) {
-        if (text == null || text.isBlank()) {
-            return BigDecimal.ZERO;
-        }
-        try {
-            return new BigDecimal(text.replace(",", ""));
-        } catch (NumberFormatException failure) {
-            return null;
-        }
     }
 }

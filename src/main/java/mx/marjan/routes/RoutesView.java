@@ -1,5 +1,7 @@
 package mx.marjan.routes;
 
+import mx.marjan.shared.Numbers;
+
 import java.awt.BorderLayout;
 import java.math.BigDecimal;
 import java.util.List;
@@ -76,8 +78,7 @@ public class RoutesView extends BaseView {
                 .addText("km", "Km estimados", route.estimatedKm() == null ? "0" : route.estimatedKm().toPlainString())
                 .addArea("description", "Descripcion", route.description());
         ModalForm.show(this, isNew ? "Nueva ruta" : "Editar ruta", form, () -> {
-            BigDecimal km = form.text("km").isBlank() ? BigDecimal.ZERO
-                    : parse(form.text("km"));
+            BigDecimal km = Numbers.parseOrZero(form.text("km"));
             if (km == null) {
                 return Result.err("Los km estimados deben ser un numero");
             }
@@ -85,13 +86,5 @@ public class RoutesView extends BaseView {
                     km, form.text("description"));
             return service.save(built);
         }, this::reload);
-    }
-
-    private BigDecimal parse(String text) {
-        try {
-            return new BigDecimal(text.replace(",", ""));
-        } catch (NumberFormatException failure) {
-            return null;
-        }
     }
 }

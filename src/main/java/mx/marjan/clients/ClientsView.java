@@ -1,5 +1,7 @@
 package mx.marjan.clients;
 
+import mx.marjan.shared.Numbers;
+
 import java.awt.BorderLayout;
 import java.awt.Dialog;
 import java.math.BigDecimal;
@@ -84,7 +86,7 @@ public class ClientsView extends BaseView {
                 .addText("contact", "Contacto", client.contactName())
                 .addCombo("type", "Tipo", ClientType.values(), client.clientType())
                 .addCombo("terms", "Condiciones", PaymentTerms.values(), client.paymentTerms())
-                .addText("creditLimit", "Limite de credito", plain(client.creditLimit()))
+                .addText("creditLimit", "Limite de credito", Numbers.plain(client.creditLimit()))
                 .addText("creditDays", "Dias de credito", String.valueOf(client.creditDays()))
                 .addCombo("status", "Estado", ClientStatus.values(), client.status());
         ModalForm.show(this, isNew ? "Nuevo cliente" : "Editar cliente", form, () -> {
@@ -185,7 +187,7 @@ public class ClientsView extends BaseView {
         ClientRate editing = rate != null ? rate : ClientRate.empty();
         FormPanel form = new FormPanel()
                 .addCombo("route", "Ruta", routes.toArray(), routeById(routes, editing.routeId()))
-                .addText("rate", "Tarifa", plain(editing.rate()))
+                .addText("rate", "Tarifa", Numbers.plain(editing.rate()))
                 .addText("from", "Vigente desde (yyyy-MM-dd)", Dates.format(editing.validFrom()))
                 .addText("to", "Vigente hasta (opcional)", Dates.format(editing.validTo()));
         ModalForm.show(this, rate == null ? "Nueva tarifa" : "Editar tarifa", form, () -> {
@@ -212,9 +214,5 @@ public class ClientsView extends BaseView {
 
     private Route routeById(List<Route> routes, long id) {
         return routes.stream().filter(route -> route.id() == id).findFirst().orElse(null);
-    }
-
-    private String plain(BigDecimal value) {
-        return value == null ? "0" : value.toPlainString();
     }
 }

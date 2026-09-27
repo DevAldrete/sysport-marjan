@@ -1,5 +1,7 @@
 package mx.marjan.trips;
 
+import mx.marjan.shared.Numbers;
+
 import java.awt.BorderLayout;
 import java.math.BigDecimal;
 import java.util.List;
@@ -88,10 +90,8 @@ public class TripsView extends BaseView {
                 .addText("km", "Kilometros reales", trip.estimatedKm() == null
                         ? "0" : trip.estimatedKm().toPlainString());
         ModalForm.show(this, "Llegada del viaje " + trip.folio(), form, () -> {
-            BigDecimal km;
-            try {
-                km = new BigDecimal(form.text("km").isBlank() ? "0" : form.text("km"));
-            } catch (NumberFormatException failure) {
+            BigDecimal km = Numbers.parseOrZero(form.text("km"));
+            if (km == null) {
                 return Result.err("Los kilometros reales deben ser un numero");
             }
             return service.arrive(trip.id(), km);
