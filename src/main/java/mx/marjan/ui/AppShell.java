@@ -109,6 +109,15 @@ public final class AppShell {
         }
     }
 
+    /** Navigates to a screen by title, used by the dashboard cards. */
+    private void openByTitle(String title) {
+        Navigation.Item item = navigation.byTitle(title);
+        if (item != null) {
+            navigation.select(item);
+            open(item);
+        }
+    }
+
     private void toggleTheme() {
         ThemeManager.toggle();
         ThemeManager.apply(scene);
@@ -142,7 +151,7 @@ public final class AppShell {
     private List<Navigation.Item> navItems() {
         return List.of(
                 item("Operacion", "Inicio", Feather.HOME, null,
-                        () -> new PlaceholderScreen("Inicio")),
+                        () -> new mx.marjan.reports.DashboardView(this::openByTitle)),
                 item("Operacion", "Solicitudes", Feather.CLIPBOARD, Permissions.REQUESTS_READ,
                         mx.marjan.requests.ServiceRequestsView::new),
                 item("Operacion", "Viajes", Feather.TRUCK, Permissions.TRIPS_READ,
@@ -160,9 +169,9 @@ public final class AppShell {
                 item("Finanzas", "Facturas", Feather.DOLLAR_SIGN, Permissions.INVOICES_READ,
                         mx.marjan.finance.InvoicesView::new),
                 item("Finanzas", "Reportes", Feather.BAR_CHART_2, Permissions.REPORTS_VIEW,
-                        () -> new PlaceholderScreen("Reportes")),
+                        mx.marjan.reports.ReportsView::new),
                 item("Sistema", "Usuarios", Feather.SHIELD, Permissions.SECURITY_USERS,
-                        () -> new PlaceholderScreen("Usuarios")));
+                        mx.marjan.security.UsersView::new));
     }
 
     private static Navigation.Item item(String group, String title, Feather icon, String permission,

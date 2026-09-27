@@ -1,19 +1,22 @@
 package mx.marjan.reports;
 
-import java.awt.BorderLayout;
 import java.io.File;
 import java.io.IOException;
 import java.time.LocalDate;
 import java.util.List;
-import javax.swing.JComboBox;
-import javax.swing.JFileChooser;
-import javax.swing.JLabel;
-import javax.swing.JTable;
-import javax.swing.JTextField;
-import javax.swing.table.DefaultTableModel;
-import mx.marjan.shared.BaseView;
+import javafx.beans.property.ReadOnlyObjectWrapper;
+import javafx.scene.control.ComboBox;
+import javafx.scene.control.DatePicker;
+import javafx.scene.control.Label;
+import javafx.scene.control.TableColumn;
+import javafx.scene.control.TableView;
+import javafx.scene.layout.VBox;
+import javafx.stage.FileChooser;
 import mx.marjan.shared.Dates;
-import mx.marjan.shared.Ui;
+import mx.marjan.ui.BaseView;
+import mx.marjan.ui.Icons;
+import mx.marjan.ui.Ui;
+import org.kordamp.ikonli.feather.Feather;
 
 public class ReportsView extends BaseView {
 
@@ -40,24 +43,32 @@ public class ReportsView extends BaseView {
     }
 
     private final ReportService service = new ReportService();
-    private final JComboBox<Kind> kind = new JComboBox<>(Kind.values());
-    private final JTextField fromField = new JTextField(10);
-    private final JTextField toField = new JTextField(10);
-    private final DefaultTableModel tableModel = new DefaultTableModel();
-    private final JTable table = Ui.style(new JTable(tableModel));
+    private final ComboBox<Kind> kind = new ComboBox<>();
+    private final DatePicker from = new DatePicker();
+    private final DatePicker to = new DatePicker();
+    private final TableView<List<Object>> table = new TableView<>();
 
     private Report current;
 
     public ReportsView() {
+        kind.getItems().setAll(Kind.values());
+        kind.setValue(Kind.REVENUE);
         LocalDate today = Dates.today();
-        fromField.setText(Dates.format(today.withDayOfYear(1)));
-        toField.setText(Dates.format(today));
-        add(Ui.row(new JLabel("Reporte:"), kind,
-                new JLabel("Desde:"), fromField,
-                new JLabel("Hasta:"), toField,
-                Ui.button("Generar", this::generate),
-                Ui.button("Exportar CSV", this::exportCsv)), BorderLayout.NORTH);
-        add(Ui.scroll(table), BorderLayout.CENTER);
+        from.setValue(today.withDayOfYear(1));
+        to.setValue(today);
+
+        table.getStyleClass().add("data-table");
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN);
+        table.setPlaceholder(new Label("Genere un reporte para ver resultados"));
+
+        var generar = Ui.primary("Generar", this::generate);
+        generar.setGraphic(Icons.action(Feather.REFRESH_CW));
+        var actions = Ui.toolbar(new Label("Reporte:"), kind,
+                new Label("Desde:"), from, new Label("Hasta:"), to,
+                generar,
+                Ui.button("Exportar CSV", this::exportCsv));
+        setTop(new VBox(actions));
+        setCenter(table);
     }
 
     @Override
@@ -66,21 +77,21 @@ public class ReportsView extends BaseView {
     }
 
     private void generate() {
-        Kind selected = (Kind) kind.getSelectedItem();
-        LocalDate from = Dates.parseDate(fromField.getText()).orElse(Dates.today().withDayOfYear(1));
-        LocalDate to = Dates.parseDate(toField.getText()).orElse(Dates.today());
+        Kind selected = kind.getValue();
+        LocalDate start = from.getValue() == null ? Dates.today().withDayOfYear(1) : from.getValue();
+        LocalDate end = to.getValue() == null ? Dates.today() : to.getValue();
         load(() -> switch (selected) {
-            case REVENUE -> service.revenueByClient(from, to);
-            case ROUTES -> service.routeUsage(from, to);
-            case VEHICLES -> service.vehicleUsage(from, to);
-            case FUEL -> service.fuelEfficiency(from, to);
-            case PROFITABILITY -> service.profitability(from, to);
+            case REVENUE -> service.revenueByClient(start, end);
+            case ROUTES -> service.routeUsage(start, end);
+            case VEHICLES -> service.vehicleUsage(start, end);
+            case FUEL -> service.fuelEfficiency(start, end);
+            case PROFITABILITY -> service.profitability(start, end);
             case RECEIVABLES -> service.receivables();
             case LICENSES -> service.expiringLicenses(Dates.today());
             case MAINTENANCE -> service.maintenanceDue(Dates.today());
         }, result -> {
             if (result.isErr()) {
-                Ui.error(this, "Reporte", result.problems());
+                Ui.error(Ui.windowOf(this), "Reporte", result.problems());
             } else {
                 show(result.value());
             }
@@ -89,30 +100,38 @@ public class ReportsView extends BaseView {
 
     private void show(Report report) {
         current = report;
-        Object[] headers = report.headers().toArray();
-        List<List<Object>> rows = report.rows();
-        Object[][] data = new Object[rows.size()][];
-        for (int i = 0; i < rows.size(); i++) {
-            data[i] = rows.get(i).toArray();
+        table.getColumns().clear();
+        List<String> headers = report.headers();
+        for (int i = 0; i < headers.size(); i++) {
+            final int index = i;
+            TableColumn<List<Object>, Object> column = new TableColumn<>(headers.get(i));
+            column.setCellValueFactory(cell -> new ReadOnlyObjectWrapper<>(
+                    index < cell.getValue().size() ? cell.getValue().get(index) : null));
+            column.setSortable(true);
+            table.getColumns().add(column);
         }
-        tableModel.setDataVector(data, headers);
+        table.getItems().setAll(report.rows());
+        setStatus(report.rows().isEmpty() ? "Sin resultados" : " ");
     }
 
     private void exportCsv() {
         if (current == null) {
-            Ui.info(this, "Genere un reporte primero");
+            Ui.info(Ui.windowOf(this), "Genere un reporte primero");
             return;
         }
-        JFileChooser chooser = new JFileChooser();
-        chooser.setSelectedFile(new File(current.title().replace(' ', '_') + ".csv"));
-        if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) {
+        FileChooser chooser = new FileChooser();
+        chooser.setTitle("Exportar reporte");
+        chooser.setInitialFileName(current.title().replace(' ', '_') + ".csv");
+        chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV", "*.csv"));
+        File file = chooser.showSaveDialog(Ui.windowOf(this));
+        if (file == null) {
             return;
         }
         try {
-            CsvExporter.write(current, chooser.getSelectedFile());
-            Ui.info(this, "Reporte exportado a " + chooser.getSelectedFile());
+            CsvExporter.write(current, file);
+            Ui.success(Ui.windowOf(this), "Reporte exportado a " + file);
         } catch (IOException failure) {
-            Ui.failure(this, failure);
+            Ui.failure(Ui.windowOf(this), failure);
         }
     }
 }

@@ -100,6 +100,13 @@ public final class Navigation extends VBox {
         return items.values().stream().findFirst().orElse(null);
     }
 
+    /** The visible item with the given title, or null when the user lacks permission. */
+    public Item byTitle(String title) {
+        return items.values().stream()
+                .filter(item -> item.title().equals(title))
+                .findFirst().orElse(null);
+    }
+
     public void setCollapsed(boolean collapsed) {
         this.collapsed = collapsed;
         getStyleClass().remove("sidebar-collapsed");

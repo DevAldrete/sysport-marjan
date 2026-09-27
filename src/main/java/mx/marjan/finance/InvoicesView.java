@@ -18,7 +18,7 @@ import mx.marjan.clients.ClientService;
 import mx.marjan.requests.RequestStatus;
 import mx.marjan.requests.ServiceRequest;
 import mx.marjan.requests.ServiceRequestService;
-import mx.marjan.shared.Async;
+import mx.marjan.ui.Async;
 import mx.marjan.shared.Dates;
 import mx.marjan.shared.Money;
 import mx.marjan.shared.Result;
