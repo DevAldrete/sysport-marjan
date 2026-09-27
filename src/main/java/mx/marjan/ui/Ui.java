@@ -8,6 +8,7 @@ import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.Label;
 import javafx.scene.control.TableView;
 import javafx.stage.Window;
 import mx.marjan.shared.DataException;
@@ -95,9 +96,34 @@ public final class Ui {
 
     public static Button primary(String text, Runnable action) {
         Button button = button(text, action);
-        button.setDefaultButton(true);
         button.getStyleClass().add("accent");
         return button;
+    }
+
+    /** A wrapping row of actions, so a long toolbar never clips on a narrow window. */
+    public static javafx.scene.layout.FlowPane toolbar(Node... items) {
+        javafx.scene.layout.FlowPane pane = new javafx.scene.layout.FlowPane(8, 8, items);
+        pane.getStyleClass().add("toolbar");
+        return pane;
+    }
+
+    /** A wrapping row of filters (labels + inputs). */
+    public static javafx.scene.layout.FlowPane filters(Node... items) {
+        javafx.scene.layout.FlowPane pane = new javafx.scene.layout.FlowPane(10, 8, items);
+        pane.getStyleClass().add("filter-bar");
+        return pane;
+    }
+
+    public static Label muted(String text) {
+        Label label = new Label(text);
+        label.getStyleClass().add("form-hint");
+        return label;
+    }
+
+    public static Label fieldLabel(String text) {
+        Label label = new Label(text);
+        label.getStyleClass().add("form-hint");
+        return label;
     }
 
     /** Calls the action with the selected row when a table row is double-clicked. */

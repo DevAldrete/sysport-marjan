@@ -1,68 +1,71 @@
 package mx.marjan.clients;
 
-import mx.marjan.shared.Numbers;
-
-import java.awt.BorderLayout;
-import java.awt.Dialog;
 import java.math.BigDecimal;
 import java.util.List;
-import javax.swing.JDialog;
-import javax.swing.JLabel;
-import javax.swing.JTable;
-import javax.swing.JTextField;
-import javax.swing.SwingUtilities;
+import javafx.scene.Scene;
+import javafx.scene.control.Label;
+import javafx.scene.control.TextField;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.VBox;
+import javafx.stage.Modality;
+import javafx.stage.Stage;
 import mx.marjan.routes.Route;
 import mx.marjan.routes.RouteService;
 import mx.marjan.shared.Async;
-import mx.marjan.shared.BaseView;
 import mx.marjan.shared.Dates;
-import mx.marjan.shared.FormPanel;
-import mx.marjan.shared.ModalForm;
 import mx.marjan.shared.Money;
-import mx.marjan.shared.RecordTableModel;
+import mx.marjan.shared.Numbers;
 import mx.marjan.shared.Result;
-import mx.marjan.shared.Ui;
 import mx.marjan.shared.Validators;
+import mx.marjan.ui.BaseView;
+import mx.marjan.ui.FormPanel;
+import mx.marjan.ui.Icons;
+import mx.marjan.ui.ModalForm;
+import mx.marjan.ui.RecordTable;
+import mx.marjan.ui.StatusBadge;
+import mx.marjan.ui.ThemeManager;
+import mx.marjan.ui.Ui;
+import org.kordamp.ikonli.feather.Feather;
 
 public class ClientsView extends BaseView {
 
     private final ClientService service = new ClientService();
     private final RouteService routeService = new RouteService();
-    private final RecordTableModel<Client> model = new RecordTableModel<>(List.of(
-            RecordTableModel.Column.of("Nombre", Client::name),
-            RecordTableModel.Column.of("RFC", Client::rfc),
-            RecordTableModel.Column.of("Contacto", Client::contactName),
-            RecordTableModel.Column.of("Tipo", client -> client.clientType().label()),
-            RecordTableModel.Column.of("Pago", client -> client.paymentTerms().label()),
-            RecordTableModel.Column.of("Credito", client -> Money.format(client.creditLimit())),
-            RecordTableModel.Column.of("Estado", client -> client.status().label())));
-    private final JTable table = Ui.table(model);
-    private final JTextField searchField = new JTextField(18);
+    private final RecordTable<Client> table = new RecordTable<>(List.of(
+            RecordTable.Column.of("Nombre", Client::name),
+            RecordTable.Column.of("RFC", Client::rfc),
+            RecordTable.Column.of("Contacto", Client::contactName),
+            RecordTable.Column.of("Tipo", client -> client.clientType().label()),
+            RecordTable.Column.of("Pago", client -> client.paymentTerms().label()),
+            RecordTable.Column.money("Credito", Client::creditLimit),
+            RecordTable.Column.badge("Estado", client -> client.status().label(),
+                    client -> client.status() == ClientStatus.ACTIVE
+                            ? StatusBadge.Tone.SUCCESS : StatusBadge.Tone.NEUTRAL)));
+    private final TextField search = new TextField();
 
     public ClientsView() {
-        Ui.onEnter(searchField, this::reload);
-        Ui.onDoubleClick(table, this::openEdit);
-        add(Ui.row(new JLabel("Buscar:"), searchField,
-                Ui.button("Buscar", this::reload),
-                Ui.button("Nuevo", this::openNew),
+        search.setPromptText("Nombre o RFC");
+        search.setOnAction(event -> reload());
+        Ui.onDoubleClick(table, client -> openForm(client));
+
+        var nuevo = Ui.primary("Nuevo", this::openNew);
+        nuevo.setGraphic(Icons.action(Feather.PLUS));
+        var filters = Ui.filters(new Label("Buscar:"), search, Ui.button("Buscar", this::reload));
+        var actions = Ui.toolbar(nuevo,
                 Ui.button("Editar", this::openEdit),
-                Ui.button("Desactivar", () -> changeStatus(ClientStatus.INACTIVE)),
-                Ui.button("Activar", () -> changeStatus(ClientStatus.ACTIVE)),
                 Ui.button("Tarifas", this::openRates),
+                Ui.button("Activar", () -> changeStatus(ClientStatus.ACTIVE)),
+                Ui.button("Desactivar", () -> changeStatus(ClientStatus.INACTIVE)),
                 Ui.button("Eliminar", this::deleteClient),
-                Ui.button("Recargar", this::reload)), BorderLayout.NORTH);
-        add(Ui.scroll(table), BorderLayout.CENTER);
+                Ui.button("Recargar", this::reload));
+        setTop(new VBox(4, filters, actions));
+        setCenter(table);
         reload();
     }
 
     @Override
     public void reload() {
-        String term = searchField.getText();
-        loadRows(() -> service.search(term), model::setRows);
-    }
-
-    private Client selected() {
-        return selectedRow(table, model);
+        loadRows(() -> service.search(search.getText()), table::setRows);
     }
 
     private void openNew() {
@@ -70,9 +73,9 @@ public class ClientsView extends BaseView {
     }
 
     private void openEdit() {
-        Client client = selected();
+        Client client = table.selected();
         if (client == null) {
-            Ui.info(this, "Seleccione un cliente");
+            Ui.info(Ui.windowOf(this), "Seleccione un cliente");
             return;
         }
         openForm(client);
@@ -96,12 +99,11 @@ public class ClientsView extends BaseView {
                 .addCombo("status", "Estado", ClientStatus.values(), client.status());
         form.validate("creditLimit", Validators.money());
         form.validate("creditDays", Validators.number());
-        ModalForm.show(this, isNew ? "Nuevo cliente" : "Editar cliente", form, () -> {
+        ModalForm.show(Ui.windowOf(this), isNew ? "Nuevo cliente" : "Editar cliente", form, () -> {
             Result<BigDecimal> limitResult = Money.require(form.text("creditLimit"), "limite de credito");
             if (limitResult.isErr()) {
                 return limitResult;
             }
-            BigDecimal limit = limitResult.value();
             int days;
             try {
                 days = Integer.parseInt(form.text("creditDays").isBlank() ? "0" : form.text("creditDays"));
@@ -111,87 +113,94 @@ public class ClientsView extends BaseView {
             Client built = new Client(client.id(), form.text("name"), form.text("rfc"),
                     form.text("address"), form.text("phone"), form.text("email"), form.text("contact"),
                     (ClientType) form.selected("type"), (PaymentTerms) form.selected("terms"),
-                    limit, days, (ClientStatus) form.selected("status"));
+                    limitResult.value(), days, (ClientStatus) form.selected("status"));
             return service.save(built);
         }, this::reload);
     }
 
     private void changeStatus(ClientStatus status) {
-        Client client = selected();
+        Client client = table.selected();
         if (client == null) {
-            Ui.info(this, "Seleccione un cliente");
+            Ui.info(Ui.windowOf(this), "Seleccione un cliente");
             return;
         }
         String action = status == ClientStatus.INACTIVE ? "Desactivar" : "Activar";
-        if (!Ui.confirm(this, action + " el cliente \"" + client.name() + "\"?")) {
+        if (!Ui.confirm(Ui.windowOf(this), action + " el cliente \"" + client.name() + "\"?")) {
             return;
         }
         Async.run(() -> status == ClientStatus.INACTIVE ? service.deactivate(client.id())
                 : service.activate(client.id()),
                 result -> {
                     if (result.isErr()) {
-                        Ui.error(this, "Error", result.problems());
+                        Ui.error(Ui.windowOf(this), "Error", result.problems());
                     } else {
                         reload();
                     }
                 },
-                failure -> Ui.failure(this, failure));
+                failure -> Ui.failure(Ui.windowOf(this), failure));
     }
 
     private void deleteClient() {
-        Client client = selected();
+        Client client = table.selected();
         if (client == null) {
-            Ui.info(this, "Seleccione un cliente");
+            Ui.info(Ui.windowOf(this), "Seleccione un cliente");
             return;
         }
-        Ui.delete(this, "el cliente \"" + client.name() + "\"",
+        Ui.delete(Ui.windowOf(this), "el cliente \"" + client.name() + "\"",
                 () -> service.delete(client.id()), this::reload);
     }
 
     private void openRates() {
-        Client client = selected();
+        Client client = table.selected();
         if (client == null) {
-            Ui.info(this, "Seleccione un cliente");
+            Ui.info(Ui.windowOf(this), "Seleccione un cliente");
             return;
         }
-        JDialog dialog = new JDialog(SwingUtilities.getWindowAncestor(this),
-                "Tarifas de " + client.name(), Dialog.ModalityType.APPLICATION_MODAL);
-        RecordTableModel<ClientRate> rateModel = new RecordTableModel<>(List.of(
-                RecordTableModel.Column.of("Ruta", ClientRate::routeLabel),
-                RecordTableModel.Column.of("Tarifa", rate -> Money.format(rate.rate())),
-                RecordTableModel.Column.of("Desde", rate -> Dates.format(rate.validFrom())),
-                RecordTableModel.Column.of("Hasta", rate -> Dates.format(rate.validTo()))));
-        JTable rateTable = Ui.table(rateModel);
-        Runnable reloadRates = () -> Async.run(() -> service.ratesFor(client.id()),
-                rateModel::setRows, failure -> Ui.failure(dialog, failure));
-        ClientRate[] cache = new ClientRate[1];
-        rateTable.getSelectionModel().addListSelectionListener(event -> {
-            int row = rateTable.getSelectedRow();
-            cache[0] = row < 0 ? null : rateModel.rowAt(rateTable.convertRowIndexToModel(row));
-        });
-        dialog.setLayout(new BorderLayout(8, 8));
-        dialog.add(Ui.scroll(rateTable), BorderLayout.CENTER);
-        dialog.add(Ui.row(
-                Ui.button("Nueva tarifa", () -> openRateForm(client, null, reloadRates)),
-                Ui.button("Editar", () -> openRateForm(client, cache[0], reloadRates)),
-                Ui.button("Eliminar", () -> {
-                    if (cache[0] == null) {
-                        Ui.info(dialog, "Seleccione una tarifa");
+        RecordTable<ClientRate> rates = new RecordTable<>(List.of(
+                RecordTable.Column.of("Ruta", ClientRate::routeLabel),
+                RecordTable.Column.money("Tarifa", ClientRate::rate),
+                RecordTable.Column.of("Desde", rate -> Dates.format(rate.validFrom())),
+                RecordTable.Column.of("Hasta", rate -> Dates.format(rate.validTo()))));
+
+        Runnable reload = () -> Async.run(() -> service.ratesFor(client.id()),
+                rates::setRows, failure -> Ui.failure(Ui.windowOf(rates), failure));
+        Ui.onDoubleClick(rates, rate -> openRateForm(client, rate, reload));
+
+        Stage stage = new Stage();
+        stage.initOwner(Ui.windowOf(this));
+        stage.initModality(Modality.WINDOW_MODAL);
+        stage.setTitle("Tarifas de " + client.name());
+        var actions = Ui.toolbar(
+                Ui.button("Nueva tarifa", () -> openRateForm(client, null, reload)),
+                Ui.button("Editar", () -> {
+                    if (rates.selected() == null) {
+                        Ui.info(stage, "Seleccione una tarifa");
                         return;
                     }
-                    Ui.delete(dialog, "la tarifa seleccionada",
-                            () -> service.deleteRate(cache[0].id()), reloadRates);
+                    openRateForm(client, rates.selected(), reload);
                 }),
-                Ui.button("Cerrar", dialog::dispose)), BorderLayout.SOUTH);
-        reloadRates.run();
-        dialog.setSize(600, 360);
-        dialog.setLocationRelativeTo(this);
-        dialog.setVisible(true);
+                Ui.button("Eliminar", () -> {
+                    if (rates.selected() == null) {
+                        Ui.info(stage, "Seleccione una tarifa");
+                        return;
+                    }
+                    Ui.delete(stage, "la tarifa seleccionada",
+                            () -> service.deleteRate(rates.selected().id()), reload);
+                }),
+                Ui.button("Cerrar", stage::close));
+        BorderPane root = new BorderPane(rates);
+        root.setPadding(new javafx.geometry.Insets(16));
+        root.setBottom(actions);
+        Scene scene = new Scene(root, 760, 480);
+        ThemeManager.apply(scene);
+        stage.setScene(scene);
+        reload.run();
+        stage.show();
     }
 
     private void openRateForm(Client client, ClientRate rate, Runnable onSaved) {
         Async.run(routeService::listAll, routes -> showRateForm(client, rate, routes, onSaved),
-                failure -> Ui.failure(this, failure));
+                failure -> Ui.failure(Ui.windowOf(this), failure));
     }
 
     private void showRateForm(Client client, ClientRate rate, List<Route> routes, Runnable onSaved) {
@@ -204,7 +213,7 @@ public class ClientsView extends BaseView {
         form.validate("rate", Validators.money());
         form.validate("from", Validators.date());
         form.validate("to", Validators.date());
-        ModalForm.show(this, rate == null ? "Nueva tarifa" : "Editar tarifa", form, () -> {
+        ModalForm.show(Ui.windowOf(this), rate == null ? "Nueva tarifa" : "Editar tarifa", form, () -> {
             Object routeValue = form.selected("route");
             if (!(routeValue instanceof Route route)) {
                 return Result.err("Debe seleccionar una ruta");
@@ -213,7 +222,6 @@ public class ClientsView extends BaseView {
             if (rateResult.isErr()) {
                 return rateResult;
             }
-            BigDecimal amount = rateResult.value();
             java.time.LocalDate from = Dates.parseDate(form.text("from")).orElse(null);
             if (from == null) {
                 return Result.err("La fecha de vigencia inicial es obligatoria (yyyy-MM-dd)");
@@ -221,7 +229,7 @@ public class ClientsView extends BaseView {
             java.time.LocalDate to = form.text("to").isBlank() ? null
                     : Dates.parseDate(form.text("to")).orElse(null);
             ClientRate built = new ClientRate(editing.id(), client.id(), route.id(), route.label(),
-                    amount, from, to);
+                    rateResult.value(), from, to);
             return service.saveRate(built);
         }, onSaved);
     }

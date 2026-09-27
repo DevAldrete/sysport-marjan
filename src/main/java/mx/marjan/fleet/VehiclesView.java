@@ -1,67 +1,70 @@
 package mx.marjan.fleet;
 
-import mx.marjan.shared.Numbers;
-
-import java.awt.BorderLayout;
-import java.awt.Dialog;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
-import javax.swing.JDialog;
-import javax.swing.JLabel;
-import javax.swing.JTable;
-import javax.swing.JTextField;
-import javax.swing.SwingUtilities;
+import javafx.geometry.Insets;
+import javafx.scene.Scene;
+import javafx.scene.control.Label;
+import javafx.scene.control.TextField;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.VBox;
+import javafx.stage.Modality;
+import javafx.stage.Stage;
 import mx.marjan.shared.Async;
-import mx.marjan.shared.BaseView;
 import mx.marjan.shared.Dates;
-import mx.marjan.shared.FormPanel;
-import mx.marjan.shared.ModalForm;
 import mx.marjan.shared.Money;
-import mx.marjan.shared.RecordTableModel;
+import mx.marjan.shared.Numbers;
 import mx.marjan.shared.Result;
-import mx.marjan.shared.Ui;
 import mx.marjan.shared.Validators;
+import mx.marjan.ui.BaseView;
+import mx.marjan.ui.FormPanel;
+import mx.marjan.ui.Icons;
+import mx.marjan.ui.ModalForm;
+import mx.marjan.ui.RecordTable;
+import mx.marjan.ui.StatusTones;
+import mx.marjan.ui.ThemeManager;
+import mx.marjan.ui.Ui;
+import org.kordamp.ikonli.feather.Feather;
 
 public class VehiclesView extends BaseView {
 
     private final VehicleService service = new VehicleService();
     private final MaintenanceService maintenanceService = new MaintenanceService();
-    private final RecordTableModel<Vehicle> model = new RecordTableModel<>(List.of(
-            RecordTableModel.Column.of("Economico", Vehicle::internalCode),
-            RecordTableModel.Column.of("Placas", Vehicle::plates),
-            RecordTableModel.Column.of("Marca", Vehicle::brand),
-            RecordTableModel.Column.of("Modelo", Vehicle::model),
-            RecordTableModel.Column.of("Anio", Vehicle::year),
-            RecordTableModel.Column.of("Capacidad", Vehicle::loadCapacity),
-            RecordTableModel.Column.of("Kilometraje", Vehicle::mileage),
-            RecordTableModel.Column.of("Estado", vehicle -> vehicle.status().label())));
-    private final JTable table = Ui.table(model);
-    private final JTextField searchField = new JTextField(18);
+    private final RecordTable<Vehicle> table = new RecordTable<>(List.of(
+            RecordTable.Column.of("Economico", Vehicle::internalCode),
+            RecordTable.Column.of("Placas", Vehicle::plates),
+            RecordTable.Column.of("Marca", Vehicle::brand),
+            RecordTable.Column.of("Modelo", Vehicle::model),
+            RecordTable.Column.number("Anio", Vehicle::year),
+            RecordTable.Column.number("Capacidad", Vehicle::loadCapacity),
+            RecordTable.Column.number("Kilometraje", Vehicle::mileage),
+            RecordTable.Column.badge("Estado", vehicle -> vehicle.status().label(),
+                    vehicle -> StatusTones.vehicle(vehicle.status()))));
+    private final TextField search = new TextField();
 
     public VehiclesView() {
-        Ui.onEnter(searchField, this::reload);
-        Ui.onDoubleClick(table, this::openEdit);
-        add(Ui.row(new JLabel("Buscar:"), searchField,
-                Ui.button("Buscar", this::reload),
-                Ui.button("Nuevo", this::openNew),
+        search.setPromptText("Economico, placas o marca");
+        search.setOnAction(event -> reload());
+        Ui.onDoubleClick(table, this::openForm);
+
+        var nuevo = Ui.primary("Nuevo", this::openNew);
+        nuevo.setGraphic(Icons.action(Feather.PLUS));
+        var filters = Ui.filters(new Label("Buscar:"), search, Ui.button("Buscar", this::reload));
+        var actions = Ui.toolbar(nuevo,
                 Ui.button("Editar", this::openEdit),
                 Ui.button("Cambiar estado", this::changeStatus),
                 Ui.button("Mantenimiento", this::openMaintenance),
                 Ui.button("Eliminar", this::deleteVehicle),
-                Ui.button("Recargar", this::reload)), BorderLayout.NORTH);
-        add(Ui.scroll(table), BorderLayout.CENTER);
+                Ui.button("Recargar", this::reload));
+        setTop(new VBox(4, filters, actions));
+        setCenter(table);
         reload();
     }
 
     @Override
     public void reload() {
-        String term = searchField.getText();
-        loadRows(() -> service.search(term), model::setRows);
-    }
-
-    private Vehicle selected() {
-        return selectedRow(table, model);
+        loadRows(() -> service.search(search.getText()), table::setRows);
     }
 
     private void openNew() {
@@ -69,9 +72,9 @@ public class VehiclesView extends BaseView {
     }
 
     private void openEdit() {
-        Vehicle vehicle = selected();
+        Vehicle vehicle = table.selected();
         if (vehicle == null) {
-            Ui.info(this, "Seleccione una unidad");
+            Ui.info(Ui.windowOf(this), "Seleccione una unidad");
             return;
         }
         openForm(vehicle);
@@ -93,7 +96,7 @@ public class VehiclesView extends BaseView {
         form.validate("year", Validators.number());
         form.validate("capacity", Validators.number());
         form.validate("mileage", Validators.number());
-        ModalForm.show(this, isNew ? "Nueva unidad" : "Editar unidad", form, () -> {
+        ModalForm.show(Ui.windowOf(this), isNew ? "Nueva unidad" : "Editar unidad", form, () -> {
             Integer year = null;
             if (!form.text("year").isBlank()) {
                 try {
@@ -115,88 +118,103 @@ public class VehiclesView extends BaseView {
     }
 
     private void changeStatus() {
-        Vehicle vehicle = selected();
+        Vehicle vehicle = table.selected();
         if (vehicle == null) {
-            Ui.info(this, "Seleccione una unidad");
+            Ui.info(Ui.windowOf(this), "Seleccione una unidad");
             return;
         }
         VehicleStatus[] options = VehicleStatus.manualValues();
         VehicleStatus initial = vehicle.status().isManual() ? vehicle.status() : options[0];
         FormPanel form = new FormPanel().addCombo("status", "Nuevo estado", options, initial);
-        ModalForm.show(this, "Cambiar estado de " + vehicle.label(), form,
+        ModalForm.show(Ui.windowOf(this), "Cambiar estado de " + vehicle.label(), form,
                 () -> service.setStatus(vehicle.id(), (VehicleStatus) form.selected("status")),
                 this::reload);
     }
 
     private void deleteVehicle() {
-        Vehicle vehicle = selected();
+        Vehicle vehicle = table.selected();
         if (vehicle == null) {
-            Ui.info(this, "Seleccione una unidad");
+            Ui.info(Ui.windowOf(this), "Seleccione una unidad");
             return;
         }
-        Ui.delete(this, "la unidad \"" + vehicle.label() + "\"",
+        Ui.delete(Ui.windowOf(this), "la unidad \"" + vehicle.label() + "\"",
                 () -> service.delete(vehicle.id()), this::reload);
     }
 
     private void openMaintenance() {
-        Vehicle vehicle = selected();
+        Vehicle vehicle = table.selected();
         if (vehicle == null) {
-            Ui.info(this, "Seleccione una unidad");
+            Ui.info(Ui.windowOf(this), "Seleccione una unidad");
             return;
         }
-        JDialog dialog = new JDialog(SwingUtilities.getWindowAncestor(this),
-                "Mantenimiento de " + vehicle.label(), Dialog.ModalityType.APPLICATION_MODAL);
-        RecordTableModel<Maintenance> records = new RecordTableModel<>(List.of(
-                RecordTableModel.Column.of("Fecha", record -> Dates.format(record.maintenanceDate())),
-                RecordTableModel.Column.of("Tipo", record -> record.type().label()),
-                RecordTableModel.Column.text("Trabajos", Maintenance::workPerformed, 50),
-                RecordTableModel.Column.text("Proveedor", Maintenance::provider, 30),
-                RecordTableModel.Column.of("Costo", record -> Money.format(record.cost())),
-                RecordTableModel.Column.of("Proxima fecha", record -> Dates.format(record.nextServiceDate())),
-                RecordTableModel.Column.of("Proximo km", Maintenance::nextServiceKm)));
-        JTable recordsTable = Ui.table(records);
-        Maintenance[] cache = new Maintenance[1];
-        recordsTable.getSelectionModel().addListSelectionListener(event -> {
-            int row = recordsTable.getSelectedRow();
-            cache[0] = row < 0 ? null : records.rowAt(recordsTable.convertRowIndexToModel(row));
-        });
-        Runnable reloadRecords = () -> Async.run(() -> maintenanceService.listByVehicle(vehicle.id()),
-                records::setRows, failure -> Ui.failure(dialog, failure));
-        dialog.setLayout(new BorderLayout(8, 8));
-        dialog.add(Ui.scroll(recordsTable), BorderLayout.CENTER);
-        dialog.add(Ui.row(Ui.button("Registrar mantenimiento",
-                () -> openMaintenanceForm(vehicle, reloadRecords)),
-                Ui.button("Eliminar", () -> {
-                    if (cache[0] == null) {
-                        Ui.info(dialog, "Seleccione un registro de mantenimiento");
+        RecordTable<Maintenance> records = new RecordTable<>(List.of(
+                RecordTable.Column.of("Fecha", record -> Dates.format(record.maintenanceDate())),
+                RecordTable.Column.of("Tipo", record -> record.type().label()),
+                RecordTable.Column.text("Trabajos", Maintenance::workPerformed, 50),
+                RecordTable.Column.text("Proveedor", Maintenance::provider, 30),
+                RecordTable.Column.money("Costo", Maintenance::cost),
+                RecordTable.Column.of("Proxima fecha", record -> Dates.format(record.nextServiceDate())),
+                RecordTable.Column.number("Proximo km", Maintenance::nextServiceKm)));
+
+        Runnable reload = () -> Async.run(() -> maintenanceService.listByVehicle(vehicle.id()),
+                records::setRows, failure -> Ui.failure(Ui.windowOf(records), failure));
+        Ui.onDoubleClick(records, record -> openMaintenanceForm(vehicle, record, reload));
+
+        Stage stage = new Stage();
+        stage.initOwner(Ui.windowOf(this));
+        stage.initModality(Modality.WINDOW_MODAL);
+        stage.setTitle("Mantenimiento de " + vehicle.label());
+        var actions = Ui.toolbar(
+                Ui.button("Registrar mantenimiento", () -> openMaintenanceForm(vehicle, null, reload)),
+                Ui.button("Editar", () -> {
+                    if (records.selected() == null) {
+                        Ui.info(stage, "Seleccione un registro de mantenimiento");
                         return;
                     }
-                    Ui.delete(dialog, "el registro de mantenimiento seleccionado",
-                            () -> maintenanceService.delete(cache[0].id()), reloadRecords);
+                    openMaintenanceForm(vehicle, records.selected(), reload);
                 }),
-                Ui.button("Cerrar", dialog::dispose)), BorderLayout.SOUTH);
-        reloadRecords.run();
-        dialog.setSize(820, 380);
-        dialog.setLocationRelativeTo(this);
-        dialog.setVisible(true);
+                Ui.button("Eliminar", () -> {
+                    if (records.selected() == null) {
+                        Ui.info(stage, "Seleccione un registro de mantenimiento");
+                        return;
+                    }
+                    Ui.delete(stage, "el registro de mantenimiento seleccionado",
+                            () -> maintenanceService.delete(records.selected().id()), reload);
+                }),
+                Ui.button("Cerrar", stage::close));
+        BorderPane root = new BorderPane(records);
+        root.setPadding(new Insets(16));
+        root.setBottom(actions);
+        Scene scene = new Scene(root, 900, 500);
+        ThemeManager.apply(scene);
+        stage.setScene(scene);
+        reload.run();
+        stage.show();
     }
 
-    private void openMaintenanceForm(Vehicle vehicle, Runnable onSaved) {
+    private void openMaintenanceForm(Vehicle vehicle, Maintenance existing, Runnable onSaved) {
+        Maintenance record = existing != null ? existing
+                : new Maintenance(0, vehicle.id(), vehicle.label(), Dates.today(), vehicle.mileage(),
+                        MaintenanceType.PREVENTIVE, "", "", BigDecimal.ZERO, null, null);
         FormPanel form = new FormPanel()
-                .addText("date", "Fecha", Dates.format(Dates.today()), "Formato: AAAA-MM-DD")
-                .addText("odometer", "Odometro", Numbers.plain(vehicle.mileage()), "Lectura del tablero en km")
-                .addCombo("type", "Tipo", MaintenanceType.values(), MaintenanceType.PREVENTIVE)
-                .addArea("work", "Trabajos realizados", "", "Descripcion de lo realizado")
-                .addText("provider", "Proveedor / taller", "")
-                .addText("cost", "Costo", "0", "Importe del mantenimiento")
-                .addText("nextDate", "Proxima fecha (opcional)", "", "Formato: AAAA-MM-DD")
-                .addText("nextKm", "Proximo km (opcional)", "", "Kilometraje del proximo servicio");
+                .addText("date", "Fecha", Dates.format(record.maintenanceDate()), "Formato: AAAA-MM-DD")
+                .addText("odometer", "Odometro", Numbers.plain(record.odometerReading()),
+                        "Lectura del tablero en km")
+                .addCombo("type", "Tipo", MaintenanceType.values(), record.type())
+                .addArea("work", "Trabajos realizados", record.workPerformed(),
+                        "Descripcion de lo realizado")
+                .addText("provider", "Proveedor / taller", record.provider())
+                .addText("cost", "Costo", Numbers.plain(record.cost()), "Importe del mantenimiento")
+                .addText("nextDate", "Proxima fecha (opcional)", Dates.format(record.nextServiceDate()),
+                        "Formato: AAAA-MM-DD")
+                .addText("nextKm", "Proximo km (opcional)", Numbers.plain(record.nextServiceKm()),
+                        "Kilometraje del proximo servicio");
         form.validate("date", Validators.date());
         form.validate("odometer", Validators.number());
         form.validate("cost", Validators.money());
         form.validate("nextDate", Validators.date());
         form.validate("nextKm", Validators.number());
-        ModalForm.show(this, "Mantenimiento de " + vehicle.label(), form, () -> {
+        ModalForm.show(Ui.windowOf(this), "Mantenimiento de " + vehicle.label(), form, () -> {
             LocalDate date = Dates.parseDate(form.text("date")).orElse(null);
             if (date == null) {
                 return Result.err("La fecha es obligatoria (yyyy-MM-dd)");
@@ -205,11 +223,12 @@ public class VehiclesView extends BaseView {
             BigDecimal cost = Money.parse(form.text("cost")).orElse(BigDecimal.ZERO);
             LocalDate nextDate = form.text("nextDate").isBlank() ? null
                     : Dates.parseDate(form.text("nextDate")).orElse(null);
-            BigDecimal nextKm = form.text("nextKm").isBlank() ? null : Numbers.parseOrZero(form.text("nextKm"));
-            Maintenance record = new Maintenance(0, vehicle.id(), vehicle.label(), date, odometer,
-                    (MaintenanceType) form.selected("type"), form.text("work"), form.text("provider"),
-                    cost, nextDate, nextKm);
-            return maintenanceService.register(record);
+            BigDecimal nextKm = form.text("nextKm").isBlank() ? null
+                    : Numbers.parseOrZero(form.text("nextKm"));
+            Maintenance built = new Maintenance(record.id(), vehicle.id(), vehicle.label(), date,
+                    odometer, (MaintenanceType) form.selected("type"), form.text("work"),
+                    form.text("provider"), cost, nextDate, nextKm);
+            return maintenanceService.register(built);
         }, onSaved);
     }
 }
