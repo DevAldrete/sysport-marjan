@@ -43,10 +43,6 @@ public class AuthService {
         return users.roles();
     }
 
-    public List<String> permissions() {
-        return users.permissions();
-    }
-
     public Result<Void> createUser(String username, String password, long roleId, Long employeeId, UserStatus status) {
         Result<Void> denied = requireAdmin();
         if (denied != null) {

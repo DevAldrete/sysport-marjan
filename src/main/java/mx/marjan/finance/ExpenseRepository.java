@@ -1,6 +1,5 @@
 package mx.marjan.finance;
 
-import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
@@ -24,15 +23,6 @@ public class ExpenseRepository {
 
     public List<Expense> listByTrip(long tripId) {
         return Database.callList("{call sp_expenses_by_trip(?)}", this::map, tripId);
-    }
-
-    public List<Expense> listAll() {
-        return Database.callList("{call sp_expenses_list()}", this::map);
-    }
-
-    public BigDecimal sumByTrip(long tripId) {
-        return Database.callOne("{call sp_expense_sum_by_trip(?)}",
-                rs -> rs.getBigDecimal("total"), tripId).orElse(BigDecimal.ZERO);
     }
 
     public Result<Long> save(Expense expense, long userId) {

@@ -12,8 +12,4 @@ public record License(
     public static License empty() {
         return new License(0, "", "", null, null);
     }
-
-    public License withId(long newId) {
-        return new License(newId, licenseNumber, licenseType, issueDate, expirationDate);
-    }
 }

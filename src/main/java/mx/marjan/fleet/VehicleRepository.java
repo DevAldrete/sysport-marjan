@@ -52,9 +52,4 @@ public class VehicleRepository {
     public Result<Void> delete(long id) {
         return Database.callVoid("{call sp_vehicle_delete(?,?)}", id);
     }
-
-    /** BR-21: mileage never decreases. */
-    public void raiseMileage(long id, java.math.BigDecimal reading) {
-        Database.callNoOut("{call sp_vehicle_raise_mileage(?,?)}", id, reading);
-    }
 }

@@ -1,8 +1,10 @@
 package mx.marjan.requests;
 
-import java.util.Set;
-
-/** BR-03: the only valid lifecycle transitions for a service request (PRD 5.1). */
+/**
+ * Lifecycle states of a service request. The valid transitions (BR-03) live in
+ * the database function {@code fn_request_can_transition}; the enum is only the
+ * typed vocabulary used by the UI.
+ */
 public enum RequestStatus {
     REQUESTED("requested", "Solicitada"),
     AUTHORIZED("authorized", "Autorizada"),
@@ -12,9 +14,6 @@ public enum RequestStatus {
     DELIVERED("delivered", "Entregada"),
     CLOSED("closed", "Cerrada"),
     CANCELLED("cancelled", "Cancelada");
-
-    private static final Set<RequestStatus> CANCELLABLE =
-            Set.of(REQUESTED, AUTHORIZED, SCHEDULED, ASSIGNED);
 
     private final String dbValue;
     private final String label;
@@ -30,21 +29,6 @@ public enum RequestStatus {
 
     public String label() {
         return label;
-    }
-
-    public boolean canMoveTo(RequestStatus next) {
-        if (next == CANCELLED) {
-            return CANCELLABLE.contains(this);
-        }
-        return switch (this) {
-            case REQUESTED -> next == AUTHORIZED;
-            case AUTHORIZED -> next == SCHEDULED;
-            case SCHEDULED -> next == ASSIGNED;
-            case ASSIGNED -> next == IN_TRANSIT;
-            case IN_TRANSIT -> next == DELIVERED;
-            case DELIVERED -> next == CLOSED;
-            case CLOSED, CANCELLED -> false;
-        };
     }
 
     public static RequestStatus fromDb(String value) {

@@ -24,11 +24,6 @@ public enum VehicleStatus {
         return label;
     }
 
-    /** BR-07 / BR-11: only these statuses may be assigned to a trip. */
-    public boolean isAssignable() {
-        return this == AVAILABLE;
-    }
-
     public static VehicleStatus fromDb(String value) {
         if (value == null) {
             return AVAILABLE;

@@ -49,10 +49,6 @@ public class ServiceRequestRepository {
         return Database.callList("{call sp_requests_by_status(?)}", this::map, status.dbValue());
     }
 
-    public List<ServiceRequest> listAuthorized() {
-        return Database.callList("{call sp_requests_authorized()}", this::map);
-    }
-
     /** FR-INV-1: authorized rates without an invoice yet, so collections can see what is billable. */
     public List<ServiceRequest> listPendingBilling() {
         return Database.callList("{call sp_requests_pending_billing()}", this::map);

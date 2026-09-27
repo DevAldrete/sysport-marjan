@@ -1,6 +1,5 @@
 package mx.marjan.finance;
 
-import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
@@ -22,15 +21,6 @@ public class PaymentRepository {
 
     public List<Payment> listByInvoice(long invoiceId) {
         return Database.callList("{call sp_payments_by_invoice(?)}", this::map, invoiceId);
-    }
-
-    public List<Payment> listAll() {
-        return Database.callList("{call sp_payments_list()}", this::map);
-    }
-
-    public BigDecimal sumByInvoice(long invoiceId) {
-        return Database.callOne("{call sp_payment_sum_by_invoice(?)}",
-                rs -> rs.getBigDecimal("total"), invoiceId).orElse(BigDecimal.ZERO);
     }
 
     public void delete(long id) {

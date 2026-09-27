@@ -47,10 +47,6 @@ public class UserRepository {
         return new LinkedHashSet<>(names);
     }
 
-    public List<String> permissions() {
-        return Database.callList("{call sp_permissions_list()}", rs -> rs.getString("name"));
-    }
-
     public long insert(String username, String passwordHash, long roleId, Long employeeId,
             UserStatus status) {
         Object[] out = Database.call("{call sp_user_insert(?,?,?,?,?,?)}",

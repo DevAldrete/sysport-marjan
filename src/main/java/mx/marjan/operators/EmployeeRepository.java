@@ -42,10 +42,6 @@ public class EmployeeRepository {
         return Database.callOne("{call sp_employee_by_id(?)}", this::map, id);
     }
 
-    public List<Employee> listAssignable() {
-        return Database.callList("{call sp_employees_assignable()}", this::map);
-    }
-
     /** FR-TRP-1: available operators with a license valid through the window and no overlapping trip. */
     public List<Employee> listEligible(java.time.LocalDateTime start, java.time.LocalDateTime end) {
         return Database.callList("{call sp_eligible_operators_full(?,?)}", this::map, start, end);
