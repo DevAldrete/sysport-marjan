@@ -5,14 +5,16 @@ import java.awt.Component;
 import java.awt.Dialog;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTabbedPane;
-import javax.swing.JTable;
 import javax.swing.SwingUtilities;
 import mx.marjan.finance.Advance;
+import mx.marjan.finance.AdvanceBalance;
 import mx.marjan.finance.AdvanceService;
+import mx.marjan.finance.AdvanceStatus;
 import mx.marjan.finance.Expense;
 import mx.marjan.finance.ExpenseService;
 import mx.marjan.finance.ExpenseType;
@@ -24,6 +26,7 @@ import mx.marjan.shared.FormPanel;
 import mx.marjan.shared.ModalForm;
 import mx.marjan.shared.Money;
 import mx.marjan.shared.RecordTableModel;
+import mx.marjan.shared.RecordTablePanel;
 import mx.marjan.shared.Result;
 import mx.marjan.shared.Ui;
 
@@ -59,60 +62,53 @@ public class TripDetailDialog extends JDialog {
         setLocationRelativeTo(parent);
     }
 
+    private record Summary(BigDecimal expenses, BigDecimal fuel, AdvanceBalance advance) {}
+
     private JPanel summaryPanel() {
         JLabel tripInfo = new JLabel();
         JLabel costs = new JLabel();
         JPanel panel = new JPanel(new BorderLayout(8, 8));
         panel.add(Ui.titled("Viaje", tripInfo), BorderLayout.NORTH);
         panel.add(Ui.titled("Costos", costs), BorderLayout.CENTER);
-        Async.run(() -> {
-            BigDecimal expenses = expenseService.listByTrip(trip.id()).stream()
-                    .map(Expense::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal fuel = fuelService.listByTrip(trip.id()).stream()
-                    .map(FuelLoad::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
-            return new Object[] { expenses, fuel, advanceService.balanceForTrip(trip.id()) };
-        }, values -> {
-            BigDecimal expenses = (BigDecimal) values[0];
-            BigDecimal fuel = (BigDecimal) values[1];
+        Async.run(() -> new Summary(
+                expenseService.listByTrip(trip.id()).stream().map(Expense::amount)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add),
+                fuelService.listByTrip(trip.id()).stream().map(FuelLoad::amount)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add),
+                advanceService.balanceForTrip(trip.id())), summary -> {
             tripInfo.setText("<html>Unidad: " + trip.vehicleLabel() + "<br>Operador: " + trip.employeeName()
                     + "<br>Ruta: " + trip.routeLabel() + "<br>Estado: " + trip.status().label()
                     + "<br>Salida: " + Dates.format(trip.departure())
                     + "<br>Llegada: " + Dates.format(trip.arrival()) + "</html>");
-            costs.setText("<html>Gastos: " + Money.format(expenses)
-                    + "<br>Combustible: " + Money.format(fuel)
-                    + "<br>Total: " + Money.format(expenses.add(fuel))
-                    + "<br>Anticipo: " + ((mx.marjan.finance.AdvanceBalance) values[2]).label()
+            costs.setText("<html>Gastos: " + Money.format(summary.expenses())
+                    + "<br>Combustible: " + Money.format(summary.fuel())
+                    + "<br>Total: " + Money.format(summary.expenses().add(summary.fuel()))
+                    + "<br>Anticipo: " + summary.advance().label()
                     + "</html>");
         }, failure -> Ui.failure(this, failure));
         return panel;
     }
 
     private JPanel expensesPanel() {
-        RecordTableModel<Expense> model = new RecordTableModel<>(java.util.List.of(
+        RecordTableModel<Expense> model = new RecordTableModel<>(List.of(
                 RecordTableModel.Column.of("Fecha", expense -> Dates.format(expense.expenseDate())),
                 RecordTableModel.Column.of("Tipo", expense -> expense.type().label()),
                 RecordTableModel.Column.of("Importe", expense -> Money.format(expense.amount())),
                 RecordTableModel.Column.text("Descripcion", Expense::description, 50)));
-        JTable table = Ui.table(model);
-        Expense[] selected = new Expense[1];
-        table.getSelectionModel().addListSelectionListener(event -> {
-            int row = table.getSelectedRow();
-            selected[0] = row < 0 ? null : model.rowAt(table.convertRowIndexToModel(row));
-        });
+        RecordTablePanel<Expense> panel = new RecordTablePanel<>(model);
         Runnable reload = () -> Async.run(() -> expenseService.listByTrip(trip.id()),
-                model::setRows, failure -> Ui.failure(this, failure));
-        JPanel panel = new JPanel(new BorderLayout(8, 8));
-        panel.add(Ui.scroll(table), BorderLayout.CENTER);
-        panel.add(Ui.row(Ui.button("Nuevo gasto", () -> openExpenseForm(reload)),
+                panel::setRows, failure -> Ui.failure(this, failure));
+        panel.withActions(
+                Ui.button("Nuevo gasto", () -> openExpenseForm(reload)),
                 Ui.button("Eliminar", () -> {
-                    if (selected[0] == null) {
+                    if (panel.selected() == null) {
                         Ui.info(this, "Seleccione un gasto");
                         return;
                     }
                     Ui.delete(this, "el gasto seleccionado",
-                            () -> expenseService.delete(selected[0].id()), reload);
+                            () -> expenseService.delete(panel.selected().id()), reload);
                 }),
-                Ui.button("Recargar", reload)), BorderLayout.SOUTH);
+                Ui.button("Recargar", reload));
         reload.run();
         return panel;
     }
@@ -128,74 +124,69 @@ public class TripDetailDialog extends JDialog {
             if (amountResult.isErr()) {
                 return amountResult;
             }
-            BigDecimal amount = amountResult.value();
             LocalDate date = Dates.parseDate(form.text("date")).orElse(null);
             Expense expense = new Expense(0, trip.id(), trip.folio(),
-                    (ExpenseType) form.selected("type"), amount, date, form.text("description"));
+                    (ExpenseType) form.selected("type"), amountResult.value(), date, form.text("description"));
             return expenseService.register(expense);
         }, onSaved);
     }
 
     private JPanel fuelPanel() {
-        RecordTableModel<FuelLoad> model = new RecordTableModel<>(java.util.List.of(
+        RecordTableModel<FuelLoad> model = new RecordTableModel<>(List.of(
                 RecordTableModel.Column.of("Fecha", load -> Dates.format(load.loadDate())),
                 RecordTableModel.Column.of("Estacion", FuelLoad::fuelStation),
                 RecordTableModel.Column.of("Litros", FuelLoad::liters),
                 RecordTableModel.Column.of("Precio/L", FuelLoad::pricePerLiter),
                 RecordTableModel.Column.of("Importe", load -> Money.format(load.amount())),
                 RecordTableModel.Column.of("Odometro", FuelLoad::odometerReading)));
-        JTable table = Ui.table(model);
-        JPanel panel = new JPanel(new BorderLayout(8, 8));
-        panel.add(Ui.scroll(table), BorderLayout.CENTER);
-        panel.add(Ui.row(Ui.button("Recargar", () -> Async.run(
-                () -> fuelService.listByTrip(trip.id()), model::setRows,
-                failure -> Ui.failure(this, failure)))), BorderLayout.SOUTH);
-        Async.run(() -> fuelService.listByTrip(trip.id()), model::setRows,
-                failure -> Ui.failure(this, failure));
+        RecordTablePanel<FuelLoad> panel = new RecordTablePanel<>(model);
+        Runnable reload = () -> Async.run(() -> fuelService.listByTrip(trip.id()),
+                panel::setRows, failure -> Ui.failure(this, failure));
+        panel.withActions(Ui.button("Recargar", reload));
+        reload.run();
         return panel;
     }
 
     private JPanel advancesPanel() {
-        RecordTableModel<Advance> model = new RecordTableModel<>(java.util.List.of(
+        RecordTableModel<Advance> model = new RecordTableModel<>(List.of(
                 RecordTableModel.Column.of("Operador", Advance::employeeName),
                 RecordTableModel.Column.of("Monto", advance -> Money.format(advance.amountGiven())),
                 RecordTableModel.Column.of("Fecha", advance -> Dates.format(advance.deliveredDate())),
                 RecordTableModel.Column.of("Estado", advance -> advance.status().label())));
-        JTable table = Ui.table(model);
-        Advance[] cache = new Advance[1];
-        table.getSelectionModel().addListSelectionListener(event -> {
-            int row = table.getSelectedRow();
-            cache[0] = row < 0 ? null : model.rowAt(table.convertRowIndexToModel(row));
-        });
+        RecordTablePanel<Advance> panel = new RecordTablePanel<>(model);
         Runnable reload = () -> Async.run(() -> advanceService.listByTrip(trip.id()),
-                model::setRows, failure -> Ui.failure(this, failure));
-        JPanel panel = new JPanel(new BorderLayout(8, 8));
-        panel.add(Ui.scroll(table), BorderLayout.CENTER);
-        panel.add(Ui.row(
+                panel::setRows, failure -> Ui.failure(this, failure));
+        panel.withActions(
                 Ui.button("Registrar anticipo", () -> openAdvanceForm(reload)),
-                Ui.button("Comprobar", () -> {
-                    if (cache[0] == null) {
-                        Ui.info(this, "Seleccione un anticipo");
-                        return;
-                    }
-                    var result = advanceService.settle(cache[0].id());
-                    if (result.isErr()) {
-                        Ui.error(this, "Error", result.problems());
-                    } else {
-                        reload.run();
-                    }
-                }),
+                Ui.button("Comprobar", () -> settleAdvance(panel, reload)),
                 Ui.button("Eliminar", () -> {
-                    if (cache[0] == null) {
+                    if (panel.selected() == null) {
                         Ui.info(this, "Seleccione un anticipo");
                         return;
                     }
                     Ui.delete(this, "el anticipo seleccionado",
-                            () -> advanceService.delete(cache[0].id()), reload);
+                            () -> advanceService.delete(panel.selected().id()), reload);
                 }),
-                Ui.button("Recargar", reload)), BorderLayout.SOUTH);
+                Ui.button("Recargar", reload));
         reload.run();
         return panel;
+    }
+
+    private void settleAdvance(RecordTablePanel<Advance> panel, Runnable reload) {
+        if (panel.selected() == null) {
+            Ui.info(this, "Seleccione un anticipo");
+            return;
+        }
+        if (!Ui.confirm(this, "Marcar el anticipo como comprobado?")) {
+            return;
+        }
+        Async.run(() -> advanceService.settle(panel.selected().id()), result -> {
+            if (result.isErr()) {
+                Ui.error(this, "Error", result.problems());
+            } else {
+                reload.run();
+            }
+        }, failure -> Ui.failure(this, failure));
     }
 
     private void openAdvanceForm(Runnable onSaved) {
@@ -207,41 +198,34 @@ public class TripDetailDialog extends JDialog {
             if (amountResult.isErr()) {
                 return amountResult;
             }
-            BigDecimal amount = amountResult.value();
             LocalDate date = Dates.parseDate(form.text("date")).orElse(null);
             Advance advance = new Advance(0, trip.id(), trip.folio(), trip.employeeId(),
-                    trip.employeeName(), amount, date, mx.marjan.finance.AdvanceStatus.PENDING, null);
+                    trip.employeeName(), amountResult.value(), date, AdvanceStatus.PENDING, null);
             return advanceService.register(advance);
         }, onSaved);
     }
 
     private JPanel incidentsPanel() {
-        RecordTableModel<Incident> model = new RecordTableModel<>(java.util.List.of(
+        RecordTableModel<Incident> model = new RecordTableModel<>(List.of(
                 RecordTableModel.Column.of("Fecha", incident -> Dates.format(incident.incidentDate())),
                 RecordTableModel.Column.of("Tipo", incident -> incident.type().label()),
                 RecordTableModel.Column.text("Ubicacion", Incident::location, 30),
                 RecordTableModel.Column.text("Descripcion", Incident::description, 50),
                 RecordTableModel.Column.text("Acciones", Incident::actionsTaken, 50)));
-        JTable table = Ui.table(model);
-        Incident[] selected = new Incident[1];
-        table.getSelectionModel().addListSelectionListener(event -> {
-            int row = table.getSelectedRow();
-            selected[0] = row < 0 ? null : model.rowAt(table.convertRowIndexToModel(row));
-        });
+        RecordTablePanel<Incident> panel = new RecordTablePanel<>(model);
         Runnable reload = () -> Async.run(() -> incidentService.listByTrip(trip.id()),
-                model::setRows, failure -> Ui.failure(this, failure));
-        JPanel panel = new JPanel(new BorderLayout(8, 8));
-        panel.add(Ui.scroll(table), BorderLayout.CENTER);
-        panel.add(Ui.row(Ui.button("Nueva incidencia", () -> openIncidentForm(reload)),
+                panel::setRows, failure -> Ui.failure(this, failure));
+        panel.withActions(
+                Ui.button("Nueva incidencia", () -> openIncidentForm(reload)),
                 Ui.button("Eliminar", () -> {
-                    if (selected[0] == null) {
+                    if (panel.selected() == null) {
                         Ui.info(this, "Seleccione una incidencia");
                         return;
                     }
                     Ui.delete(this, "la incidencia seleccionada",
-                            () -> incidentService.delete(selected[0].id()), reload);
+                            () -> incidentService.delete(panel.selected().id()), reload);
                 }),
-                Ui.button("Recargar", reload)), BorderLayout.SOUTH);
+                Ui.button("Recargar", reload));
         reload.run();
         return panel;
     }
