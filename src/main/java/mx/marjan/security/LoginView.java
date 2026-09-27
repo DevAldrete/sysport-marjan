@@ -1,101 +1,114 @@
 package mx.marjan.security;
 
-import java.awt.Window;
 import java.util.Optional;
-import javax.swing.BorderFactory;
-import javax.swing.Box;
-import javax.swing.BoxLayout;
-import javax.swing.JButton;
-import javax.swing.JDialog;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
-import javax.swing.JPasswordField;
-import javax.swing.JTextField;
-import javax.swing.SwingConstants;
-import mx.marjan.shared.Async;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.Scene;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.PasswordField;
+import javafx.scene.control.TextField;
+import javafx.scene.layout.VBox;
+import javafx.stage.Modality;
+import javafx.stage.Stage;
+import mx.marjan.ui.Async;
+import mx.marjan.ui.ThemeManager;
+import org.kordamp.ikonli.feather.Feather;
 
 /** Modal login screen. Returns the authenticated CurrentUser or nothing. */
-public class LoginView extends JDialog {
+public final class LoginView {
 
     private final AuthService authService = new AuthService();
-    private final JTextField usernameField = new JTextField(18);
-    private final JPasswordField passwordField = new JPasswordField(18);
-    private final JLabel messageLabel = new JLabel(" ");
-    private final JButton loginButton = new JButton("Entrar");
+    private final TextField usernameField = new TextField();
+    private final PasswordField passwordField = new PasswordField();
+    private final Label messageLabel = new Label(" ");
+    private final Button loginButton = new Button("Entrar");
 
     private CurrentUser user;
 
-    private LoginView(Window owner) {
-        super(owner, "SysPort MARJAN - Acceso", ModalityType.APPLICATION_MODAL);
-        build();
-        pack();
-        setLocationRelativeTo(owner);
+    private LoginView() {}
+
+    public static Optional<CurrentUser> prompt() {
+        LoginView view = new LoginView();
+        return Optional.ofNullable(view.show());
     }
 
-    public static Optional<CurrentUser> prompt(Window owner) {
-        LoginView view = new LoginView(owner);
-        view.setVisible(true);
-        return Optional.ofNullable(view.user);
+    private CurrentUser show() {
+        Stage stage = new Stage();
+        stage.initModality(Modality.APPLICATION_MODAL);
+        stage.setTitle("SysPort MARJAN - Acceso");
+        stage.setResizable(false);
+
+        Label title = new Label("SysPort");
+        title.getStyleClass().add("placeholder-title");
+        Label subtitle = new Label("Transportes MARJAN");
+        subtitle.getStyleClass().add("brand-subtitle");
+
+        usernameField.setPromptText("Usuario");
+        passwordField.setPromptText("Contrasena");
+        usernameField.setPrefColumnCount(18);
+        passwordField.setPrefColumnCount(18);
+
+        messageLabel.getStyleClass().add("form-error");
+        messageLabel.setWrapText(true);
+        messageLabel.setMinHeight(18);
+
+        loginButton.setDefaultButton(true);
+        loginButton.getStyleClass().add("accent");
+        loginButton.setMaxWidth(Double.MAX_VALUE);
+        loginButton.setGraphic(mx.marjan.ui.Icons.icon(Feather.LOG_IN, 15));
+        loginButton.setOnAction(event -> attemptLogin(stage));
+        passwordField.setOnAction(event -> attemptLogin(stage));
+
+        VBox card = new VBox(8, title, subtitle, spacer(6), fieldLabel("Usuario"), usernameField,
+                fieldLabel("Contrasena"), passwordField, messageLabel, loginButton);
+        card.getStyleClass().add("card");
+        card.setPadding(new Insets(24, 24, 24, 24));
+        card.setPrefWidth(340);
+        card.setAlignment(Pos.CENTER_LEFT);
+
+        VBox root = new VBox(card);
+        root.setAlignment(Pos.CENTER);
+        root.setPadding(new Insets(24));
+        root.getStyleClass().add("app-shell");
+
+        Scene scene = new Scene(root);
+        ThemeManager.apply(scene);
+        stage.setScene(scene);
+        stage.setOnShown(event -> usernameField.requestFocus());
+        stage.showAndWait();
+        return user;
     }
 
-    private void build() {
-        setResizable(false);
-        JPanel content = new JPanel();
-        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
-        content.setBorder(BorderFactory.createEmptyBorder(16, 20, 16, 20));
-
-        JLabel title = new JLabel("SysPort - Transportes MARJAN");
-        title.setAlignmentX(CENTER_ALIGNMENT);
-        title.setFont(title.getFont().deriveFont(18f));
-        content.add(title);
-        content.add(Box.createVerticalStrut(12));
-
-        content.add(labelled("Usuario", usernameField));
-        content.add(Box.createVerticalStrut(6));
-        content.add(labelled("Contrasena", passwordField));
-        content.add(Box.createVerticalStrut(10));
-
-        messageLabel.setForeground(new java.awt.Color(180, 0, 0));
-        messageLabel.setAlignmentX(CENTER_ALIGNMENT);
-        content.add(messageLabel);
-        content.add(Box.createVerticalStrut(6));
-
-        loginButton.setAlignmentX(CENTER_ALIGNMENT);
-        loginButton.addActionListener(event -> attemptLogin());
-        content.add(loginButton);
-
-        passwordField.addActionListener(event -> attemptLogin());
-        getRootPane().setDefaultButton(loginButton);
-        setContentPane(content);
+    private Label fieldLabel(String text) {
+        Label label = new Label(text);
+        label.getStyleClass().add("form-hint");
+        return label;
     }
 
-    private JPanel labelled(String label, java.awt.Component field) {
-        JPanel panel = new JPanel(new java.awt.BorderLayout(8, 0));
-        JLabel text = new JLabel(label, SwingConstants.RIGHT);
-        text.setPreferredSize(new java.awt.Dimension(90, 24));
-        panel.add(text, java.awt.BorderLayout.WEST);
-        panel.add(field, java.awt.BorderLayout.CENTER);
-        return panel;
+    private javafx.scene.Node spacer(double height) {
+        javafx.scene.layout.Region region = new javafx.scene.layout.Region();
+        region.setPrefHeight(height);
+        return region;
     }
 
-    private void attemptLogin() {
+    private void attemptLogin(Stage stage) {
         String username = usernameField.getText();
-        String password = new String(passwordField.getPassword());
-        loginButton.setEnabled(false);
+        String password = passwordField.getText();
+        loginButton.setDisable(true);
         messageLabel.setText("Verificando...");
-        Async.run(
-                () -> authService.login(username, password),
+        Async.run(() -> authService.login(username, password),
                 result -> {
-                    loginButton.setEnabled(true);
+                    loginButton.setDisable(false);
                     if (result.isOk()) {
                         user = result.value();
-                        dispose();
+                        stage.close();
                     } else {
                         messageLabel.setText(result.problems().get(0));
                     }
                 },
                 failure -> {
-                    loginButton.setEnabled(true);
+                    loginButton.setDisable(false);
                     messageLabel.setText("Error de conexion: " + failure.getMessage());
                 });
     }

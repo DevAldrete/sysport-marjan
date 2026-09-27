@@ -1,45 +1,53 @@
 package mx.marjan;
 
-import javax.swing.JOptionPane;
-import javax.swing.SwingUtilities;
+import javafx.application.Application;
+import javafx.application.Platform;
+import javafx.scene.control.Alert;
+import javafx.scene.control.ButtonType;
+import javafx.stage.Stage;
 import mx.marjan.security.LoginView;
 import mx.marjan.security.Session;
 import mx.marjan.shared.Database;
+import mx.marjan.ui.AppShell;
 
 /** Entry point: connect, log in, open the main window. */
-public final class App {
+public final class App extends Application {
 
-    private App() {}
+    private boolean connected;
 
-    public static void main(String[] args) {
-        installLookAndFeel();
-        if (!Database.testConnection()) {
-            JOptionPane.showMessageDialog(null,
+    @Override
+    public void init() {
+        connected = Database.testConnection();
+    }
+
+    @Override
+    public void start(Stage primaryStage) {
+        if (!connected) {
+            Alert alert = new Alert(Alert.AlertType.ERROR,
                     "No se pudo conectar a la base de datos.\n\nURL: " + Database.url()
                             + "\n\nVerifique que MySQL este corriendo (docker compose up -d).",
-                    "SysPort MARJAN", JOptionPane.ERROR_MESSAGE);
-            System.exit(1);
+                    ButtonType.OK);
+            alert.setTitle("SysPort MARJAN");
+            alert.setHeaderText("Sin conexion");
+            alert.showAndWait();
+            Platform.exit();
+            return;
         }
-        start();
+        launchSession();
     }
 
     /** Shows the login and, on success, the main window. Called again after logout. */
-    public static void start() {
-        SwingUtilities.invokeLater(() -> {
-            var user = LoginView.prompt(null);
-            if (user.isEmpty()) {
-                System.exit(0);
-            }
-            Session.login(user.get());
-            new MainFrame().setVisible(true);
-        });
+    public static void launchSession() {
+        var user = LoginView.prompt();
+        if (user.isEmpty()) {
+            Platform.exit();
+            return;
+        }
+        Session.login(user.get());
+        new AppShell().show();
     }
 
-    private static void installLookAndFeel() {
-        try {
-            com.formdev.flatlaf.FlatLightLaf.setup();
-        } catch (Throwable ignored) {
-            // FlatLaf is optional; fall back to the default look and feel.
-        }
+    public static void main(String[] args) {
+        launch(args);
     }
 }
