@@ -21,6 +21,7 @@ import mx.marjan.shared.Money;
 import mx.marjan.shared.RecordTableModel;
 import mx.marjan.shared.Result;
 import mx.marjan.shared.Ui;
+import mx.marjan.shared.Validators;
 
 public class VehiclesView extends BaseView {
 
@@ -39,6 +40,8 @@ public class VehiclesView extends BaseView {
     private final JTextField searchField = new JTextField(18);
 
     public VehiclesView() {
+        Ui.onEnter(searchField, this::reload);
+        Ui.onDoubleClick(table, this::openEdit);
         add(Ui.row(new JLabel("Buscar:"), searchField,
                 Ui.button("Buscar", this::reload),
                 Ui.button("Nuevo", this::openNew),
@@ -77,15 +80,19 @@ public class VehiclesView extends BaseView {
     private void openForm(Vehicle vehicle) {
         boolean isNew = vehicle.id() == 0;
         FormPanel form = new FormPanel()
-                .addText("code", "No. economico", vehicle.internalCode())
+                .addText("code", "No. economico", vehicle.internalCode(), "Identificador interno de la unidad")
                 .addText("plates", "Placas", vehicle.plates())
                 .addText("brand", "Marca", vehicle.brand())
                 .addText("model", "Modelo", vehicle.model())
-                .addText("year", "Anio", vehicle.year() == null ? "" : vehicle.year().toString())
-                .addText("serial", "No. de serie", vehicle.serialNumber())
+                .addText("year", "Anio", vehicle.year() == null ? "" : vehicle.year().toString(), "Ej. 2020")
+                .addText("serial", "No. de serie", vehicle.serialNumber(), "VIN del vehiculo")
                 .addText("type", "Tipo de unidad", vehicle.vehicleType())
-                .addText("capacity", "Capacidad de carga (kg)", Numbers.plain(vehicle.loadCapacity()))
-                .addText("mileage", "Kilometraje", Numbers.plain(vehicle.mileage()));
+                .addText("capacity", "Capacidad de carga (kg)", Numbers.plain(vehicle.loadCapacity()),
+                        "En kilogramos")
+                .addText("mileage", "Kilometraje", Numbers.plain(vehicle.mileage()), "Odometro actual en km");
+        form.validate("year", Validators.number());
+        form.validate("capacity", Validators.number());
+        form.validate("mileage", Validators.number());
         ModalForm.show(this, isNew ? "Nueva unidad" : "Editar unidad", form, () -> {
             Integer year = null;
             if (!form.text("year").isBlank()) {
@@ -176,14 +183,19 @@ public class VehiclesView extends BaseView {
 
     private void openMaintenanceForm(Vehicle vehicle, Runnable onSaved) {
         FormPanel form = new FormPanel()
-                .addText("date", "Fecha (yyyy-MM-dd)", Dates.format(Dates.today()))
-                .addText("odometer", "Odometro", Numbers.plain(vehicle.mileage()))
+                .addText("date", "Fecha", Dates.format(Dates.today()), "Formato: AAAA-MM-DD")
+                .addText("odometer", "Odometro", Numbers.plain(vehicle.mileage()), "Lectura del tablero en km")
                 .addCombo("type", "Tipo", MaintenanceType.values(), MaintenanceType.PREVENTIVE)
-                .addArea("work", "Trabajos realizados", "")
+                .addArea("work", "Trabajos realizados", "", "Descripcion de lo realizado")
                 .addText("provider", "Proveedor / taller", "")
-                .addText("cost", "Costo", "0")
-                .addText("nextDate", "Proxima fecha (opcional)", "")
-                .addText("nextKm", "Proximo km (opcional)", "");
+                .addText("cost", "Costo", "0", "Importe del mantenimiento")
+                .addText("nextDate", "Proxima fecha (opcional)", "", "Formato: AAAA-MM-DD")
+                .addText("nextKm", "Proximo km (opcional)", "", "Kilometraje del proximo servicio");
+        form.validate("date", Validators.date());
+        form.validate("odometer", Validators.number());
+        form.validate("cost", Validators.money());
+        form.validate("nextDate", Validators.date());
+        form.validate("nextKm", Validators.number());
         ModalForm.show(this, "Mantenimiento de " + vehicle.label(), form, () -> {
             LocalDate date = Dates.parseDate(form.text("date")).orElse(null);
             if (date == null) {

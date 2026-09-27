@@ -25,6 +25,7 @@ import mx.marjan.shared.Money;
 import mx.marjan.shared.RecordTableModel;
 import mx.marjan.shared.Result;
 import mx.marjan.shared.Ui;
+import mx.marjan.shared.Validators;
 import mx.marjan.trips.TripService;
 
 public class ServiceRequestsView extends BaseView {
@@ -53,6 +54,8 @@ public class ServiceRequestsView extends BaseView {
     private final JComboBox<Object> statusFilter = new JComboBox<>();
 
     public ServiceRequestsView() {
+        Ui.onEnter(folioField, this::reload);
+        Ui.onDoubleClick(table, this::openDetail);
         add(buildFilters(), BorderLayout.NORTH);
         add(Ui.scroll(table), BorderLayout.CENTER);
         reloadClients();
@@ -66,7 +69,7 @@ public class ServiceRequestsView extends BaseView {
             if (changes > 0) {
                 reload();
             }
-        }, failure -> System.err.println("Lifecycle sweep failed: " + failure.getMessage()));
+        }, failure -> setStatus("No se pudo actualizar el ciclo de vida de las solicitudes"));
     }
 
     private JPanel buildFilters() {
@@ -83,15 +86,15 @@ public class ServiceRequestsView extends BaseView {
                 Ui.button("Limpiar", this::clearFilters),
                 Ui.button("Recargar", this::reload));
         JPanel actions = Ui.row(
-                Ui.button("Nueva", this::openNew),
-                Ui.button("Editar", this::openEdit),
-                Ui.button("Autorizar", this::openAuthorize),
-                Ui.button("Programar", this::openSchedule),
-                Ui.button("Asignar viaje", this::openAssign),
-                Ui.button("Cancelar", this::openCancel),
-                Ui.button("Cerrar", this::closeRequest),
-                Ui.button("Detalle", this::openDetail),
-                Ui.button("Eliminar", this::deleteRequest));
+                Ui.button("Nueva", "Registrar una solicitud de servicio", this::openNew),
+                Ui.button("Editar", "Editar los datos de la solicitud", this::openEdit),
+                Ui.button("Autorizar", "Definir la tarifa acordada", this::openAuthorize),
+                Ui.button("Programar", "Definir recoleccion y entrega", this::openSchedule),
+                Ui.button("Asignar viaje", "Elegir unidad y operador", this::openAssign),
+                Ui.button("Cancelar", "Cancelar la solicitud", this::openCancel),
+                Ui.button("Cerrar", "Cerrar la solicitud entregada", this::closeRequest),
+                Ui.button("Detalle", "Ver la historia completa de la solicitud", this::openDetail),
+                Ui.button("Eliminar", "Eliminar la solicitud y todo lo relacionado", this::deleteRequest));
         return Ui.column(filters, actions);
     }
 
@@ -167,12 +170,15 @@ public class ServiceRequestsView extends BaseView {
         FormPanel form = new FormPanel()
                 .addCombo("client", "Cliente", clients.toArray(), clients.get(0))
                 .addCombo("route", "Ruta", routes.toArray(), routes.get(0))
-                .addText("cargo", "Descripcion de la mercancia", "")
-                .addText("weight", "Peso aproximado (kg)", "0")
-                .addText("pickup", "Recoleccion (yyyy-MM-dd HH:mm)", "")
-                .addText("delivery", "Entrega (yyyy-MM-dd HH:mm)", "")
+                .addText("cargo", "Descripcion de la mercancia", "", "Que se va a transportar")
+                .addText("weight", "Peso aproximado (kg)", "0", "En kilogramos, ej. 1200")
+                .addText("pickup", "Recoleccion (opcional)", "", "Formato: AAAA-MM-DD HH:MM")
+                .addText("delivery", "Entrega (opcional)", "", "Formato: AAAA-MM-DD HH:MM")
                 .addCheck("documents", "Requiere documentacion", true)
-                .addArea("notes", "Observaciones", "");
+                .addArea("notes", "Observaciones", "", "Notas internas (opcional)");
+        form.validate("weight", Validators.number());
+        form.validate("pickup", Validators.dateTime());
+        form.validate("delivery", Validators.dateTime());
         ModalForm.show(this, "Nueva solicitud", form, () -> {
             Result<BigDecimal> weightResult = Money.require(form.text("weight"), "peso aproximado");
             if (weightResult.isErr()) {
@@ -183,7 +189,7 @@ public class ServiceRequestsView extends BaseView {
             LocalDateTime delivery = optionalDateTime(form.text("delivery"));
             if (!form.text("pickup").isBlank() && pickup == null
                     || !form.text("delivery").isBlank() && delivery == null) {
-                return Result.err("Las fechas deben tener el formato yyyy-MM-dd HH:mm");
+                return Result.err("Las fechas deben tener el formato AAAA-MM-DD HH:MM");
             }
             Client client = (Client) form.selected("client");
             Route route = (Route) form.selected("route");
@@ -201,11 +207,13 @@ public class ServiceRequestsView extends BaseView {
             return;
         }
         FormPanel form = new FormPanel()
-                .addText("cargo", "Descripcion de la mercancia", request.cargoDescription())
+                .addText("cargo", "Descripcion de la mercancia", request.cargoDescription(), "Que se va a transportar")
                 .addText("weight", "Peso aproximado (kg)",
-                        request.estimatedWeight() == null ? "0" : request.estimatedWeight().toPlainString())
+                        request.estimatedWeight() == null ? "0" : request.estimatedWeight().toPlainString(),
+                        "En kilogramos, ej. 1200")
                 .addCheck("documents", "Requiere documentacion", request.requiresDocuments())
-                .addArea("notes", "Observaciones", request.notes());
+                .addArea("notes", "Observaciones", request.notes(), "Notas internas (opcional)");
+        form.validate("weight", Validators.number());
         ModalForm.show(this, "Editar solicitud " + request.folio(), form, () -> {
             Result<BigDecimal> weightResult = Money.require(form.text("weight"), "peso aproximado");
             if (weightResult.isErr()) {
@@ -231,7 +239,9 @@ public class ServiceRequestsView extends BaseView {
                                 .orElse(BigDecimal.ZERO),
                 suggested -> {
                     FormPanel form = new FormPanel()
-                            .addText("rate", "Tarifa acordada", suggested.toPlainString());
+                            .addText("rate", "Tarifa acordada", suggested.toPlainString(),
+                                    "Importe sin IVA; se propone la tarifa del cliente")
+                            .validate("rate", Validators.money());
                     ModalForm.show(this, "Autorizar " + request.folio(), form, () -> {
                         Result<BigDecimal> rateResult = Money.require(form.text("rate"), "tarifa acordada");
                         return rateResult.isErr() ? rateResult
@@ -247,8 +257,12 @@ public class ServiceRequestsView extends BaseView {
             return;
         }
         FormPanel form = new FormPanel()
-                .addText("pickup", "Recoleccion (yyyy-MM-dd HH:mm)", Dates.format(request.pickupScheduled()))
-                .addText("delivery", "Entrega (yyyy-MM-dd HH:mm)", Dates.format(request.deliveryScheduled()));
+                .addText("pickup", "Recoleccion", Dates.format(request.pickupScheduled()),
+                        "Formato: AAAA-MM-DD HH:MM")
+                .addText("delivery", "Entrega", Dates.format(request.deliveryScheduled()),
+                        "Formato: AAAA-MM-DD HH:MM");
+        form.validate("pickup", Validators.dateTime());
+        form.validate("delivery", Validators.dateTime());
         ModalForm.show(this, "Programar " + request.folio(), form, () -> {
             LocalDateTime pickup = Dates.parseDateTime(form.text("pickup")).orElse(null);
             LocalDateTime delivery = Dates.parseDateTime(form.text("delivery")).orElse(null);
@@ -297,7 +311,7 @@ public class ServiceRequestsView extends BaseView {
         if (request == null) {
             return;
         }
-        FormPanel form = new FormPanel().addArea("reason", "Motivo", "");
+        FormPanel form = new FormPanel().addArea("reason", "Motivo", "", "Razon de la cancelacion");
         ModalForm.show(this, "Cancelar " + request.folio(), form,
                 () -> service.cancel(request.id(), form.text("reason")), this::reload);
     }

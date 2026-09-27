@@ -22,6 +22,7 @@ import mx.marjan.shared.Money;
 import mx.marjan.shared.RecordTableModel;
 import mx.marjan.shared.Result;
 import mx.marjan.shared.Ui;
+import mx.marjan.shared.Validators;
 
 public class ClientsView extends BaseView {
 
@@ -39,6 +40,8 @@ public class ClientsView extends BaseView {
     private final JTextField searchField = new JTextField(18);
 
     public ClientsView() {
+        Ui.onEnter(searchField, this::reload);
+        Ui.onDoubleClick(table, this::openEdit);
         add(Ui.row(new JLabel("Buscar:"), searchField,
                 Ui.button("Buscar", this::reload),
                 Ui.button("Nuevo", this::openNew),
@@ -78,17 +81,21 @@ public class ClientsView extends BaseView {
     private void openForm(Client client) {
         boolean isNew = client.id() == 0;
         FormPanel form = new FormPanel()
-                .addText("name", "Nombre / Razon social", client.name())
-                .addText("rfc", "RFC", client.rfc())
+                .addText("name", "Nombre / Razon social", client.name(), "Como aparece en la factura")
+                .addText("rfc", "RFC", client.rfc(), "13 caracteres persona moral, 12 persona fisica")
                 .addText("address", "Domicilio", client.address())
                 .addText("phone", "Telefono", client.phone())
                 .addText("email", "Correo", client.email())
-                .addText("contact", "Contacto", client.contactName())
+                .addText("contact", "Contacto", client.contactName(), "Persona de contacto")
                 .addCombo("type", "Tipo", ClientType.values(), client.clientType())
                 .addCombo("terms", "Condiciones", PaymentTerms.values(), client.paymentTerms())
-                .addText("creditLimit", "Limite de credito", Numbers.plain(client.creditLimit()))
-                .addText("creditDays", "Dias de credito", String.valueOf(client.creditDays()))
+                .addText("creditLimit", "Limite de credito", Numbers.plain(client.creditLimit()),
+                        "Monto maximo a credito")
+                .addText("creditDays", "Dias de credito", String.valueOf(client.creditDays()),
+                        "Dias para pagar, ej. 30")
                 .addCombo("status", "Estado", ClientStatus.values(), client.status());
+        form.validate("creditLimit", Validators.money());
+        form.validate("creditDays", Validators.number());
         ModalForm.show(this, isNew ? "Nuevo cliente" : "Editar cliente", form, () -> {
             Result<BigDecimal> limitResult = Money.require(form.text("creditLimit"), "limite de credito");
             if (limitResult.isErr()) {
@@ -191,9 +198,12 @@ public class ClientsView extends BaseView {
         ClientRate editing = rate != null ? rate : ClientRate.empty();
         FormPanel form = new FormPanel()
                 .addCombo("route", "Ruta", routes.toArray(), routeById(routes, editing.routeId()))
-                .addText("rate", "Tarifa", Numbers.plain(editing.rate()))
-                .addText("from", "Vigente desde (yyyy-MM-dd)", Dates.format(editing.validFrom()))
-                .addText("to", "Vigente hasta (opcional)", Dates.format(editing.validTo()));
+                .addText("rate", "Tarifa", Numbers.plain(editing.rate()), "Importe por viaje")
+                .addText("from", "Vigente desde", Dates.format(editing.validFrom()), "Formato: AAAA-MM-DD")
+                .addText("to", "Vigente hasta (opcional)", Dates.format(editing.validTo()), "Formato: AAAA-MM-DD");
+        form.validate("rate", Validators.money());
+        form.validate("from", Validators.date());
+        form.validate("to", Validators.date());
         ModalForm.show(this, rate == null ? "Nueva tarifa" : "Editar tarifa", form, () -> {
             Object routeValue = form.selected("route");
             if (!(routeValue instanceof Route route)) {

@@ -29,6 +29,7 @@ import mx.marjan.shared.RecordTableModel;
 import mx.marjan.shared.RecordTablePanel;
 import mx.marjan.shared.Result;
 import mx.marjan.shared.Ui;
+import mx.marjan.shared.Validators;
 
 public class InvoicesView extends BaseView {
 
@@ -58,6 +59,8 @@ public class InvoicesView extends BaseView {
     private final JTable pendingTable = Ui.table(pendingModel);
 
     public InvoicesView() {
+        Ui.onDoubleClick(table, this::openPayments);
+        Ui.onDoubleClick(pendingTable, this::billSelectedRequest);
         statusFilter.addItem("(todos)");
         for (InvoiceStatus status : InvoiceStatus.values()) {
             statusFilter.addItem(status);
@@ -156,13 +159,15 @@ public class InvoicesView extends BaseView {
             }
             FormPanel form = new FormPanel()
                     .addCombo("request", "Solicitud", requests.toArray(), requests.get(0))
-                    .addText("issueDate", "Fecha de emision (yyyy-MM-dd)", Dates.format(Dates.today()))
-                    .addText("amount", "Importe", "");
+                    .addText("issueDate", "Fecha de emision", Dates.format(Dates.today()), "Formato: AAAA-MM-DD")
+                    .addText("amount", "Importe", "", "Deje vacio para usar la tarifa autorizada");
+            form.validate("issueDate", Validators.date());
+            form.validate("amount", Validators.money());
             ModalForm.show(this, "Nueva factura", form, () -> {
                 ServiceRequest request = (ServiceRequest) form.selected("request");
                 LocalDate issue = Dates.parseDate(form.text("issueDate")).orElse(null);
                 if (issue == null) {
-                    return Result.err("La fecha de emision es obligatoria (yyyy-MM-dd)");
+                    return Result.err("La fecha de emision es obligatoria (AAAA-MM-DD)");
                 }
                 BigDecimal amount;
                 if (form.text("amount").isBlank()) {
@@ -185,9 +190,12 @@ public class InvoicesView extends BaseView {
             return;
         }
         FormPanel form = new FormPanel()
-                .addText("amount", "Monto del pago", Money.zeroIfNull(invoice.balance()).toPlainString())
-                .addText("date", "Fecha (yyyy-MM-dd)", Dates.format(Dates.today()))
+                .addText("amount", "Monto del pago", Money.zeroIfNull(invoice.balance()).toPlainString(),
+                        "No puede exceder el saldo pendiente")
+                .addText("date", "Fecha", Dates.format(Dates.today()), "Formato: AAAA-MM-DD")
                 .addCombo("method", "Forma de pago", PaymentMethod.values(), PaymentMethod.CASH);
+        form.validate("amount", Validators.money());
+        form.validate("date", Validators.date());
         ModalForm.show(this, "Pago de " + invoice.invoiceNumber(), form, () -> {
             Result<BigDecimal> amountResult = Money.require(form.text("amount"), "monto del pago");
             if (amountResult.isErr()) {

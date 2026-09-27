@@ -9,6 +9,7 @@ import mx.marjan.shared.FormPanel;
 import mx.marjan.shared.ModalForm;
 import mx.marjan.shared.RecordTableModel;
 import mx.marjan.shared.Ui;
+import mx.marjan.shared.Validators;
 
 public class UsersView extends BaseView {
 
@@ -21,6 +22,7 @@ public class UsersView extends BaseView {
     private List<Role> roles = List.of();
 
     public UsersView() {
+        Ui.onDoubleClick(table, this::openEdit);
         add(Ui.row(Ui.button("Nuevo", this::openNew),
                 Ui.button("Editar", this::openEdit),
                 Ui.button("Restablecer contrasena", this::resetPassword),
@@ -54,10 +56,15 @@ public class UsersView extends BaseView {
             return;
         }
         FormPanel form = new FormPanel()
-                .addText("username", "Usuario", "")
-                .addPassword("password", "Contrasena")
+                .addText("username", "Usuario", "", "3-50 caracteres: letras, numeros, . _ -")
+                .addPassword("password", "Contrasena", "Minimo 6 caracteres")
                 .addCombo("role", "Rol", roles.toArray(), roles.get(0))
                 .addCombo("status", "Estado", UserStatus.values(), UserStatus.ACTIVE);
+        form.validate("username", username -> username == null || username.isBlank()
+                || Validators.isValidUsername(username) ? null
+                        : "3-50 caracteres: letras, numeros, . _ -");
+        form.validate("password", password -> password == null || password.length() >= 6 ? null
+                : "Minimo 6 caracteres");
         ModalForm.show(this, "Nuevo usuario", form, () -> {
             Role role = (Role) form.selected("role");
             return authService.createUser(form.text("username"), form.text("password"),
@@ -90,7 +97,9 @@ public class UsersView extends BaseView {
         if (user == null) {
             return;
         }
-        FormPanel form = new FormPanel().addPassword("password", "Nueva contrasena");
+        FormPanel form = new FormPanel().addPassword("password", "Nueva contrasena", "Minimo 6 caracteres");
+        form.validate("password", password -> password == null || password.length() >= 6 ? null
+                : "Minimo 6 caracteres");
         ModalForm.show(this, "Restablecer contrasena de " + user.username(), form,
                 () -> authService.resetPassword(user.id(), form.text("password")),
                 () -> Ui.info(this, "Contrasena actualizada"));
