@@ -64,7 +64,7 @@ public final class Database {
       case 1048, 1364 -> "Falta un dato obligatorio.";
       case 1451 -> "No se puede eliminar: hay registros relacionados.";
       case 1452 -> "No se puede guardar: la referencia relacionada no existe.";
-      default -> failure.getMessage();
+      default -> "Ocurrio un error inesperado al acceder a los datos.";
     };
   }
 
