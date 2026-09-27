@@ -46,13 +46,6 @@
       <version>0.4</version>
     </dependency>
 
-    <!-- Legacy Swing look & feel; removed once the Swing views are gone. -->
-    <dependency>
-      <groupId>com.formdev</groupId>
-      <artifactId>flatlaf</artifactId>
-      <version>3.5.4</version>
-    </dependency>
-
     <!-- JavaFX: declare the three modules explicitly at one version so the
          transitive JavaFX pulled in by AtlantaFX cannot mix with ours. -->
     <dependency>
@@ -112,36 +105,6 @@
         <configuration>
           <mainClass>${main.class}</mainClass>
         </configuration>
-      </plugin>
-
-      <plugin>
-        <groupId>org.codehaus.mojo</groupId>
-        <artifactId>exec-maven-plugin</artifactId>
-        <version>3.5.0</version>
-        <configuration>
-          <mainClass>${main.class}</mainClass>
-        </configuration>
-      </plugin>
-
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-shade-plugin</artifactId>
-        <version>3.6.0</version>
-        <executions>
-          <execution>
-            <phase>package</phase>
-            <goals>
-              <goal>shade</goal>
-            </goals>
-            <configuration>
-              <transformers>
-                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                  <mainClass>${main.class}</mainClass>
-                </transformer>
-              </transformers>
-            </configuration>
-          </execution>
-        </executions>
       </plugin>
     </plugins>
   </build>
