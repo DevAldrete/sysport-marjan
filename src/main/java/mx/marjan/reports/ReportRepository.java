@@ -6,6 +6,7 @@ import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import mx.marjan.shared.DataException;
 import mx.marjan.shared.Database;
 
 /** Every report is a stored procedure returning a displayable/exportable result set. */
@@ -65,7 +66,7 @@ public class ReportRepository {
             }
             return new Report(title, headers, rows);
         } catch (SQLException failure) {
-            throw new RuntimeException(failure.getMessage(), failure);
+            throw new DataException(Database.translate(failure), failure);
         }
     }
 }

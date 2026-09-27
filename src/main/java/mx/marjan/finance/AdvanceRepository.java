@@ -30,10 +30,6 @@ public class AdvanceRepository {
         return Database.callList("{call sp_advances_by_trip(?)}", this::map, tripId);
     }
 
-    public List<Advance> listAll() {
-        return Database.callList("{call sp_advances_list()}", this::map);
-    }
-
     public Result<Long> save(Advance advance, long userId) {
         return Database.callForId("{call sp_advance_save(?,?,?,?,?,?,?)}",
                 advance.tripId(), advance.employeeId(), advance.amountGiven(),

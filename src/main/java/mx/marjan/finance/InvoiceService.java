@@ -69,6 +69,9 @@ public class InvoiceService {
 
     /** BR-19 / FR-INV-3: recomputes paid/overdue for every open invoice. Returns how many changed. */
     public int refreshStatuses(LocalDate today) {
+        if (!Session.has(Permissions.INVOICES_WRITE)) {
+            return 0;
+        }
         return invoices.refreshStatuses(today);
     }
 }

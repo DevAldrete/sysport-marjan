@@ -62,6 +62,20 @@ docker compose down -v        # stop AND wipe data (re-runs db/init scripts)
 
 > Scripts in `db/init/` only run when the data volume is empty. After changing the schema in early development, use `docker compose down -v && docker compose up -d`.
 
+### Tests
+
+```bash
+mvn test                              # fast unit tests (no database)
+
+# Integration tests against the real MySQL rules (opt-in):
+docker compose down -v && docker compose up -d
+SYSPORT_IT=1 mvn test                 # or mvn test -Dtest=SqlRulesTest
+```
+
+The business rules live in the database, so the integration tests exercise the
+stored procedures directly (`SqlRulesTest`). They are skipped unless
+`SYSPORT_IT=1`, and expect a freshly seeded database.
+
 ### Connection settings
 
 Read from environment variables, with these defaults:

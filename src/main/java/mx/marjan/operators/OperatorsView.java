@@ -91,8 +91,7 @@ public class OperatorsView extends BaseView {
                 .addText("licenseNumber", "No. de licencia", license.licenseNumber())
                 .addText("licenseType", "Tipo de licencia", license.licenseType())
                 .addText("licenseIssue", "Expedicion (yyyy-MM-dd)", Dates.format(license.issueDate()))
-                .addText("licenseExpiry", "Vencimiento (yyyy-MM-dd)", Dates.format(license.expirationDate()))
-                .addCombo("status", "Estado", EmployeeStatus.values(), employee.status());
+                .addText("licenseExpiry", "Vencimiento (yyyy-MM-dd)", Dates.format(license.expirationDate()));
         ModalForm.show(this, isNew ? "Nuevo operador" : "Editar operador", form, () -> {
             License builtLicense = null;
             String number = form.text("licenseNumber");
@@ -106,7 +105,7 @@ public class OperatorsView extends BaseView {
             Employee built = new Employee(employee.id(), form.text("name"), form.text("address"),
                     form.text("phone"), form.text("email"), form.text("rfc"), form.text("curp"),
                     form.text("ecName"), form.text("ecPhone"), builtLicense,
-                    (EmployeeStatus) form.selected("status"));
+                    employee.status());
             return service.save(built);
         }, this::reload);
     }

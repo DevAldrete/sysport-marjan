@@ -38,11 +38,6 @@ public enum EmployeeStatus {
         };
     }
 
-    /** BR-09: only available operators can be assigned. */
-    public boolean isAssignable() {
-        return this == AVAILABLE;
-    }
-
     @Override
     public String toString() {
         return label;

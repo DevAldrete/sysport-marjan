@@ -42,10 +42,6 @@ public class EmployeeRepository {
         return Database.callOne("{call sp_employee_by_id(?)}", this::map, id);
     }
 
-    public List<Employee> listAssignable() {
-        return Database.callList("{call sp_employees_assignable()}", this::map);
-    }
-
     /** FR-TRP-1: available operators with a license valid through the window and no overlapping trip. */
     public List<Employee> listEligible(java.time.LocalDateTime start, java.time.LocalDateTime end) {
         return Database.callList("{call sp_eligible_operators_full(?,?)}", this::map, start, end);
@@ -53,7 +49,7 @@ public class EmployeeRepository {
 
     public Result<Long> save(Employee employee) {
         License license = employee.license();
-        return Database.callForId("{call sp_employee_save(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)}",
+        return Database.callForId("{call sp_employee_save(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)}",
                 employee.id(), employee.name(), employee.address(), employee.phone(),
                 employee.email(), employee.rfc(), employee.curp(), employee.emergencyContactName(),
                 employee.emergencyContactPhone(),
@@ -61,8 +57,7 @@ public class EmployeeRepository {
                 license == null ? null : license.licenseNumber(),
                 license == null ? null : license.licenseType(),
                 license == null ? null : license.issueDate(),
-                license == null ? null : license.expirationDate(),
-                employee.status().dbValue());
+                license == null ? null : license.expirationDate());
     }
 
     public Result<Void> delete(long id) {
@@ -70,7 +65,6 @@ public class EmployeeRepository {
     }
 
     public Result<Void> setStatus(long id, EmployeeStatus status) {
-        Database.callNoOut("{call sp_employee_set_status(?,?)}", id, status.dbValue());
-        return Result.ok(null);
+        return Database.callVoid("{call sp_employee_set_status(?,?,?)}", id, status.dbValue());
     }
 }

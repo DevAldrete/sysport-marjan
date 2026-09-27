@@ -86,7 +86,7 @@ public class TripService {
      * and departs assigned trips whose planned start has already passed.
      */
     public int sweepLifecycle() {
-        if (!Session.isLoggedIn()) {
+        if (!Session.has(Permissions.TRIPS_WRITE)) {
             return 0;
         }
         return trips.sweepLifecycle(Session.userId());

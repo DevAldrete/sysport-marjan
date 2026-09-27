@@ -47,15 +47,6 @@ public class TripRepository {
         return Database.callOne("{call sp_trip_by_request(?)}", this::map, serviceRequestId);
     }
 
-    public List<Trip> findDueToDepart(LocalDateTime now) {
-        return Database.callList("{call sp_trips_due_to_depart(?)}", this::map, now);
-    }
-
-    public Optional<Long> vehicleIdForTrip(long tripId) {
-        return Database.callOne("{call sp_trip_vehicle(?)}",
-                rs -> rs.getLong("vehicle_id"), tripId);
-    }
-
     public Result<Long> assign(long requestId, long vehicleId, long operatorId, long userId) {
         Object[] out = Database.call("{call sp_assign_trip(?,?,?,?,?,?)}",
                 new int[] { Types.VARCHAR, Types.BIGINT }, requestId, vehicleId, operatorId, userId);
@@ -82,10 +73,6 @@ public class TripRepository {
 
     public Result<Void> delete(long tripId, long userId) {
         return Database.callVoid("{call sp_trip_delete(?,?,?)}", tripId, userId);
-    }
-
-    public void setStatus(long id, TripStatus status, long userId) {
-        Database.callNoOut("{call sp_trip_set_status(?,?,?)}", id, status.dbValue(), userId);
     }
 
     /** Time-driven reconciliation: confirms dates and departs due trips. Returns rows changed. */

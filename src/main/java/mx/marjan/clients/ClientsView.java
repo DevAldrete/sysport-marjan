@@ -194,7 +194,11 @@ public class ClientsView extends BaseView {
             if (!(routeValue instanceof Route route)) {
                 return Result.err("Debe seleccionar una ruta");
             }
-            BigDecimal amount = Money.parse(form.text("rate")).orElse(BigDecimal.ZERO);
+            Result<BigDecimal> rateResult = Money.require(form.text("rate"), "tarifa");
+            if (rateResult.isErr()) {
+                return rateResult;
+            }
+            BigDecimal amount = rateResult.value();
             java.time.LocalDate from = Dates.parseDate(form.text("from")).orElse(null);
             if (from == null) {
                 return Result.err("La fecha de vigencia inicial es obligatoria (yyyy-MM-dd)");
