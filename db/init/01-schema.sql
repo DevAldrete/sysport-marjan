@@ -362,12 +362,12 @@ CREATE TABLE sequences (
   next_value BIGINT NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- ================================================================ routines
--- Reference implementation of the application's business rules and read
--- queries as SQL stored programs. The application does NOT call these; the
--- same logic lives in Java (rules/ + service/) so it can be unit-tested with
--- records and no database. This section only demonstrates that the rules
--- could live in the database instead.
+-- ================================================================ rules
+-- The database is the single source of truth for the application's business
+-- rules. This section holds the rule functions, the validation routines and
+-- the transactional action procedures that the repositories call. Java keeps
+-- only records, enums and thin JDBC wrappers, so a rule change here changes
+-- the app without recompiling.
 --
 -- Conventions
 --   * Rule functions return 1/0 as a boolean (or a computed value).
@@ -417,13 +417,6 @@ BEGIN
   RETURN p_status = 'available';
 END$$
 
--- BR-05/06: a trip occupies a resource only while scheduled or in transit.
-CREATE FUNCTION fn_trip_is_active(p_status VARCHAR(20))
-RETURNS TINYINT DETERMINISTIC
-BEGIN
-  RETURN p_status IN ('scheduled','in_transit');
-END$$
-
 -- BR-08: capacity is fine when either side is unknown, else capacity >= weight.
 CREATE FUNCTION fn_capacity_ok(p_capacity DECIMAL(10,1), p_weight DECIMAL(10,1))
 RETURNS TINYINT DETERMINISTIC
@@ -448,21 +441,6 @@ CREATE FUNCTION fn_advance_balance(p_given DECIMAL(12,2), p_expenses DECIMAL(12,
 RETURNS DECIMAL(14,2) DETERMINISTIC
 BEGIN
   RETURN COALESCE(p_given,0) - COALESCE(p_expenses,0) - COALESCE(p_fuel,0);
-END$$
-
--- BR-09/10: expired when the date is before today.
-CREATE FUNCTION fn_license_expired(p_expiration DATE, p_today DATE)
-RETURNS TINYINT DETERMINISTIC
-BEGIN
-  RETURN (p_expiration IS NOT NULL AND p_expiration < p_today);
-END$$
-
--- BR-10: expiring soon (not yet expired, within p_days).
-CREATE FUNCTION fn_license_expiring(p_expiration DATE, p_days INT, p_today DATE)
-RETURNS TINYINT DETERMINISTIC
-BEGIN
-  RETURN (p_expiration IS NOT NULL AND p_expiration >= p_today
-          AND DATEDIFF(p_expiration, p_today) <= p_days);
 END$$
 
 -- BR-19: cash due on issue; credit due issue + credit_days.
@@ -1179,35 +1157,6 @@ END$$
 
 -- ------------------------------------------------- read queries (result sets)
 
--- FR-TRP-1: vehicles available with no overlapping active trip in the window.
-CREATE PROCEDURE sp_eligible_vehicles(IN p_start DATETIME, IN p_end DATETIME)
-p: BEGIN
-  SELECT v.* FROM vehicles v
-  WHERE v.status = 'available'
-    AND NOT EXISTS (
-      SELECT 1 FROM trips t
-      WHERE t.vehicle_id = v.id
-        AND t.status IN ('scheduled','in_transit')
-        AND t.planned_start < p_end AND t.planned_end > p_start)
-  ORDER BY v.internal_code;
-END$$
-
--- FR-TRP-1: operators available, licensed through the window, no overlap.
-CREATE PROCEDURE sp_eligible_operators(IN p_start DATETIME, IN p_end DATETIME)
-p: BEGIN
-  SELECT e.id, e.name, e.phone, l.license_number, l.expiration_date
-  FROM employees e
-  JOIN licenses l ON l.id = e.license_id
-  WHERE e.status = 'available'
-    AND l.expiration_date >= DATE(p_end)
-    AND NOT EXISTS (
-      SELECT 1 FROM trips t
-      WHERE t.employee_id = e.id
-        AND t.status IN ('scheduled','in_transit')
-        AND t.planned_start < p_end AND t.planned_end > p_start)
-  ORDER BY e.name;
-END$$
-
 -- FR-RPT-1: revenue per client.
 CREATE PROCEDURE sp_revenue_by_client(IN p_from DATE, IN p_to DATE)
 p: BEGIN
@@ -1327,29 +1276,6 @@ p: BEGIN
   ORDER BY m.next_service_date;
 END$$
 
--- FR-DASH: one row with the dashboard counters.
-CREATE PROCEDURE sp_dashboard_alerts(IN p_today DATE,
-    OUT p_expiring_licenses INT, OUT p_overdue_invoices INT,
-    OUT p_maintenance_due INT, OUT p_pending_assignments INT)
-p: BEGIN
-  SELECT COUNT(*) INTO p_expiring_licenses
-  FROM employees e JOIN licenses l ON l.id = e.license_id
-  WHERE l.expiration_date <= DATE_ADD(p_today, INTERVAL 30 DAY);
-
-  SELECT COUNT(*) INTO p_overdue_invoices
-  FROM invoices i
-  WHERE i.status <> 'cancelled' AND i.due_date < p_today
-    AND i.amount > COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.id), 0);
-
-  SELECT COUNT(DISTINCT m.vehicle_id) INTO p_maintenance_due
-  FROM maintenance m JOIN vehicles v ON v.id = m.vehicle_id
-  WHERE (m.next_service_date IS NOT NULL AND m.next_service_date <= p_today)
-     OR (m.next_service_km IS NOT NULL AND m.next_service_km <= v.mileage);
-
-  SELECT COUNT(*) INTO p_pending_assignments
-  FROM service_requests WHERE status = 'scheduled';
-END$$
-
 -- Internal helper: like sp_validate_vehicle_assignment but appends to the
 -- caller's problem string instead of resetting it (used by sp_assign_trip).
 CREATE PROCEDURE validate_vehicle_assignment_into(IN p_request_id BIGINT,
@@ -1439,12 +1365,6 @@ BEGIN
   RETURN (p_number IS NULL OR p_number = '' OR p_number REGEXP '^[A-Za-z0-9-]{4,30}$');
 END$$
 
-CREATE FUNCTION fn_username_valid(p_username VARCHAR(50))
-RETURNS TINYINT DETERMINISTIC
-BEGIN
-  RETURN (p_username IS NOT NULL AND p_username REGEXP '^[A-Za-z0-9._-]{3,50}$');
-END$$
-
 -- ---------------------------------------------------------------- security
 
 CREATE PROCEDURE sp_user_by_username(IN p_username VARCHAR(50))
@@ -1474,11 +1394,6 @@ END$$
 CREATE PROCEDURE sp_roles_list()
 p: BEGIN
   SELECT id, name FROM roles ORDER BY name;
-END$$
-
-CREATE PROCEDURE sp_permissions_list()
-p: BEGIN
-  SELECT name FROM permissions ORDER BY name;
 END$$
 
 CREATE PROCEDURE sp_role_permissions(IN p_role_id BIGINT)
@@ -1830,13 +1745,6 @@ p: BEGIN
   END IF;
 END$$
 
-CREATE PROCEDURE sp_vehicle_raise_mileage(IN p_id BIGINT, IN p_reading DECIMAL(10,1))
-p: BEGIN
-  IF p_reading IS NOT NULL THEN
-    UPDATE vehicles SET mileage = p_reading WHERE id = p_id AND mileage < p_reading;
-  END IF;
-END$$
-
 CREATE PROCEDURE sp_vehicle_delete(IN p_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
   SET p_problems = NULL;
@@ -1885,16 +1793,6 @@ p: BEGIN
          l.id AS license_id, l.license_number, l.license_type, l.issue_date, l.expiration_date
   FROM employees e LEFT JOIN licenses l ON l.id = e.license_id
   WHERE e.id = p_id;
-END$$
-
-CREATE PROCEDURE sp_employees_assignable()
-p: BEGIN
-  SELECT e.id, e.name, e.address, e.phone, e.email, e.rfc, e.curp,
-         e.emergency_contact_name, e.emergency_contact_phone, e.status,
-         l.id AS license_id, l.license_number, l.license_type, l.issue_date, l.expiration_date
-  FROM employees e LEFT JOIN licenses l ON l.id = e.license_id
-  WHERE e.status = 'available'
-  ORDER BY e.name;
 END$$
 
 CREATE PROCEDURE sp_eligible_operators_full(IN p_start DATETIME, IN p_end DATETIME)
@@ -2097,19 +1995,6 @@ p: BEGIN
   ORDER BY sr.pickup_date_scheduled;
 END$$
 
-CREATE PROCEDURE sp_requests_authorized()
-p: BEGIN
-  SELECT sr.id, sr.folio, sr.client_id, c.name AS client_name, sr.route_id,
-         CONCAT(r.origin, ' -> ', r.destination) AS route_label,
-         sr.cargo_description, sr.estimated_weight, sr.pickup_date_scheduled,
-         sr.delivery_date_scheduled, sr.agreed_rate, sr.requires_documents,
-         sr.status, sr.notes, sr.created_at
-  FROM service_requests sr
-  JOIN clients c ON c.id = sr.client_id
-  JOIN routes r ON r.id = sr.route_id
-  WHERE sr.status = 'authorized';
-END$$
-
 CREATE PROCEDURE sp_requests_pending_billing()
 p: BEGIN
   SELECT sr.id, sr.folio, sr.client_id, c.name AS client_name, sr.route_id,
@@ -2272,30 +2157,6 @@ p: BEGIN
   JOIN vehicles v ON v.id = t.vehicle_id
   JOIN employees e ON e.id = t.employee_id
   WHERE t.service_request_id = p_request_id;
-END$$
-
-CREATE PROCEDURE sp_trips_due_to_depart(IN p_now DATETIME)
-p: BEGIN
-  SELECT t.id, t.service_request_id, sr.folio, c.name AS client_name,
-         CONCAT(r.origin, ' -> ', r.destination) AS route_label,
-         t.vehicle_id, CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label,
-         t.employee_id, e.name AS employee_name,
-         t.estimated_km, t.actual_km, t.planned_start, t.planned_end,
-         t.departure_datetime, t.arrival_datetime, t.status
-  FROM trips t
-  JOIN service_requests sr ON sr.id = t.service_request_id
-  JOIN clients c ON c.id = sr.client_id
-  JOIN routes r ON r.id = sr.route_id
-  JOIN vehicles v ON v.id = t.vehicle_id
-  JOIN employees e ON e.id = t.employee_id
-  WHERE t.status = 'scheduled' AND sr.status = 'assigned'
-    AND t.planned_start IS NOT NULL AND t.planned_start <= p_now
-  ORDER BY t.planned_start;
-END$$
-
-CREATE PROCEDURE sp_trip_vehicle(IN p_trip_id BIGINT)
-p: BEGIN
-  SELECT vehicle_id FROM trips WHERE id = p_trip_id;
 END$$
 
 -- BR-15: reassign before departure, validated like a new assignment and audited.
@@ -2569,20 +2430,6 @@ p: BEGIN
   ORDER BY e.expense_date;
 END$$
 
-CREATE PROCEDURE sp_expenses_list()
-p: BEGIN
-  SELECT e.id, e.trip_id, sr.folio, e.expense_type, e.amount, e.expense_date, e.description
-  FROM expenses e
-  JOIN trips t ON t.id = e.trip_id
-  JOIN service_requests sr ON sr.id = t.service_request_id
-  ORDER BY e.expense_date DESC;
-END$$
-
-CREATE PROCEDURE sp_expense_sum_by_trip(IN p_trip_id BIGINT)
-p: BEGIN
-  SELECT COALESCE(SUM(amount), 0) AS total FROM expenses WHERE trip_id = p_trip_id;
-END$$
-
 CREATE PROCEDURE sp_expense_save(IN p_trip_id BIGINT, IN p_type VARCHAR(20),
     IN p_amount DECIMAL(12,2), IN p_date DATE, IN p_description VARCHAR(255),
     IN p_user_id BIGINT, OUT p_id BIGINT, OUT p_problems TEXT)
@@ -2612,17 +2459,6 @@ p: BEGIN
   JOIN employees e ON e.id = a.employee_id
   WHERE a.trip_id = p_trip_id
   ORDER BY a.delivered_date;
-END$$
-
-CREATE PROCEDURE sp_advances_list()
-p: BEGIN
-  SELECT a.id, a.trip_id, sr.folio, a.employee_id, e.name AS employee_name,
-         a.amount_given, a.delivered_date, a.status, a.settled_at
-  FROM advances a
-  JOIN trips t ON t.id = a.trip_id
-  JOIN service_requests sr ON sr.id = t.service_request_id
-  JOIN employees e ON e.id = a.employee_id
-  ORDER BY a.delivered_date DESC;
 END$$
 
 CREATE PROCEDURE sp_advance_save(IN p_trip_id BIGINT, IN p_employee_id BIGINT,
@@ -2839,18 +2675,6 @@ p: BEGIN
   FROM payments p JOIN invoices i ON i.id = p.invoice_id
   WHERE p.invoice_id = p_invoice_id
   ORDER BY p.payment_date;
-END$$
-
-CREATE PROCEDURE sp_payments_list()
-p: BEGIN
-  SELECT p.id, p.invoice_id, i.invoice_number, p.amount, p.payment_date, p.payment_method
-  FROM payments p JOIN invoices i ON i.id = p.invoice_id
-  ORDER BY p.payment_date DESC;
-END$$
-
-CREATE PROCEDURE sp_payment_sum_by_invoice(IN p_invoice_id BIGINT)
-p: BEGIN
-  SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE invoice_id = p_invoice_id;
 END$$
 
 CREATE PROCEDURE sp_payment_delete(IN p_id BIGINT)
