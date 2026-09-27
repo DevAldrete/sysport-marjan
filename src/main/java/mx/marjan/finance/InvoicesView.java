@@ -1,147 +1,155 @@
 package mx.marjan.finance;
 
-import java.awt.BorderLayout;
-import java.awt.Dialog;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
-import javax.swing.BorderFactory;
-import javax.swing.JComboBox;
-import javax.swing.JDialog;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
-import javax.swing.JSplitPane;
-import javax.swing.JTable;
-import javax.swing.SwingUtilities;
+import javafx.geometry.Insets;
+import javafx.scene.Scene;
+import javafx.scene.control.ComboBox;
+import javafx.scene.control.Label;
+import javafx.scene.control.SplitPane;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.VBox;
+import javafx.stage.Modality;
+import javafx.stage.Stage;
 import mx.marjan.clients.Client;
 import mx.marjan.clients.ClientService;
 import mx.marjan.requests.RequestStatus;
 import mx.marjan.requests.ServiceRequest;
 import mx.marjan.requests.ServiceRequestService;
 import mx.marjan.shared.Async;
-import mx.marjan.shared.BaseView;
 import mx.marjan.shared.Dates;
-import mx.marjan.shared.FormPanel;
-import mx.marjan.shared.ModalForm;
 import mx.marjan.shared.Money;
-import mx.marjan.shared.RecordTableModel;
-import mx.marjan.shared.RecordTablePanel;
 import mx.marjan.shared.Result;
-import mx.marjan.shared.Ui;
 import mx.marjan.shared.Validators;
+import mx.marjan.ui.BaseView;
+import mx.marjan.ui.FormPanel;
+import mx.marjan.ui.ModalForm;
+import mx.marjan.ui.RecordTable;
+import mx.marjan.ui.RecordTablePanel;
+import mx.marjan.ui.StatusTones;
+import mx.marjan.ui.ThemeManager;
+import mx.marjan.ui.Ui;
 
 public class InvoicesView extends BaseView {
 
     private final InvoiceService service = new InvoiceService();
     private final ServiceRequestService requestService = new ServiceRequestService();
     private final ClientService clientService = new ClientService();
-    private final RecordTableModel<Invoice> model = new RecordTableModel<>(List.of(
-            RecordTableModel.Column.of("Factura", Invoice::invoiceNumber),
-            RecordTableModel.Column.of("Cliente", Invoice::clientName),
-            RecordTableModel.Column.of("Solicitud", Invoice::requestFolio),
-            RecordTableModel.Column.of("Importe", invoice -> Money.format(invoice.amount())),
-            RecordTableModel.Column.of("Pagado", invoice -> Money.format(invoice.paid())),
-            RecordTableModel.Column.of("Saldo", invoice -> Money.format(invoice.balance())),
-            RecordTableModel.Column.of("Vence", invoice -> Dates.format(invoice.dueDate())),
-            RecordTableModel.Column.of("Estado", invoice -> invoice.status().label())));
-    private final JTable table = Ui.table(model);
-    private final JComboBox<Object> statusFilter = new JComboBox<>();
-    private final JComboBox<Object> clientFilter = new JComboBox<>();
 
-    private final RecordTableModel<ServiceRequest> pendingModel = new RecordTableModel<>(List.of(
-            RecordTableModel.Column.of("Folio", ServiceRequest::folio),
-            RecordTableModel.Column.of("Cliente", ServiceRequest::clientName),
-            RecordTableModel.Column.text("Ruta", ServiceRequest::routeLabel, 40),
-            RecordTableModel.Column.of("Estado", request -> request.status().label()),
-            RecordTableModel.Column.of("Tarifa", request -> Money.format(request.agreedRate())),
-            RecordTableModel.Column.of("Recoleccion", request -> Dates.format(request.pickupScheduled()))));
-    private final JTable pendingTable = Ui.table(pendingModel);
+    private final RecordTable<Invoice> table = new RecordTable<>(List.of(
+            RecordTable.Column.of("Factura", Invoice::invoiceNumber),
+            RecordTable.Column.of("Cliente", Invoice::clientName),
+            RecordTable.Column.of("Solicitud", Invoice::requestFolio),
+            RecordTable.Column.money("Importe", Invoice::amount),
+            RecordTable.Column.money("Pagado", Invoice::paid),
+            RecordTable.Column.money("Saldo", Invoice::balance),
+            RecordTable.Column.of("Vence", invoice -> Dates.format(invoice.dueDate())),
+            RecordTable.Column.badge("Estado", invoice -> invoice.status().label(),
+                    invoice -> StatusTones.invoice(invoice.status()))));
+
+    private final RecordTable<ServiceRequest> pendingTable = new RecordTable<>(List.of(
+            RecordTable.Column.of("Folio", ServiceRequest::folio),
+            RecordTable.Column.of("Cliente", ServiceRequest::clientName),
+            RecordTable.Column.text("Ruta", ServiceRequest::routeLabel, 40),
+            RecordTable.Column.badge("Estado", request -> request.status().label(),
+                    request -> StatusTones.request(request.status())),
+            RecordTable.Column.money("Tarifa", ServiceRequest::agreedRate),
+            RecordTable.Column.of("Recoleccion", request -> Dates.format(request.pickupScheduled()))));
+
+    private final ComboBox<Object> statusFilter = new ComboBox<>();
+    private final ComboBox<Object> clientFilter = new ComboBox<>();
 
     public InvoicesView() {
-        Ui.onDoubleClick(table, this::openPayments);
-        Ui.onDoubleClick(pendingTable, this::billSelectedRequest);
-        statusFilter.addItem("(todos)");
+        statusFilter.getItems().add("(todos)");
         for (InvoiceStatus status : InvoiceStatus.values()) {
-            statusFilter.addItem(status);
+            statusFilter.getItems().add(status);
         }
-        add(Ui.row(new JLabel("Estado:"), statusFilter, new JLabel("Cliente:"), clientFilter,
-                Ui.button("Buscar", this::reload),
-                Ui.button("Facturar", this::openInvoiceForm),
+        statusFilter.setValue("(todos)");
+        clientFilter.getItems().add("(todos)");
+        clientFilter.setValue("(todos)");
+        Ui.onDoubleClick(table, invoice -> openPayments());
+        Ui.onDoubleClick(pendingTable, request -> billSelectedRequest());
+
+        var filters = Ui.filters(new Label("Estado:"), statusFilter,
+                new Label("Cliente:"), clientFilter,
+                Ui.button("Buscar", this::reload));
+        var actions = Ui.toolbar(
+                Ui.primary("Facturar", this::openInvoiceForm),
                 Ui.button("Registrar pago", this::openPaymentForm),
                 Ui.button("Pagos", this::openPayments),
                 Ui.button("Cancelar", this::cancelInvoice),
                 Ui.button("Actualizar estatus", this::refreshStatuses),
                 Ui.button("Eliminar", this::deleteInvoice),
-                Ui.button("Recargar", this::reload)), BorderLayout.NORTH);
-        JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, Ui.scroll(table), buildPendingPanel());
-        split.setDividerLocation(0.6);
-        add(split, BorderLayout.CENTER);
+                Ui.button("Recargar", this::reload));
+
+        RecordTablePanel<ServiceRequest> pendingPanel = new RecordTablePanel<>(pendingTable);
+        pendingPanel.setPadding(new Insets(12, 0, 0, 0));
+        pendingPanel.withActions(
+                Ui.button("Facturar seleccionada", this::billSelectedRequest),
+                Ui.button("Recargar", this::reloadPending));
+
+        Label pendingTitle = new Label("Por facturar (tarifa autorizada sin factura)");
+        pendingTitle.getStyleClass().add("section-title");
+        VBox pendingBox = new VBox(6, pendingTitle, pendingPanel);
+        VBox.setVgrow(pendingPanel, javafx.scene.layout.Priority.ALWAYS);
+
+        SplitPane split = new SplitPane(table, pendingBox);
+        split.setOrientation(javafx.geometry.Orientation.VERTICAL);
+        split.setDividerPositions(0.58);
+
+        setTop(new VBox(4, filters, actions));
+        setCenter(split);
         reloadClients();
         reload();
     }
 
-    private JPanel buildPendingPanel() {
-        JPanel panel = new JPanel(new BorderLayout(8, 8));
-        panel.setBorder(BorderFactory.createTitledBorder("Por facturar (tarifa autorizada sin factura)"));
-        panel.add(Ui.scroll(pendingTable), BorderLayout.CENTER);
-        panel.add(Ui.row(Ui.button("Facturar seleccionada", this::billSelectedRequest),
-                Ui.button("Recargar", this::reloadPending)), BorderLayout.SOUTH);
-        return panel;
-    }
-
     private void reloadClients() {
         load(clientService::listActive, clients -> {
-            Object selected = clientFilter.getSelectedItem();
-            clientFilter.removeAllItems();
-            clientFilter.addItem("(todos)");
-            for (Client client : clients) {
-                clientFilter.addItem(client);
-            }
-            if (selected != null) {
-                clientFilter.setSelectedItem(selected);
+            Object selected = clientFilter.getValue();
+            clientFilter.getItems().setAll("(todos)");
+            clientFilter.getItems().addAll(clients);
+            if (selected != null && clientFilter.getItems().contains(selected)) {
+                clientFilter.setValue(selected);
             }
         });
     }
 
     @Override
     public void reload() {
-        Object status = statusFilter.getSelectedItem();
-        Object client = clientFilter.getSelectedItem();
+        Object status = statusFilter.getValue();
+        Object client = clientFilter.getValue();
         loadRows(() -> service.search(status instanceof InvoiceStatus s ? s : null,
                         client instanceof Client c ? c.id() : null),
-                model::setRows);
+                table::setRows);
         reloadPending();
     }
 
     private void reloadPending() {
-        loadRows(requestService::pendingBilling, pendingModel::setRows);
+        loadRows(requestService::pendingBilling, pendingTable::setRows);
     }
 
     private void billSelectedRequest() {
-        ServiceRequest request = selectedRow(pendingTable, pendingModel);
+        ServiceRequest request = pendingTable.selected();
         if (request == null) {
-            Ui.info(this, "Seleccione una solicitud por facturar");
+            Ui.info(Ui.windowOf(this), "Seleccione una solicitud por facturar");
             return;
         }
         Async.run(() -> service.createFromRequest(request, Dates.today(), request.agreedRate()), result -> {
             if (result.isErr()) {
-                Ui.error(this, "No se puede facturar", result.problems());
+                Ui.error(Ui.windowOf(this), "No se puede facturar", result.problems());
             } else {
-                Ui.info(this, "Factura creada: " + result.value().invoiceNumber());
+                Ui.success(Ui.windowOf(this), "Factura creada: " + result.value().invoiceNumber());
                 reload();
             }
-        }, failure -> Ui.failure(this, failure));
-    }
-
-    private Invoice selected() {
-        return selectedRow(table, model);
+        }, failure -> Ui.failure(Ui.windowOf(this), failure));
     }
 
     private Invoice requireSelected() {
-        Invoice invoice = selected();
+        Invoice invoice = table.selected();
         if (invoice == null) {
-            Ui.info(this, "Seleccione una factura");
+            Ui.info(Ui.windowOf(this), "Seleccione una factura");
         }
         return invoice;
     }
@@ -154,16 +162,17 @@ public class InvoicesView extends BaseView {
             return billable;
         }, requests -> {
             if (requests.isEmpty()) {
-                Ui.info(this, "No hay solicitudes entregadas o cerradas por facturar");
+                Ui.info(Ui.windowOf(this), "No hay solicitudes entregadas o cerradas por facturar");
                 return;
             }
             FormPanel form = new FormPanel()
                     .addCombo("request", "Solicitud", requests.toArray(), requests.get(0))
-                    .addText("issueDate", "Fecha de emision", Dates.format(Dates.today()), "Formato: AAAA-MM-DD")
+                    .addText("issueDate", "Fecha de emision", Dates.format(Dates.today()),
+                            "Formato: AAAA-MM-DD")
                     .addText("amount", "Importe", "", "Deje vacio para usar la tarifa autorizada");
             form.validate("issueDate", Validators.date());
             form.validate("amount", Validators.money());
-            ModalForm.show(this, "Nueva factura", form, () -> {
+            ModalForm.show(Ui.windowOf(this), "Nueva factura", form, () -> {
                 ServiceRequest request = (ServiceRequest) form.selected("request");
                 LocalDate issue = Dates.parseDate(form.text("issueDate")).orElse(null);
                 if (issue == null) {
@@ -181,7 +190,7 @@ public class InvoicesView extends BaseView {
                 }
                 return service.createFromRequest(request, issue, amount);
             }, this::reload);
-        }, failure -> Ui.failure(this, failure));
+        }, failure -> Ui.failure(Ui.windowOf(this), failure));
     }
 
     private void openPaymentForm() {
@@ -196,7 +205,7 @@ public class InvoicesView extends BaseView {
                 .addCombo("method", "Forma de pago", PaymentMethod.values(), PaymentMethod.CASH);
         form.validate("amount", Validators.money());
         form.validate("date", Validators.date());
-        ModalForm.show(this, "Pago de " + invoice.invoiceNumber(), form, () -> {
+        ModalForm.show(Ui.windowOf(this), "Pago de " + invoice.invoiceNumber(), form, () -> {
             Result<BigDecimal> amountResult = Money.require(form.text("amount"), "monto del pago");
             if (amountResult.isErr()) {
                 return amountResult;
@@ -212,31 +221,36 @@ public class InvoicesView extends BaseView {
         if (invoice == null) {
             return;
         }
-        RecordTableModel<Payment> payments = new RecordTableModel<>(List.of(
-                RecordTableModel.Column.of("Fecha", payment -> Dates.format(payment.paymentDate())),
-                RecordTableModel.Column.of("Monto", payment -> Money.format(payment.amount())),
-                RecordTableModel.Column.of("Forma", payment -> payment.method().label())));
+        RecordTable<Payment> payments = new RecordTable<>(List.of(
+                RecordTable.Column.of("Fecha", payment -> Dates.format(payment.paymentDate())),
+                RecordTable.Column.money("Monto", Payment::amount),
+                RecordTable.Column.of("Forma", payment -> payment.method().label())));
         RecordTablePanel<Payment> panel = new RecordTablePanel<>(payments);
-        JDialog dialog = new JDialog(SwingUtilities.getWindowAncestor(this),
-                "Pagos de " + invoice.invoiceNumber(), Dialog.ModalityType.APPLICATION_MODAL);
+
+        Stage stage = new Stage();
+        stage.initOwner(Ui.windowOf(this));
+        stage.initModality(Modality.WINDOW_MODAL);
+        stage.setTitle("Pagos de " + invoice.invoiceNumber());
         Runnable reload = () -> Async.run(() -> service.paymentsFor(invoice.id()),
-                panel::setRows, failure -> Ui.failure(dialog, failure));
+                panel::setRows, failure -> Ui.failure(stage, failure));
         panel.withActions(
                 Ui.button("Eliminar pago", () -> {
                     if (panel.selected() == null) {
-                        Ui.info(dialog, "Seleccione un pago");
+                        Ui.info(stage, "Seleccione un pago");
                         return;
                     }
-                    Ui.delete(dialog, "el pago seleccionado",
+                    Ui.delete(stage, "el pago seleccionado",
                             () -> service.deletePayment(panel.selected().id()), reload);
                 }),
-                Ui.button("Cerrar", dialog::dispose));
-        dialog.setLayout(new BorderLayout(8, 8));
-        dialog.add(panel, BorderLayout.CENTER);
-        dialog.setSize(520, 320);
-        dialog.setLocationRelativeTo(this);
+                Ui.button("Recargar", reload),
+                Ui.button("Cerrar", stage::close));
+        BorderPane root = new BorderPane(panel);
+        root.setPadding(new Insets(16));
+        Scene scene = new Scene(root, 560, 340);
+        ThemeManager.apply(scene);
+        stage.setScene(scene);
         reload.run();
-        dialog.setVisible(true);
+        stage.show();
     }
 
     private void cancelInvoice() {
@@ -244,16 +258,16 @@ public class InvoicesView extends BaseView {
         if (invoice == null) {
             return;
         }
-        if (!Ui.confirm(this, "Cancelar la factura " + invoice.invoiceNumber() + "?")) {
+        if (!Ui.confirm(Ui.windowOf(this), "\u00bfCancelar la factura " + invoice.invoiceNumber() + "?")) {
             return;
         }
         Async.run(() -> service.cancel(invoice.id()), result -> {
             if (result.isErr()) {
-                Ui.error(this, "No se puede cancelar", result.problems());
+                Ui.error(Ui.windowOf(this), "No se puede cancelar", result.problems());
             } else {
                 reload();
             }
-        }, failure -> Ui.failure(this, failure));
+        }, failure -> Ui.failure(Ui.windowOf(this), failure));
     }
 
     private void deleteInvoice() {
@@ -261,17 +275,17 @@ public class InvoicesView extends BaseView {
         if (invoice == null) {
             return;
         }
-        Ui.delete(this, "la factura " + invoice.invoiceNumber() + " y sus pagos",
+        Ui.delete(Ui.windowOf(this), "la factura " + invoice.invoiceNumber() + " y sus pagos",
                 () -> service.delete(invoice.id()), this::reload);
     }
 
     private void refreshStatuses() {
-        if (!Ui.confirm(this, "Recalcular el estatus de todas las facturas abiertas?")) {
+        if (!Ui.confirm(Ui.windowOf(this), "\u00bfRecalcular el estatus de todas las facturas abiertas?")) {
             return;
         }
         Async.run(() -> service.refreshStatuses(Dates.today()), changed -> {
-            Ui.info(this, "Estatus actualizados: " + changed);
+            Ui.success(Ui.windowOf(this), "Estatus actualizados: " + changed);
             reload();
-        }, failure -> Ui.failure(this, failure));
+        }, failure -> Ui.failure(Ui.windowOf(this), failure));
     }
 }

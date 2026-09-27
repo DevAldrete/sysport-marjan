@@ -158,7 +158,7 @@ public final class AppShell {
                 item("Catalogos", "Combustible", Feather.DROPLET, Permissions.FUEL_READ,
                         mx.marjan.fleet.FuelLoadsView::new),
                 item("Finanzas", "Facturas", Feather.DOLLAR_SIGN, Permissions.INVOICES_READ,
-                        () -> new PlaceholderScreen("Facturas")),
+                        mx.marjan.finance.InvoicesView::new),
                 item("Finanzas", "Reportes", Feather.BAR_CHART_2, Permissions.REPORTS_VIEW,
                         () -> new PlaceholderScreen("Reportes")),
                 item("Sistema", "Usuarios", Feather.SHIELD, Permissions.SECURITY_USERS,
