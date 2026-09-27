@@ -11,7 +11,6 @@ import javax.swing.JLabel;
 import javax.swing.JTable;
 import javax.swing.JTextField;
 import javax.swing.table.DefaultTableModel;
-import mx.marjan.shared.Async;
 import mx.marjan.shared.BaseView;
 import mx.marjan.shared.Dates;
 import mx.marjan.shared.Ui;
@@ -40,12 +39,12 @@ public class ReportsView extends BaseView {
         }
     }
 
-    private final ReportRepository repository = new ReportRepository();
+    private final ReportService service = new ReportService();
     private final JComboBox<Kind> kind = new JComboBox<>(Kind.values());
     private final JTextField fromField = new JTextField(10);
     private final JTextField toField = new JTextField(10);
     private final DefaultTableModel tableModel = new DefaultTableModel();
-    private final JTable table = new JTable(tableModel);
+    private final JTable table = Ui.style(new JTable(tableModel));
 
     private Report current;
 
@@ -70,16 +69,22 @@ public class ReportsView extends BaseView {
         Kind selected = (Kind) kind.getSelectedItem();
         LocalDate from = Dates.parseDate(fromField.getText()).orElse(Dates.today().withDayOfYear(1));
         LocalDate to = Dates.parseDate(toField.getText()).orElse(Dates.today());
-        Async.run(() -> switch (selected) {
-            case REVENUE -> repository.revenueByClient(from, to);
-            case ROUTES -> repository.routeUsage(from, to);
-            case VEHICLES -> repository.vehicleUsage(from, to);
-            case FUEL -> repository.fuelEfficiency(from, to);
-            case PROFITABILITY -> repository.profitability(from, to);
-            case RECEIVABLES -> repository.receivables();
-            case LICENSES -> repository.expiringLicenses(Dates.today());
-            case MAINTENANCE -> repository.maintenanceDue(Dates.today());
-        }, this::show, failure -> Ui.failure(this, failure));
+        load(() -> switch (selected) {
+            case REVENUE -> service.revenueByClient(from, to);
+            case ROUTES -> service.routeUsage(from, to);
+            case VEHICLES -> service.vehicleUsage(from, to);
+            case FUEL -> service.fuelEfficiency(from, to);
+            case PROFITABILITY -> service.profitability(from, to);
+            case RECEIVABLES -> service.receivables();
+            case LICENSES -> service.expiringLicenses(Dates.today());
+            case MAINTENANCE -> service.maintenanceDue(Dates.today());
+        }, result -> {
+            if (result.isErr()) {
+                Ui.error(this, "Reporte", result.problems());
+            } else {
+                show(result.value());
+            }
+        });
     }
 
     private void show(Report report) {

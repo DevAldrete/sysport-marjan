@@ -100,7 +100,11 @@ public final class Ui {
     }
 
     public static JTable table(RecordTableModel<?> model) {
-        JTable table = new JTable(model);
+        return style(new JTable(model));
+    }
+
+    /** Applies the shared look (sorter, row height, left alignment) to any table. */
+    public static JTable style(JTable table) {
         table.setAutoCreateRowSorter(true);
         table.setRowHeight(24);
         DefaultTableCellRenderer renderer = new DefaultTableCellRenderer();
