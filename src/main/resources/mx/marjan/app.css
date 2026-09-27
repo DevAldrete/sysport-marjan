@@ -1,0 +1,250 @@
+/*
+ * SysPort MARJAN - application stylesheet.
+ * Brand: black & white with red/green/amber only for status. Light and dark
+ * share the same components; only the accent scale differs.
+ */
+
+/* ---- Brand accent: near-black on light ---- */
+.root {
+    -color-accent-emphasis: #18181b;
+    -color-accent-fg: #18181b;
+    -color-accent-subtle: #f4f4f5;
+    -color-accent-muted: rgba(24, 24, 27, 0.22);
+    -color-accent-0: #fafafa;
+    -color-accent-1: #f4f4f5;
+    -color-accent-2: #e4e4e7;
+    -color-accent-3: #d4d4d8;
+    -color-accent-4: #a1a1aa;
+    -color-accent-5: #52525b;
+    -color-accent-6: #3f3f46;
+    -color-accent-7: #27272a;
+    -color-accent-8: #18181b;
+    -color-accent-9: #09090b;
+}
+
+/* ---- Brand accent: near-white on dark ---- */
+.root.theme-dark {
+    -color-accent-emphasis: #f4f4f5;
+    -color-accent-fg: #f4f4f5;
+    -color-accent-subtle: rgba(255, 255, 255, 0.08);
+    -color-accent-muted: rgba(255, 255, 255, 0.28);
+    -color-accent-0: #27272a;
+    -color-accent-1: #3f3f46;
+    -color-accent-2: #52525b;
+    -color-accent-3: #71717a;
+    -color-accent-4: #a1a1aa;
+    -color-accent-5: #d4d4d8;
+    -color-accent-6: #e4e4e7;
+    -color-accent-7: #f4f4f5;
+    -color-accent-8: #fafafa;
+    -color-accent-9: #ffffff;
+    -color-fg-emphasis: #09090b;
+}
+
+/* ---- Shell ---- */
+.app-shell {
+    -fx-background-color: -color-bg-default;
+}
+
+.sidebar {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: transparent -color-border-muted transparent transparent;
+    -fx-border-width: 0 1 0 0;
+    -fx-padding: 12 8 12 8;
+    -fx-min-width: 232;
+    -fx-pref-width: 232;
+}
+
+.sidebar-collapsed {
+    -fx-min-width: 64;
+    -fx-pref-width: 64;
+}
+
+.brand {
+    -fx-padding: 4 8 14 8;
+}
+
+.brand-title {
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+}
+
+.brand-subtitle {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 11px;
+}
+
+.nav-scroll {
+    -fx-background-color: transparent;
+}
+
+.nav-group-label {
+    -fx-text-fill: -color-fg-subtle;
+    -fx-font-size: 10.5px;
+    -fx-font-weight: bold;
+    -fx-padding: 14 12 4 12;
+}
+
+.nav-button {
+    -fx-background-color: transparent;
+    -fx-text-fill: -color-fg-default;
+    -fx-alignment: center-left;
+    -fx-graphic-text-gap: 10;
+    -fx-padding: 9 12 9 12;
+    -fx-font-size: 13px;
+    -fx-background-radius: 8;
+}
+
+.nav-button:hover {
+    -fx-background-color: -color-bg-inset;
+}
+
+.nav-button:selected {
+    -fx-background-color: -color-accent-subtle;
+    -fx-text-fill: -color-accent-fg;
+    -fx-font-weight: bold;
+}
+
+.app-bar {
+    -fx-background-color: -color-bg-default;
+    -fx-border-color: transparent transparent -color-border-muted transparent;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 10 16 10 16;
+}
+
+.app-title {
+    -fx-font-size: 18px;
+    -fx-font-weight: bold;
+}
+
+.user-chip {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 12px;
+}
+
+.content-area {
+    -fx-background-color: -color-bg-default;
+}
+
+/* ---- Cards / dashboard ---- */
+.card {
+    -fx-background-color: -color-bg-default;
+    -fx-background-radius: 10;
+    -fx-border-color: -color-border-muted;
+    -fx-border-radius: 10;
+    -fx-border-width: 1;
+    -fx-padding: 16;
+}
+
+.kpi-card:hover {
+    -fx-border-color: -color-accent-emphasis;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.12), 8, 0, 0, 2);
+    -fx-cursor: hand;
+}
+
+.kpi-label {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 12px;
+}
+
+.kpi-value {
+    -fx-font-size: 30px;
+    -fx-font-weight: bold;
+}
+
+.kpi-hint {
+    -fx-text-fill: -color-fg-subtle;
+    -fx-font-size: 11px;
+}
+
+.section-title {
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+}
+
+/* ---- Status badges ---- */
+.badge {
+    -fx-padding: 2 9 2 9;
+    -fx-background-radius: 20;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+}
+
+.badge-neutral {
+    -fx-background-color: -color-bg-inset;
+    -fx-text-fill: -color-fg-muted;
+}
+
+.badge-info {
+    -fx-background-color: -color-accent-subtle;
+    -fx-text-fill: -color-accent-fg;
+}
+
+.badge-success {
+    -fx-background-color: -color-success-subtle;
+    -fx-text-fill: -color-success-fg;
+}
+
+.badge-warning {
+    -fx-background-color: -color-warning-subtle;
+    -fx-text-fill: -color-warning-fg;
+}
+
+.badge-danger {
+    -fx-background-color: -color-danger-subtle;
+    -fx-text-fill: -color-danger-fg;
+}
+
+/* ---- Forms ---- */
+.form-hint {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 11px;
+}
+
+.form-error {
+    -fx-text-fill: -color-danger-fg;
+    -fx-font-size: 12px;
+}
+
+.form-control.invalid {
+    -fx-border-color: -color-danger-emphasis;
+    -fx-border-radius: 6;
+}
+
+/* ---- Tables ---- */
+.data-table {
+    -fx-background-radius: 8;
+    -fx-border-color: -color-border-muted;
+    -fx-border-radius: 8;
+    -fx-border-width: 1;
+}
+
+/* ---- Misc ---- */
+.status-text {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 12px;
+}
+
+.toolbar {
+    -fx-spacing: 8;
+    -fx-padding: 0 0 12 0;
+}
+
+.filter-bar {
+    -fx-spacing: 8;
+    -fx-padding: 0 0 10 0;
+}
+
+.empty-state {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 14px;
+}
+
+.placeholder-title {
+    -fx-font-size: 20px;
+    -fx-font-weight: bold;
+}
+
+.placeholder-text {
+    -fx-text-fill: -color-fg-muted;
+}
