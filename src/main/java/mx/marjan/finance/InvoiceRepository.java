@@ -52,6 +52,11 @@ public class InvoiceRepository {
         return Database.callVoid("{call sp_invoice_delete(?,?)}", id);
     }
 
+    /** BR-19: cancel a pending/overdue invoice that has no payments yet. */
+    public Result<Void> cancel(long id) {
+        return Database.callVoid("{call sp_cancel_invoice(?,?)}", id);
+    }
+
     /** BR-19 / FR-INV-3: recompute paid/overdue for every open invoice. Returns how many changed. */
     public int refreshStatuses(LocalDate today) {
         Object[] out = Database.call("{call sp_refresh_invoice_statuses(?,?)}",

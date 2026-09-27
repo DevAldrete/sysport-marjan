@@ -131,7 +131,7 @@ public class ServiceRequestsView extends BaseView {
                 client instanceof Client c ? c.id() : null,
                 status instanceof RequestStatus s ? s : null,
                 from, to);
-        load(() -> {
+        loadRows(() -> {
             tripService.sweepLifecycle();
             return service.search(filter);
         }, model::setRows);

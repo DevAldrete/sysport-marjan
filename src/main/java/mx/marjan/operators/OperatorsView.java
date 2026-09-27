@@ -42,7 +42,7 @@ public class OperatorsView extends BaseView {
     @Override
     public void reload() {
         String term = searchField.getText();
-        load(() -> service.search(term), model::setRows);
+        loadRows(() -> service.search(term), model::setRows);
     }
 
     private static String licenseLabel(License license, LocalDate today) {
@@ -125,12 +125,11 @@ public class OperatorsView extends BaseView {
             Ui.info(this, "Seleccione un operador");
             return;
         }
-        FormPanel form = new FormPanel().addCombo("status", "Nuevo estado",
-                EmployeeStatus.values(), employee.status());
-        ModalForm.show(this, "Cambiar estado de " + employee.name(), form, () -> {
-            EmployeeStatus status = (EmployeeStatus) form.selected("status");
-            var result = service.setStatus(employee.id(), status);
-            return result;
-        }, this::reload);
+        EmployeeStatus[] options = EmployeeStatus.manualValues();
+        EmployeeStatus initial = employee.status().isManual() ? employee.status() : options[0];
+        FormPanel form = new FormPanel().addCombo("status", "Nuevo estado", options, initial);
+        ModalForm.show(this, "Cambiar estado de " + employee.name(), form,
+                () -> service.setStatus(employee.id(), (EmployeeStatus) form.selected("status")),
+                this::reload);
     }
 }

@@ -97,6 +97,21 @@ class SqlRulesTest {
     }
 
     @Test
+    void invoiceCancellationRules() throws Exception {
+        long pendingRequest = createRequest(2, 4, "2027-03-10 08:00:00", "2027-03-11 18:00:00",
+                new BigDecimal("2000"), true);
+        long paidRequest = createRequest(2, 4, "2027-03-12 08:00:00", "2027-03-13 18:00:00",
+                new BigDecimal("2000"), true);
+        long pending = 9100 + pendingRequest;
+        long paid = 9200 + paidRequest;
+        insertInvoice(pending, pendingRequest, "pending");
+        insertInvoice(paid, paidRequest, "paid");
+        assertNull(cancelInvoice(pending), "a pending invoice can be cancelled");
+        assertEquals("cancelled", scalarString("SELECT status FROM invoices WHERE id=" + pending));
+        assertNotNull(cancelInvoice(paid), "a paid invoice cannot be cancelled");
+    }
+
+    @Test
     void vehicleCannotBeDoubleBooked() throws Exception {
         long first = createRequest(2, 4, "2027-04-05 08:00:00", "2027-04-06 18:00:00",
                 new BigDecimal("1000"), true);
@@ -194,6 +209,16 @@ class SqlRulesTest {
     private String registerPayment(long invoice, BigDecimal amount, String date) throws Exception {
         return (String) call("{call sp_register_payment(?,?,?,?,?,?)}", new int[] { Types.VARCHAR },
                 invoice, amount, date, "cash", 1L)[0];
+    }
+
+    private void insertInvoice(long id, long request, String status) throws Exception {
+        exec("INSERT INTO invoices (id, client_id, service_request_id, invoice_number, amount, "
+                + "issue_date, due_date, status, created_by) VALUES (" + id + ", 2, " + request
+                + ", 'INV-TEST-" + id + "', 1000, CURDATE(), CURDATE(), '" + status + "', 1)");
+    }
+
+    private String cancelInvoice(long invoice) throws Exception {
+        return (String) call("{call sp_cancel_invoice(?,?)}", new int[] { Types.VARCHAR }, invoice)[0];
     }
 
     private String rateProblems(int clientId, int routeId, String rate, String from, String to) throws Exception {

@@ -50,7 +50,7 @@ public class RoutesView extends BaseView {
     @Override
     public void reload() {
         String term = searchField.getText();
-        load(() -> service.search(term), model::setRows);
+        loadRows(() -> service.search(term), model::setRows);
     }
 
     private Route selected() {

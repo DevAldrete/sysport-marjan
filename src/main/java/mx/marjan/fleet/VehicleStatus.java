@@ -16,12 +16,25 @@ public enum VehicleStatus {
         this.label = label;
     }
 
+    private static final VehicleStatus[] MANUAL = {
+        AVAILABLE, MAINTENANCE, OUT_OF_SERVICE, DECOMMISSIONED
+    };
+
     public String dbValue() {
         return dbValue;
     }
 
     public String label() {
         return label;
+    }
+
+    /** Statuses a user may set by hand; 'assigned'/'on_trip' belong to the trip lifecycle. */
+    public static VehicleStatus[] manualValues() {
+        return MANUAL.clone();
+    }
+
+    public boolean isManual() {
+        return this != ASSIGNED && this != ON_TRIP;
     }
 
     public static VehicleStatus fromDb(String value) {

@@ -55,7 +55,7 @@ public class ClientsView extends BaseView {
     @Override
     public void reload() {
         String term = searchField.getText();
-        load(() -> service.search(term), model::setRows);
+        loadRows(() -> service.search(term), model::setRows);
     }
 
     private Client selected() {
@@ -113,6 +113,10 @@ public class ClientsView extends BaseView {
         Client client = selected();
         if (client == null) {
             Ui.info(this, "Seleccione un cliente");
+            return;
+        }
+        String action = status == ClientStatus.INACTIVE ? "Desactivar" : "Activar";
+        if (!Ui.confirm(this, action + " el cliente \"" + client.name() + "\"?")) {
             return;
         }
         Async.run(() -> status == ClientStatus.INACTIVE ? service.deactivate(client.id())

@@ -54,7 +54,7 @@ public class VehiclesView extends BaseView {
     @Override
     public void reload() {
         String term = searchField.getText();
-        load(() -> service.search(term), model::setRows);
+        loadRows(() -> service.search(term), model::setRows);
     }
 
     private Vehicle selected() {
@@ -113,8 +113,9 @@ public class VehiclesView extends BaseView {
             Ui.info(this, "Seleccione una unidad");
             return;
         }
-        FormPanel form = new FormPanel().addCombo("status", "Nuevo estado",
-                VehicleStatus.values(), vehicle.status());
+        VehicleStatus[] options = VehicleStatus.manualValues();
+        VehicleStatus initial = vehicle.status().isManual() ? vehicle.status() : options[0];
+        FormPanel form = new FormPanel().addCombo("status", "Nuevo estado", options, initial);
         ModalForm.show(this, "Cambiar estado de " + vehicle.label(), form,
                 () -> service.setStatus(vehicle.id(), (VehicleStatus) form.selected("status")),
                 this::reload);

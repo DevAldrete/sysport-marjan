@@ -2621,6 +2621,27 @@ p: BEGIN
   COMMIT;
 END$$
 
+-- BR-19: cancel a pending/overdue invoice that has no payments yet.
+CREATE PROCEDURE sp_cancel_invoice(IN p_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  DECLARE v_status VARCHAR(20) DEFAULT NULL;
+  SET p_problems = NULL;
+  SELECT status INTO v_status FROM invoices WHERE id = p_id;
+  IF v_status IS NULL THEN
+    SET p_problems = 'Factura no encontrada'; LEAVE p;
+  END IF;
+  IF v_status = 'paid' THEN
+    SET p_problems = 'No se puede cancelar una factura pagada'; LEAVE p;
+  END IF;
+  IF v_status = 'cancelled' THEN
+    SET p_problems = 'La factura ya esta cancelada'; LEAVE p;
+  END IF;
+  IF (SELECT COUNT(*) FROM payments WHERE invoice_id = p_id) > 0 THEN
+    SET p_problems = 'No se puede cancelar una factura con pagos registrados'; LEAVE p;
+  END IF;
+  UPDATE invoices SET status = 'cancelled' WHERE id = p_id;
+END$$
+
 -- ---------------------------------------------------------------- payments
 
 CREATE PROCEDURE sp_payments_by_invoice(IN p_invoice_id BIGINT)

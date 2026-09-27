@@ -3,7 +3,6 @@ package mx.marjan.security;
 import java.awt.BorderLayout;
 import java.util.List;
 import javax.swing.JTable;
-import javax.swing.JTextField;
 import mx.marjan.shared.Async;
 import mx.marjan.shared.BaseView;
 import mx.marjan.shared.FormPanel;
@@ -34,11 +33,19 @@ public class UsersView extends BaseView {
 
     @Override
     public void reload() {
-        load(authService::listUsers, model::setRows);
+        loadRows(authService::listUsers, model::setRows);
     }
 
     private User selected() {
         return selectedRow(table, model);
+    }
+
+    private User requireSelected() {
+        User user = selected();
+        if (user == null) {
+            Ui.info(this, "Seleccione un usuario");
+        }
+        return user;
     }
 
     private void openNew() {
@@ -59,9 +66,8 @@ public class UsersView extends BaseView {
     }
 
     private void openEdit() {
-        User user = selected();
+        User user = requireSelected();
         if (user == null) {
-            Ui.info(this, "Seleccione un usuario");
             return;
         }
         if (roles.isEmpty()) {
@@ -80,32 +86,19 @@ public class UsersView extends BaseView {
     }
 
     private void resetPassword() {
-        User user = selected();
+        User user = requireSelected();
         if (user == null) {
-            Ui.info(this, "Seleccione un usuario");
             return;
         }
-        JTextField field = new JTextField(16);
-        Object[] message = { "Nueva contrasena para " + user.username() + ":", field };
-        if (javax.swing.JOptionPane.showConfirmDialog(this, message, "Restablecer contrasena",
-                javax.swing.JOptionPane.OK_CANCEL_OPTION) != javax.swing.JOptionPane.OK_OPTION) {
-            return;
-        }
-        Async.run(() -> authService.resetPassword(user.id(), field.getText()),
-                result -> {
-                    if (result.isErr()) {
-                        Ui.error(this, "Error", result.problems());
-                    } else {
-                        Ui.info(this, "Contrasena actualizada");
-                    }
-                },
-                failure -> Ui.failure(this, failure));
+        FormPanel form = new FormPanel().addPassword("password", "Nueva contrasena");
+        ModalForm.show(this, "Restablecer contrasena de " + user.username(), form,
+                () -> authService.resetPassword(user.id(), form.text("password")),
+                () -> Ui.info(this, "Contrasena actualizada"));
     }
 
     private void deleteUser() {
-        User user = selected();
+        User user = requireSelected();
         if (user == null) {
-            Ui.info(this, "Seleccione un usuario");
             return;
         }
         Ui.delete(this, "el usuario \"" + user.username() + "\"",

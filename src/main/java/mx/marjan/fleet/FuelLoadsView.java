@@ -60,7 +60,7 @@ public class FuelLoadsView extends BaseView {
 
     @Override
     public void reload() {
-        load(service::listAll, model::setRows);
+        loadRows(service::listAll, model::setRows);
     }
 
     private void openNew() {

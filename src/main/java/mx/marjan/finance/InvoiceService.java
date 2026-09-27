@@ -59,6 +59,14 @@ public class InvoiceService {
         return invoices.delete(id);
     }
 
+    /** BR-19: cancel a pending/overdue invoice that has no payments yet. */
+    public Result<Void> cancel(long id) {
+        if (!Session.has(Permissions.INVOICES_WRITE)) {
+            return Result.err("No tiene permiso para cancelar facturas");
+        }
+        return invoices.cancel(id);
+    }
+
     public Result<Void> deletePayment(long id) {
         if (!Session.has(Permissions.PAYMENTS_WRITE)) {
             return Result.err("No tiene permiso para eliminar pagos");
