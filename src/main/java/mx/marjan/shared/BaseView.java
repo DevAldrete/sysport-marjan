@@ -5,6 +5,7 @@ import java.util.concurrent.Callable;
 import java.util.function.Consumer;
 import javax.swing.BorderFactory;
 import javax.swing.JPanel;
+import javax.swing.JTable;
 
 /**
  * Common screen shell: a border layout with padding, plus helpers to load data
@@ -26,5 +27,11 @@ public abstract class BaseView extends JPanel {
 
     protected <T> void load(Callable<T> task, Consumer<T> onSuccess, Consumer<Throwable> onError) {
         Async.run(task, onSuccess, onError);
+    }
+
+    /** The record selected in a view's table, or null when nothing is selected. */
+    protected <T> T selectedRow(JTable table, RecordTableModel<T> model) {
+        int row = table.getSelectedRow();
+        return row < 0 ? null : model.rowAt(table.convertRowIndexToModel(row));
     }
 }

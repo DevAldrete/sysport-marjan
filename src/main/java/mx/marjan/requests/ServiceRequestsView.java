@@ -153,8 +153,7 @@ public class ServiceRequestsView extends BaseView {
     }
 
     private ServiceRequest selected() {
-        int row = table.getSelectedRow();
-        return row < 0 ? null : model.rowAt(table.convertRowIndexToModel(row));
+        return selectedRow(table, model);
     }
 
     private void openNew() {

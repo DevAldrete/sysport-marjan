@@ -38,8 +38,7 @@ public class UsersView extends BaseView {
     }
 
     private User selected() {
-        int row = table.getSelectedRow();
-        return row < 0 ? null : model.rowAt(table.convertRowIndexToModel(row));
+        return selectedRow(table, model);
     }
 
     private void openNew() {
