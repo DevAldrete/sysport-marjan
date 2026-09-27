@@ -9,9 +9,7 @@ DELIMITER $$
 
 CREATE PROCEDURE sp_clients_search(IN p_term VARCHAR(150))
 p: BEGIN
-  SELECT id, name, rfc, address, phone, email, contact_name, client_type,
-         payment_terms, credit_limit, credit_days, status
-  FROM clients
+  SELECT * FROM v_client
   WHERE p_term IS NULL OR p_term = ''
      OR name LIKE CONCAT('%', p_term, '%') OR rfc LIKE CONCAT('%', p_term, '%')
   ORDER BY name;
@@ -19,16 +17,12 @@ END$$
 
 CREATE PROCEDURE sp_clients_active()
 p: BEGIN
-  SELECT id, name, rfc, address, phone, email, contact_name, client_type,
-         payment_terms, credit_limit, credit_days, status
-  FROM clients WHERE status = 'active' ORDER BY name;
+  SELECT * FROM v_client WHERE status = 'active' ORDER BY name;
 END$$
 
 CREATE PROCEDURE sp_client_by_id(IN p_id BIGINT)
 p: BEGIN
-  SELECT id, name, rfc, address, phone, email, contact_name, client_type,
-         payment_terms, credit_limit, credit_days, status
-  FROM clients WHERE id = p_id;
+  SELECT * FROM v_client WHERE id = p_id;
 END$$
 
 CREATE PROCEDURE sp_client_save(IN p_id BIGINT, IN p_name VARCHAR(150), IN p_rfc VARCHAR(13),
@@ -175,8 +169,7 @@ END$$
 
 CREATE PROCEDURE sp_routes_search(IN p_term VARCHAR(150))
 p: BEGIN
-  SELECT id, origin, destination, estimated_km, description
-  FROM routes
+  SELECT * FROM v_route
   WHERE p_term IS NULL OR p_term = ''
      OR origin LIKE CONCAT('%', p_term, '%') OR destination LIKE CONCAT('%', p_term, '%')
   ORDER BY origin, destination;
@@ -184,7 +177,7 @@ END$$
 
 CREATE PROCEDURE sp_route_by_id(IN p_id BIGINT)
 p: BEGIN
-  SELECT id, origin, destination, estimated_km, description FROM routes WHERE id = p_id;
+  SELECT * FROM v_route WHERE id = p_id;
 END$$
 
 CREATE PROCEDURE sp_route_save(IN p_id BIGINT, IN p_origin VARCHAR(150),

@@ -170,57 +170,22 @@ END$$
 
 CREATE PROCEDURE sp_trips_search(IN p_term VARCHAR(150), IN p_status VARCHAR(20))
 p: BEGIN
-  SELECT t.id, t.service_request_id, sr.folio, c.name AS client_name,
-         CONCAT(r.origin, ' -> ', r.destination) AS route_label,
-         t.vehicle_id, CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label,
-         t.employee_id, e.name AS employee_name,
-         t.estimated_km, t.actual_km, t.planned_start, t.planned_end,
-         t.departure_datetime, t.arrival_datetime, t.status
-  FROM trips t
-  JOIN service_requests sr ON sr.id = t.service_request_id
-  JOIN clients c ON c.id = sr.client_id
-  JOIN routes r ON r.id = sr.route_id
-  JOIN vehicles v ON v.id = t.vehicle_id
-  JOIN employees e ON e.id = t.employee_id
+  SELECT * FROM v_trip
   WHERE (p_term IS NULL OR p_term = ''
-         OR sr.folio LIKE CONCAT('%', p_term, '%') OR c.name LIKE CONCAT('%', p_term, '%')
-         OR v.internal_code LIKE CONCAT('%', p_term, '%') OR e.name LIKE CONCAT('%', p_term, '%'))
-    AND (p_status IS NULL OR t.status = p_status)
-  ORDER BY t.planned_start DESC;
+         OR folio LIKE CONCAT('%', p_term, '%') OR client_name LIKE CONCAT('%', p_term, '%')
+         OR vehicle_label LIKE CONCAT('%', p_term, '%') OR employee_name LIKE CONCAT('%', p_term, '%'))
+    AND (p_status IS NULL OR status = p_status)
+  ORDER BY planned_start DESC;
 END$$
 
 CREATE PROCEDURE sp_trip_by_id(IN p_id BIGINT)
 p: BEGIN
-  SELECT t.id, t.service_request_id, sr.folio, c.name AS client_name,
-         CONCAT(r.origin, ' -> ', r.destination) AS route_label,
-         t.vehicle_id, CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label,
-         t.employee_id, e.name AS employee_name,
-         t.estimated_km, t.actual_km, t.planned_start, t.planned_end,
-         t.departure_datetime, t.arrival_datetime, t.status
-  FROM trips t
-  JOIN service_requests sr ON sr.id = t.service_request_id
-  JOIN clients c ON c.id = sr.client_id
-  JOIN routes r ON r.id = sr.route_id
-  JOIN vehicles v ON v.id = t.vehicle_id
-  JOIN employees e ON e.id = t.employee_id
-  WHERE t.id = p_id;
+  SELECT * FROM v_trip WHERE id = p_id;
 END$$
 
 CREATE PROCEDURE sp_trip_by_request(IN p_request_id BIGINT)
 p: BEGIN
-  SELECT t.id, t.service_request_id, sr.folio, c.name AS client_name,
-         CONCAT(r.origin, ' -> ', r.destination) AS route_label,
-         t.vehicle_id, CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label,
-         t.employee_id, e.name AS employee_name,
-         t.estimated_km, t.actual_km, t.planned_start, t.planned_end,
-         t.departure_datetime, t.arrival_datetime, t.status
-  FROM trips t
-  JOIN service_requests sr ON sr.id = t.service_request_id
-  JOIN clients c ON c.id = sr.client_id
-  JOIN routes r ON r.id = sr.route_id
-  JOIN vehicles v ON v.id = t.vehicle_id
-  JOIN employees e ON e.id = t.employee_id
-  WHERE t.service_request_id = p_request_id;
+  SELECT * FROM v_trip WHERE service_request_id = p_request_id;
 END$$
 
 -- BR-15: reassign before departure, validated like a new assignment and audited.

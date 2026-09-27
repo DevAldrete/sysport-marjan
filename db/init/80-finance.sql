@@ -119,37 +119,20 @@ END$$
 
 CREATE PROCEDURE sp_invoices_search(IN p_status VARCHAR(20), IN p_client_id BIGINT)
 p: BEGIN
-  SELECT i.id, i.client_id, c.name AS client_name, i.service_request_id, sr.folio,
-         i.invoice_number, i.amount, i.issue_date, i.due_date, i.status,
-         COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.id), 0) AS paid
-  FROM invoices i
-  JOIN clients c ON c.id = i.client_id
-  JOIN service_requests sr ON sr.id = i.service_request_id
-  WHERE (p_status IS NULL OR i.status = p_status)
-    AND (p_client_id IS NULL OR i.client_id = p_client_id)
-  ORDER BY i.issue_date DESC;
+  SELECT * FROM v_invoice
+  WHERE (p_status IS NULL OR status = p_status)
+    AND (p_client_id IS NULL OR client_id = p_client_id)
+  ORDER BY issue_date DESC;
 END$$
 
 CREATE PROCEDURE sp_invoice_by_id(IN p_id BIGINT)
 p: BEGIN
-  SELECT i.id, i.client_id, c.name AS client_name, i.service_request_id, sr.folio,
-         i.invoice_number, i.amount, i.issue_date, i.due_date, i.status,
-         COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.id), 0) AS paid
-  FROM invoices i
-  JOIN clients c ON c.id = i.client_id
-  JOIN service_requests sr ON sr.id = i.service_request_id
-  WHERE i.id = p_id;
+  SELECT * FROM v_invoice WHERE id = p_id;
 END$$
 
 CREATE PROCEDURE sp_invoice_by_request(IN p_request_id BIGINT)
 p: BEGIN
-  SELECT i.id, i.client_id, c.name AS client_name, i.service_request_id, sr.folio,
-         i.invoice_number, i.amount, i.issue_date, i.due_date, i.status,
-         COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.id), 0) AS paid
-  FROM invoices i
-  JOIN clients c ON c.id = i.client_id
-  JOIN service_requests sr ON sr.id = i.service_request_id
-  WHERE i.service_request_id = p_request_id;
+  SELECT * FROM v_invoice WHERE service_request_id = p_request_id;
 END$$
 
 CREATE PROCEDURE sp_invoice_delete(IN p_id BIGINT, OUT p_problems TEXT)

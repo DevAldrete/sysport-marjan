@@ -54,9 +54,7 @@ END$$
 
 CREATE PROCEDURE sp_vehicles_search(IN p_term VARCHAR(150))
 p: BEGIN
-  SELECT id, internal_code, plates, brand, model, year, serial_number, vehicle_type,
-         load_capacity, mileage, status
-  FROM vehicles
+  SELECT * FROM v_vehicle
   WHERE p_term IS NULL OR p_term = ''
      OR internal_code LIKE CONCAT('%', p_term, '%') OR plates LIKE CONCAT('%', p_term, '%')
      OR brand LIKE CONCAT('%', p_term, '%') OR model LIKE CONCAT('%', p_term, '%')
@@ -65,9 +63,7 @@ END$$
 
 CREATE PROCEDURE sp_vehicle_by_id(IN p_id BIGINT)
 p: BEGIN
-  SELECT id, internal_code, plates, brand, model, year, serial_number, vehicle_type,
-         load_capacity, mileage, status
-  FROM vehicles WHERE id = p_id;
+  SELECT * FROM v_vehicle WHERE id = p_id;
 END$$
 
 -- Status is not editable here: new vehicles start 'available' and later changes
@@ -149,9 +145,7 @@ END$$
 
 CREATE PROCEDURE sp_eligible_vehicles_full(IN p_start DATETIME, IN p_end DATETIME)
 p: BEGIN
-  SELECT v.id, v.internal_code, v.plates, v.brand, v.model, v.year, v.serial_number,
-         v.vehicle_type, v.load_capacity, v.mileage, v.status
-  FROM vehicles v
+  SELECT * FROM v_vehicle v
   WHERE v.status = 'available'
     AND NOT EXISTS (
       SELECT 1 FROM trips t
@@ -165,40 +159,21 @@ END$$
 
 CREATE PROCEDURE sp_fuel_by_vehicle(IN p_vehicle_id BIGINT)
 p: BEGIN
-  SELECT f.id, f.vehicle_id, f.trip_id, f.fuel_station, f.load_date, f.liters,
-         f.price_per_liter, f.amount, f.odometer_reading,
-         CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label, sr.folio
-  FROM fuel_loads f
-  JOIN vehicles v ON v.id = f.vehicle_id
-  LEFT JOIN trips t ON t.id = f.trip_id
-  LEFT JOIN service_requests sr ON sr.id = t.service_request_id
-  WHERE f.vehicle_id = p_vehicle_id
-  ORDER BY f.load_date DESC;
+  SELECT * FROM v_fuel_load
+  WHERE vehicle_id = p_vehicle_id
+  ORDER BY load_date DESC;
 END$$
 
 CREATE PROCEDURE sp_fuel_by_trip(IN p_trip_id BIGINT)
 p: BEGIN
-  SELECT f.id, f.vehicle_id, f.trip_id, f.fuel_station, f.load_date, f.liters,
-         f.price_per_liter, f.amount, f.odometer_reading,
-         CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label, sr.folio
-  FROM fuel_loads f
-  JOIN vehicles v ON v.id = f.vehicle_id
-  LEFT JOIN trips t ON t.id = f.trip_id
-  LEFT JOIN service_requests sr ON sr.id = t.service_request_id
-  WHERE f.trip_id = p_trip_id
-  ORDER BY f.load_date;
+  SELECT * FROM v_fuel_load
+  WHERE trip_id = p_trip_id
+  ORDER BY load_date;
 END$$
 
 CREATE PROCEDURE sp_fuel_list()
 p: BEGIN
-  SELECT f.id, f.vehicle_id, f.trip_id, f.fuel_station, f.load_date, f.liters,
-         f.price_per_liter, f.amount, f.odometer_reading,
-         CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label, sr.folio
-  FROM fuel_loads f
-  JOIN vehicles v ON v.id = f.vehicle_id
-  LEFT JOIN trips t ON t.id = f.trip_id
-  LEFT JOIN service_requests sr ON sr.id = t.service_request_id
-  ORDER BY f.load_date DESC;
+  SELECT * FROM v_fuel_load ORDER BY load_date DESC;
 END$$
 
 CREATE PROCEDURE sp_fuel_sum_by_trip(IN p_trip_id BIGINT)

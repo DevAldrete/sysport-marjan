@@ -67,31 +67,21 @@ END$$
 
 CREATE PROCEDURE sp_employees_search(IN p_term VARCHAR(150))
 p: BEGIN
-  SELECT e.id, e.name, e.address, e.phone, e.email, e.rfc, e.curp,
-         e.emergency_contact_name, e.emergency_contact_phone, e.status,
-         l.id AS license_id, l.license_number, l.license_type, l.issue_date, l.expiration_date
-  FROM employees e LEFT JOIN licenses l ON l.id = e.license_id
-  WHERE p_term IS NULL OR p_term = '' OR e.name LIKE CONCAT('%', p_term, '%')
-  ORDER BY e.name;
+  SELECT * FROM v_employee
+  WHERE p_term IS NULL OR p_term = '' OR name LIKE CONCAT('%', p_term, '%')
+  ORDER BY name;
 END$$
 
 CREATE PROCEDURE sp_employee_by_id(IN p_id BIGINT)
 p: BEGIN
-  SELECT e.id, e.name, e.address, e.phone, e.email, e.rfc, e.curp,
-         e.emergency_contact_name, e.emergency_contact_phone, e.status,
-         l.id AS license_id, l.license_number, l.license_type, l.issue_date, l.expiration_date
-  FROM employees e LEFT JOIN licenses l ON l.id = e.license_id
-  WHERE e.id = p_id;
+  SELECT * FROM v_employee WHERE id = p_id;
 END$$
 
 CREATE PROCEDURE sp_eligible_operators_full(IN p_start DATETIME, IN p_end DATETIME)
 p: BEGIN
-  SELECT e.id, e.name, e.address, e.phone, e.email, e.rfc, e.curp,
-         e.emergency_contact_name, e.emergency_contact_phone, e.status,
-         l.id AS license_id, l.license_number, l.license_type, l.issue_date, l.expiration_date
-  FROM employees e JOIN licenses l ON l.id = e.license_id
+  SELECT * FROM v_employee e
   WHERE e.status = 'available'
-    AND l.expiration_date >= DATE(p_end)
+    AND e.expiration_date >= DATE(p_end)
     AND NOT EXISTS (
       SELECT 1 FROM trips t
       WHERE t.employee_id = e.id

@@ -98,6 +98,7 @@ marjan/
 │   └── init/                   # loaded by Docker in filename order
 │       ├── 01-tables.sql       # database and tables
 │       ├── 02-functions.sql    # rule functions + id/folio allocators
+│       ├── 05-views.sql        # shared read projections
 │       ├── 10-security.sql     # users, roles, permissions, audit
 │       ├── 20-clients.sql      # clients, rates, routes
 │       ├── 30-fleet.sql        # vehicles, fuel, maintenance

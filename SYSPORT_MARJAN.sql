@@ -626,6 +626,76 @@ END$$
 DELIMITER ;
 
 
+-- ================================================================ views
+-- Read projections used by several procedures. Keeping them here removes the
+-- repeated 15-column SELECTs from the search/by-id routines, so a column
+-- change happens in one place.
+
+USE sysportdb;
+
+CREATE OR REPLACE VIEW v_client AS
+SELECT id, name, rfc, address, phone, email, contact_name, client_type,
+       payment_terms, credit_limit, credit_days, status
+FROM clients;
+
+CREATE OR REPLACE VIEW v_route AS
+SELECT id, origin, destination, estimated_km, description
+FROM routes;
+
+CREATE OR REPLACE VIEW v_vehicle AS
+SELECT id, internal_code, plates, brand, model, year, serial_number, vehicle_type,
+       load_capacity, mileage, status
+FROM vehicles;
+
+CREATE OR REPLACE VIEW v_employee AS
+SELECT e.id, e.name, e.address, e.phone, e.email, e.rfc, e.curp,
+       e.emergency_contact_name, e.emergency_contact_phone, e.status,
+       l.id AS license_id, l.license_number, l.license_type, l.issue_date, l.expiration_date
+FROM employees e
+LEFT JOIN licenses l ON l.id = e.license_id;
+
+CREATE OR REPLACE VIEW v_service_request AS
+SELECT sr.id, sr.folio, sr.client_id, c.name AS client_name, sr.route_id,
+       CONCAT(r.origin, ' -> ', r.destination) AS route_label,
+       sr.cargo_description, sr.estimated_weight, sr.pickup_date_scheduled,
+       sr.delivery_date_scheduled, sr.agreed_rate, sr.requires_documents,
+       sr.status, sr.notes, sr.created_at
+FROM service_requests sr
+JOIN clients c ON c.id = sr.client_id
+JOIN routes r ON r.id = sr.route_id;
+
+CREATE OR REPLACE VIEW v_trip AS
+SELECT t.id, t.service_request_id, sr.folio, c.name AS client_name,
+       CONCAT(r.origin, ' -> ', r.destination) AS route_label,
+       t.vehicle_id, CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label,
+       t.employee_id, e.name AS employee_name,
+       t.estimated_km, t.actual_km, t.planned_start, t.planned_end,
+       t.departure_datetime, t.arrival_datetime, t.status
+FROM trips t
+JOIN service_requests sr ON sr.id = t.service_request_id
+JOIN clients c ON c.id = sr.client_id
+JOIN routes r ON r.id = sr.route_id
+JOIN vehicles v ON v.id = t.vehicle_id
+JOIN employees e ON e.id = t.employee_id;
+
+CREATE OR REPLACE VIEW v_fuel_load AS
+SELECT f.id, f.vehicle_id, f.trip_id, f.fuel_station, f.load_date, f.liters,
+       f.price_per_liter, f.amount, f.odometer_reading,
+       CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label, sr.folio
+FROM fuel_loads f
+JOIN vehicles v ON v.id = f.vehicle_id
+LEFT JOIN trips t ON t.id = f.trip_id
+LEFT JOIN service_requests sr ON sr.id = t.service_request_id;
+
+CREATE OR REPLACE VIEW v_invoice AS
+SELECT i.id, i.client_id, c.name AS client_name, i.service_request_id, sr.folio,
+       i.invoice_number, i.amount, i.issue_date, i.due_date, i.status,
+       COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.id), 0) AS paid
+FROM invoices i
+JOIN clients c ON c.id = i.client_id
+JOIN service_requests sr ON sr.id = i.service_request_id;
+
+
 -- ================================================================ routines
 -- Users, roles, permissions and the audit trail.
 
@@ -721,9 +791,7 @@ DELIMITER $$
 
 CREATE PROCEDURE sp_clients_search(IN p_term VARCHAR(150))
 p: BEGIN
-  SELECT id, name, rfc, address, phone, email, contact_name, client_type,
-         payment_terms, credit_limit, credit_days, status
-  FROM clients
+  SELECT * FROM v_client
   WHERE p_term IS NULL OR p_term = ''
      OR name LIKE CONCAT('%', p_term, '%') OR rfc LIKE CONCAT('%', p_term, '%')
   ORDER BY name;
@@ -731,16 +799,12 @@ END$$
 
 CREATE PROCEDURE sp_clients_active()
 p: BEGIN
-  SELECT id, name, rfc, address, phone, email, contact_name, client_type,
-         payment_terms, credit_limit, credit_days, status
-  FROM clients WHERE status = 'active' ORDER BY name;
+  SELECT * FROM v_client WHERE status = 'active' ORDER BY name;
 END$$
 
 CREATE PROCEDURE sp_client_by_id(IN p_id BIGINT)
 p: BEGIN
-  SELECT id, name, rfc, address, phone, email, contact_name, client_type,
-         payment_terms, credit_limit, credit_days, status
-  FROM clients WHERE id = p_id;
+  SELECT * FROM v_client WHERE id = p_id;
 END$$
 
 CREATE PROCEDURE sp_client_save(IN p_id BIGINT, IN p_name VARCHAR(150), IN p_rfc VARCHAR(13),
@@ -887,8 +951,7 @@ END$$
 
 CREATE PROCEDURE sp_routes_search(IN p_term VARCHAR(150))
 p: BEGIN
-  SELECT id, origin, destination, estimated_km, description
-  FROM routes
+  SELECT * FROM v_route
   WHERE p_term IS NULL OR p_term = ''
      OR origin LIKE CONCAT('%', p_term, '%') OR destination LIKE CONCAT('%', p_term, '%')
   ORDER BY origin, destination;
@@ -896,7 +959,7 @@ END$$
 
 CREATE PROCEDURE sp_route_by_id(IN p_id BIGINT)
 p: BEGIN
-  SELECT id, origin, destination, estimated_km, description FROM routes WHERE id = p_id;
+  SELECT * FROM v_route WHERE id = p_id;
 END$$
 
 CREATE PROCEDURE sp_route_save(IN p_id BIGINT, IN p_origin VARCHAR(150),
@@ -1016,9 +1079,7 @@ END$$
 
 CREATE PROCEDURE sp_vehicles_search(IN p_term VARCHAR(150))
 p: BEGIN
-  SELECT id, internal_code, plates, brand, model, year, serial_number, vehicle_type,
-         load_capacity, mileage, status
-  FROM vehicles
+  SELECT * FROM v_vehicle
   WHERE p_term IS NULL OR p_term = ''
      OR internal_code LIKE CONCAT('%', p_term, '%') OR plates LIKE CONCAT('%', p_term, '%')
      OR brand LIKE CONCAT('%', p_term, '%') OR model LIKE CONCAT('%', p_term, '%')
@@ -1027,9 +1088,7 @@ END$$
 
 CREATE PROCEDURE sp_vehicle_by_id(IN p_id BIGINT)
 p: BEGIN
-  SELECT id, internal_code, plates, brand, model, year, serial_number, vehicle_type,
-         load_capacity, mileage, status
-  FROM vehicles WHERE id = p_id;
+  SELECT * FROM v_vehicle WHERE id = p_id;
 END$$
 
 -- Status is not editable here: new vehicles start 'available' and later changes
@@ -1111,9 +1170,7 @@ END$$
 
 CREATE PROCEDURE sp_eligible_vehicles_full(IN p_start DATETIME, IN p_end DATETIME)
 p: BEGIN
-  SELECT v.id, v.internal_code, v.plates, v.brand, v.model, v.year, v.serial_number,
-         v.vehicle_type, v.load_capacity, v.mileage, v.status
-  FROM vehicles v
+  SELECT * FROM v_vehicle v
   WHERE v.status = 'available'
     AND NOT EXISTS (
       SELECT 1 FROM trips t
@@ -1127,40 +1184,21 @@ END$$
 
 CREATE PROCEDURE sp_fuel_by_vehicle(IN p_vehicle_id BIGINT)
 p: BEGIN
-  SELECT f.id, f.vehicle_id, f.trip_id, f.fuel_station, f.load_date, f.liters,
-         f.price_per_liter, f.amount, f.odometer_reading,
-         CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label, sr.folio
-  FROM fuel_loads f
-  JOIN vehicles v ON v.id = f.vehicle_id
-  LEFT JOIN trips t ON t.id = f.trip_id
-  LEFT JOIN service_requests sr ON sr.id = t.service_request_id
-  WHERE f.vehicle_id = p_vehicle_id
-  ORDER BY f.load_date DESC;
+  SELECT * FROM v_fuel_load
+  WHERE vehicle_id = p_vehicle_id
+  ORDER BY load_date DESC;
 END$$
 
 CREATE PROCEDURE sp_fuel_by_trip(IN p_trip_id BIGINT)
 p: BEGIN
-  SELECT f.id, f.vehicle_id, f.trip_id, f.fuel_station, f.load_date, f.liters,
-         f.price_per_liter, f.amount, f.odometer_reading,
-         CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label, sr.folio
-  FROM fuel_loads f
-  JOIN vehicles v ON v.id = f.vehicle_id
-  LEFT JOIN trips t ON t.id = f.trip_id
-  LEFT JOIN service_requests sr ON sr.id = t.service_request_id
-  WHERE f.trip_id = p_trip_id
-  ORDER BY f.load_date;
+  SELECT * FROM v_fuel_load
+  WHERE trip_id = p_trip_id
+  ORDER BY load_date;
 END$$
 
 CREATE PROCEDURE sp_fuel_list()
 p: BEGIN
-  SELECT f.id, f.vehicle_id, f.trip_id, f.fuel_station, f.load_date, f.liters,
-         f.price_per_liter, f.amount, f.odometer_reading,
-         CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label, sr.folio
-  FROM fuel_loads f
-  JOIN vehicles v ON v.id = f.vehicle_id
-  LEFT JOIN trips t ON t.id = f.trip_id
-  LEFT JOIN service_requests sr ON sr.id = t.service_request_id
-  ORDER BY f.load_date DESC;
+  SELECT * FROM v_fuel_load ORDER BY load_date DESC;
 END$$
 
 CREATE PROCEDURE sp_fuel_sum_by_trip(IN p_trip_id BIGINT)
@@ -1332,31 +1370,21 @@ END$$
 
 CREATE PROCEDURE sp_employees_search(IN p_term VARCHAR(150))
 p: BEGIN
-  SELECT e.id, e.name, e.address, e.phone, e.email, e.rfc, e.curp,
-         e.emergency_contact_name, e.emergency_contact_phone, e.status,
-         l.id AS license_id, l.license_number, l.license_type, l.issue_date, l.expiration_date
-  FROM employees e LEFT JOIN licenses l ON l.id = e.license_id
-  WHERE p_term IS NULL OR p_term = '' OR e.name LIKE CONCAT('%', p_term, '%')
-  ORDER BY e.name;
+  SELECT * FROM v_employee
+  WHERE p_term IS NULL OR p_term = '' OR name LIKE CONCAT('%', p_term, '%')
+  ORDER BY name;
 END$$
 
 CREATE PROCEDURE sp_employee_by_id(IN p_id BIGINT)
 p: BEGIN
-  SELECT e.id, e.name, e.address, e.phone, e.email, e.rfc, e.curp,
-         e.emergency_contact_name, e.emergency_contact_phone, e.status,
-         l.id AS license_id, l.license_number, l.license_type, l.issue_date, l.expiration_date
-  FROM employees e LEFT JOIN licenses l ON l.id = e.license_id
-  WHERE e.id = p_id;
+  SELECT * FROM v_employee WHERE id = p_id;
 END$$
 
 CREATE PROCEDURE sp_eligible_operators_full(IN p_start DATETIME, IN p_end DATETIME)
 p: BEGIN
-  SELECT e.id, e.name, e.address, e.phone, e.email, e.rfc, e.curp,
-         e.emergency_contact_name, e.emergency_contact_phone, e.status,
-         l.id AS license_id, l.license_number, l.license_type, l.issue_date, l.expiration_date
-  FROM employees e JOIN licenses l ON l.id = e.license_id
+  SELECT * FROM v_employee e
   WHERE e.status = 'available'
-    AND l.expiration_date >= DATE(p_end)
+    AND e.expiration_date >= DATE(p_end)
     AND NOT EXISTS (
       SELECT 1 FROM trips t
       WHERE t.employee_id = e.id
@@ -1719,65 +1747,36 @@ END$$
 CREATE PROCEDURE sp_requests_search(IN p_folio VARCHAR(20), IN p_client_id BIGINT,
     IN p_status VARCHAR(20), IN p_from DATETIME, IN p_to DATETIME)
 p: BEGIN
-  SELECT sr.id, sr.folio, sr.client_id, c.name AS client_name, sr.route_id,
-         CONCAT(r.origin, ' -> ', r.destination) AS route_label,
-         sr.cargo_description, sr.estimated_weight, sr.pickup_date_scheduled,
-         sr.delivery_date_scheduled, sr.agreed_rate, sr.requires_documents,
-         sr.status, sr.notes, sr.created_at
-  FROM service_requests sr
-  JOIN clients c ON c.id = sr.client_id
-  JOIN routes r ON r.id = sr.route_id
-  WHERE (p_folio IS NULL OR p_folio = '' OR sr.folio LIKE CONCAT('%', p_folio, '%'))
-    AND (p_client_id IS NULL OR sr.client_id = p_client_id)
-    AND (p_status IS NULL OR sr.status = p_status)
+  SELECT * FROM v_service_request
+  WHERE (p_folio IS NULL OR p_folio = '' OR folio LIKE CONCAT('%', p_folio, '%'))
+    AND (p_client_id IS NULL OR client_id = p_client_id)
+    AND (p_status IS NULL OR status = p_status)
     -- A date range filters scheduled work without hiding requests that still
     -- have no scheduled dates (NULL never matches a comparison).
-    AND (p_from IS NULL OR sr.pickup_date_scheduled IS NULL OR sr.pickup_date_scheduled >= p_from)
-    AND (p_to IS NULL OR sr.pickup_date_scheduled IS NULL OR sr.pickup_date_scheduled <= p_to)
-  ORDER BY sr.created_at DESC;
+    AND (p_from IS NULL OR pickup_date_scheduled IS NULL OR pickup_date_scheduled >= p_from)
+    AND (p_to IS NULL OR pickup_date_scheduled IS NULL OR pickup_date_scheduled <= p_to)
+  ORDER BY created_at DESC;
 END$$
 
 CREATE PROCEDURE sp_request_by_id(IN p_id BIGINT)
 p: BEGIN
-  SELECT sr.id, sr.folio, sr.client_id, c.name AS client_name, sr.route_id,
-         CONCAT(r.origin, ' -> ', r.destination) AS route_label,
-         sr.cargo_description, sr.estimated_weight, sr.pickup_date_scheduled,
-         sr.delivery_date_scheduled, sr.agreed_rate, sr.requires_documents,
-         sr.status, sr.notes, sr.created_at
-  FROM service_requests sr
-  JOIN clients c ON c.id = sr.client_id
-  JOIN routes r ON r.id = sr.route_id
-  WHERE sr.id = p_id;
+  SELECT * FROM v_service_request WHERE id = p_id;
 END$$
 
 CREATE PROCEDURE sp_requests_by_status(IN p_status VARCHAR(20))
 p: BEGIN
-  SELECT sr.id, sr.folio, sr.client_id, c.name AS client_name, sr.route_id,
-         CONCAT(r.origin, ' -> ', r.destination) AS route_label,
-         sr.cargo_description, sr.estimated_weight, sr.pickup_date_scheduled,
-         sr.delivery_date_scheduled, sr.agreed_rate, sr.requires_documents,
-         sr.status, sr.notes, sr.created_at
-  FROM service_requests sr
-  JOIN clients c ON c.id = sr.client_id
-  JOIN routes r ON r.id = sr.route_id
-  WHERE sr.status = p_status
-  ORDER BY sr.pickup_date_scheduled;
+  SELECT * FROM v_service_request
+  WHERE status = p_status
+  ORDER BY pickup_date_scheduled;
 END$$
 
 CREATE PROCEDURE sp_requests_pending_billing()
 p: BEGIN
-  SELECT sr.id, sr.folio, sr.client_id, c.name AS client_name, sr.route_id,
-         CONCAT(r.origin, ' -> ', r.destination) AS route_label,
-         sr.cargo_description, sr.estimated_weight, sr.pickup_date_scheduled,
-         sr.delivery_date_scheduled, sr.agreed_rate, sr.requires_documents,
-         sr.status, sr.notes, sr.created_at
-  FROM service_requests sr
-  JOIN clients c ON c.id = sr.client_id
-  JOIN routes r ON r.id = sr.route_id
-  WHERE sr.agreed_rate IS NOT NULL AND sr.agreed_rate > 0
-    AND sr.status <> 'cancelled'
-    AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.service_request_id = sr.id)
-  ORDER BY sr.created_at DESC;
+  SELECT * FROM v_service_request
+  WHERE agreed_rate IS NOT NULL AND agreed_rate > 0
+    AND status <> 'cancelled'
+    AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.service_request_id = v_service_request.id)
+  ORDER BY created_at DESC;
 END$$
 
 CREATE PROCEDURE sp_request_create(IN p_client_id BIGINT, IN p_route_id BIGINT,
@@ -2046,57 +2045,22 @@ END$$
 
 CREATE PROCEDURE sp_trips_search(IN p_term VARCHAR(150), IN p_status VARCHAR(20))
 p: BEGIN
-  SELECT t.id, t.service_request_id, sr.folio, c.name AS client_name,
-         CONCAT(r.origin, ' -> ', r.destination) AS route_label,
-         t.vehicle_id, CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label,
-         t.employee_id, e.name AS employee_name,
-         t.estimated_km, t.actual_km, t.planned_start, t.planned_end,
-         t.departure_datetime, t.arrival_datetime, t.status
-  FROM trips t
-  JOIN service_requests sr ON sr.id = t.service_request_id
-  JOIN clients c ON c.id = sr.client_id
-  JOIN routes r ON r.id = sr.route_id
-  JOIN vehicles v ON v.id = t.vehicle_id
-  JOIN employees e ON e.id = t.employee_id
+  SELECT * FROM v_trip
   WHERE (p_term IS NULL OR p_term = ''
-         OR sr.folio LIKE CONCAT('%', p_term, '%') OR c.name LIKE CONCAT('%', p_term, '%')
-         OR v.internal_code LIKE CONCAT('%', p_term, '%') OR e.name LIKE CONCAT('%', p_term, '%'))
-    AND (p_status IS NULL OR t.status = p_status)
-  ORDER BY t.planned_start DESC;
+         OR folio LIKE CONCAT('%', p_term, '%') OR client_name LIKE CONCAT('%', p_term, '%')
+         OR vehicle_label LIKE CONCAT('%', p_term, '%') OR employee_name LIKE CONCAT('%', p_term, '%'))
+    AND (p_status IS NULL OR status = p_status)
+  ORDER BY planned_start DESC;
 END$$
 
 CREATE PROCEDURE sp_trip_by_id(IN p_id BIGINT)
 p: BEGIN
-  SELECT t.id, t.service_request_id, sr.folio, c.name AS client_name,
-         CONCAT(r.origin, ' -> ', r.destination) AS route_label,
-         t.vehicle_id, CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label,
-         t.employee_id, e.name AS employee_name,
-         t.estimated_km, t.actual_km, t.planned_start, t.planned_end,
-         t.departure_datetime, t.arrival_datetime, t.status
-  FROM trips t
-  JOIN service_requests sr ON sr.id = t.service_request_id
-  JOIN clients c ON c.id = sr.client_id
-  JOIN routes r ON r.id = sr.route_id
-  JOIN vehicles v ON v.id = t.vehicle_id
-  JOIN employees e ON e.id = t.employee_id
-  WHERE t.id = p_id;
+  SELECT * FROM v_trip WHERE id = p_id;
 END$$
 
 CREATE PROCEDURE sp_trip_by_request(IN p_request_id BIGINT)
 p: BEGIN
-  SELECT t.id, t.service_request_id, sr.folio, c.name AS client_name,
-         CONCAT(r.origin, ' -> ', r.destination) AS route_label,
-         t.vehicle_id, CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label,
-         t.employee_id, e.name AS employee_name,
-         t.estimated_km, t.actual_km, t.planned_start, t.planned_end,
-         t.departure_datetime, t.arrival_datetime, t.status
-  FROM trips t
-  JOIN service_requests sr ON sr.id = t.service_request_id
-  JOIN clients c ON c.id = sr.client_id
-  JOIN routes r ON r.id = sr.route_id
-  JOIN vehicles v ON v.id = t.vehicle_id
-  JOIN employees e ON e.id = t.employee_id
-  WHERE t.service_request_id = p_request_id;
+  SELECT * FROM v_trip WHERE service_request_id = p_request_id;
 END$$
 
 -- BR-15: reassign before departure, validated like a new assignment and audited.
@@ -2615,37 +2579,20 @@ END$$
 
 CREATE PROCEDURE sp_invoices_search(IN p_status VARCHAR(20), IN p_client_id BIGINT)
 p: BEGIN
-  SELECT i.id, i.client_id, c.name AS client_name, i.service_request_id, sr.folio,
-         i.invoice_number, i.amount, i.issue_date, i.due_date, i.status,
-         COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.id), 0) AS paid
-  FROM invoices i
-  JOIN clients c ON c.id = i.client_id
-  JOIN service_requests sr ON sr.id = i.service_request_id
-  WHERE (p_status IS NULL OR i.status = p_status)
-    AND (p_client_id IS NULL OR i.client_id = p_client_id)
-  ORDER BY i.issue_date DESC;
+  SELECT * FROM v_invoice
+  WHERE (p_status IS NULL OR status = p_status)
+    AND (p_client_id IS NULL OR client_id = p_client_id)
+  ORDER BY issue_date DESC;
 END$$
 
 CREATE PROCEDURE sp_invoice_by_id(IN p_id BIGINT)
 p: BEGIN
-  SELECT i.id, i.client_id, c.name AS client_name, i.service_request_id, sr.folio,
-         i.invoice_number, i.amount, i.issue_date, i.due_date, i.status,
-         COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.id), 0) AS paid
-  FROM invoices i
-  JOIN clients c ON c.id = i.client_id
-  JOIN service_requests sr ON sr.id = i.service_request_id
-  WHERE i.id = p_id;
+  SELECT * FROM v_invoice WHERE id = p_id;
 END$$
 
 CREATE PROCEDURE sp_invoice_by_request(IN p_request_id BIGINT)
 p: BEGIN
-  SELECT i.id, i.client_id, c.name AS client_name, i.service_request_id, sr.folio,
-         i.invoice_number, i.amount, i.issue_date, i.due_date, i.status,
-         COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.id), 0) AS paid
-  FROM invoices i
-  JOIN clients c ON c.id = i.client_id
-  JOIN service_requests sr ON sr.id = i.service_request_id
-  WHERE i.service_request_id = p_request_id;
+  SELECT * FROM v_invoice WHERE service_request_id = p_request_id;
 END$$
 
 CREATE PROCEDURE sp_invoice_delete(IN p_id BIGINT, OUT p_problems TEXT)

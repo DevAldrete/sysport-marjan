@@ -215,65 +215,36 @@ END$$
 CREATE PROCEDURE sp_requests_search(IN p_folio VARCHAR(20), IN p_client_id BIGINT,
     IN p_status VARCHAR(20), IN p_from DATETIME, IN p_to DATETIME)
 p: BEGIN
-  SELECT sr.id, sr.folio, sr.client_id, c.name AS client_name, sr.route_id,
-         CONCAT(r.origin, ' -> ', r.destination) AS route_label,
-         sr.cargo_description, sr.estimated_weight, sr.pickup_date_scheduled,
-         sr.delivery_date_scheduled, sr.agreed_rate, sr.requires_documents,
-         sr.status, sr.notes, sr.created_at
-  FROM service_requests sr
-  JOIN clients c ON c.id = sr.client_id
-  JOIN routes r ON r.id = sr.route_id
-  WHERE (p_folio IS NULL OR p_folio = '' OR sr.folio LIKE CONCAT('%', p_folio, '%'))
-    AND (p_client_id IS NULL OR sr.client_id = p_client_id)
-    AND (p_status IS NULL OR sr.status = p_status)
+  SELECT * FROM v_service_request
+  WHERE (p_folio IS NULL OR p_folio = '' OR folio LIKE CONCAT('%', p_folio, '%'))
+    AND (p_client_id IS NULL OR client_id = p_client_id)
+    AND (p_status IS NULL OR status = p_status)
     -- A date range filters scheduled work without hiding requests that still
     -- have no scheduled dates (NULL never matches a comparison).
-    AND (p_from IS NULL OR sr.pickup_date_scheduled IS NULL OR sr.pickup_date_scheduled >= p_from)
-    AND (p_to IS NULL OR sr.pickup_date_scheduled IS NULL OR sr.pickup_date_scheduled <= p_to)
-  ORDER BY sr.created_at DESC;
+    AND (p_from IS NULL OR pickup_date_scheduled IS NULL OR pickup_date_scheduled >= p_from)
+    AND (p_to IS NULL OR pickup_date_scheduled IS NULL OR pickup_date_scheduled <= p_to)
+  ORDER BY created_at DESC;
 END$$
 
 CREATE PROCEDURE sp_request_by_id(IN p_id BIGINT)
 p: BEGIN
-  SELECT sr.id, sr.folio, sr.client_id, c.name AS client_name, sr.route_id,
-         CONCAT(r.origin, ' -> ', r.destination) AS route_label,
-         sr.cargo_description, sr.estimated_weight, sr.pickup_date_scheduled,
-         sr.delivery_date_scheduled, sr.agreed_rate, sr.requires_documents,
-         sr.status, sr.notes, sr.created_at
-  FROM service_requests sr
-  JOIN clients c ON c.id = sr.client_id
-  JOIN routes r ON r.id = sr.route_id
-  WHERE sr.id = p_id;
+  SELECT * FROM v_service_request WHERE id = p_id;
 END$$
 
 CREATE PROCEDURE sp_requests_by_status(IN p_status VARCHAR(20))
 p: BEGIN
-  SELECT sr.id, sr.folio, sr.client_id, c.name AS client_name, sr.route_id,
-         CONCAT(r.origin, ' -> ', r.destination) AS route_label,
-         sr.cargo_description, sr.estimated_weight, sr.pickup_date_scheduled,
-         sr.delivery_date_scheduled, sr.agreed_rate, sr.requires_documents,
-         sr.status, sr.notes, sr.created_at
-  FROM service_requests sr
-  JOIN clients c ON c.id = sr.client_id
-  JOIN routes r ON r.id = sr.route_id
-  WHERE sr.status = p_status
-  ORDER BY sr.pickup_date_scheduled;
+  SELECT * FROM v_service_request
+  WHERE status = p_status
+  ORDER BY pickup_date_scheduled;
 END$$
 
 CREATE PROCEDURE sp_requests_pending_billing()
 p: BEGIN
-  SELECT sr.id, sr.folio, sr.client_id, c.name AS client_name, sr.route_id,
-         CONCAT(r.origin, ' -> ', r.destination) AS route_label,
-         sr.cargo_description, sr.estimated_weight, sr.pickup_date_scheduled,
-         sr.delivery_date_scheduled, sr.agreed_rate, sr.requires_documents,
-         sr.status, sr.notes, sr.created_at
-  FROM service_requests sr
-  JOIN clients c ON c.id = sr.client_id
-  JOIN routes r ON r.id = sr.route_id
-  WHERE sr.agreed_rate IS NOT NULL AND sr.agreed_rate > 0
-    AND sr.status <> 'cancelled'
-    AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.service_request_id = sr.id)
-  ORDER BY sr.created_at DESC;
+  SELECT * FROM v_service_request
+  WHERE agreed_rate IS NOT NULL AND agreed_rate > 0
+    AND status <> 'cancelled'
+    AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.service_request_id = v_service_request.id)
+  ORDER BY created_at DESC;
 END$$
 
 CREATE PROCEDURE sp_request_create(IN p_client_id BIGINT, IN p_route_id BIGINT,
