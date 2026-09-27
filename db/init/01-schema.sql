@@ -659,20 +659,28 @@ END$$
 
 -- BR-18: fuel amount consistency, odometer monotonicity and trip/vehicle match.
 CREATE PROCEDURE sp_validate_fuel_load(IN p_vehicle_id BIGINT, IN p_trip_id BIGINT,
-    IN p_liters DECIMAL(8,2), IN p_price DECIMAL(8,3), IN p_amount DECIMAL(12,2),
-    IN p_odometer DECIMAL(10,1), OUT p_problems TEXT)
+    IN p_load_date DATETIME, IN p_liters DECIMAL(8,2), IN p_price DECIMAL(8,3),
+    IN p_amount DECIMAL(12,2), IN p_odometer DECIMAL(10,1), OUT p_problems TEXT)
 p: BEGIN
   DECLARE v_mileage DECIMAL(10,1) DEFAULT NULL;
   DECLARE v_trip_vehicle BIGINT DEFAULT NULL;
 
   SET p_problems = NULL;
-  IF p_liters IS NULL OR p_liters <= 0 THEN
+  IF p_vehicle_id IS NULL OR p_vehicle_id = 0 THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'Debe seleccionar una unidad');
+  END IF;
+  IF p_load_date IS NULL THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La fecha de carga es obligatoria');
+  ELSEIF NOT fn_date_valid(DATE(p_load_date)) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La fecha de carga no es valida');
+  END IF;
+  IF NOT fn_liters_valid(p_liters) THEN
     SET p_problems = CONCAT_WS('; ', p_problems, 'Los litros son invalidos o exceden el maximo permitido');
   END IF;
-  IF p_price IS NULL OR p_price <= 0 THEN
+  IF NOT fn_price_per_liter_valid(p_price) THEN
     SET p_problems = CONCAT_WS('; ', p_problems, 'El precio por litro es invalido o excede el maximo permitido');
   END IF;
-  IF p_amount IS NULL OR p_amount <= 0 THEN
+  IF p_amount IS NULL OR p_amount <= 0 OR NOT fn_money_valid(p_amount) THEN
     SET p_problems = CONCAT_WS('; ', p_problems, 'El importe debe ser mayor a cero y dentro del rango permitido');
   END IF;
   IF NOT fn_amount_matches(p_liters, p_price, p_amount, 0.05) THEN
@@ -705,11 +713,13 @@ p: BEGIN
   IF p_type IS NULL THEN
     SET p_problems = CONCAT_WS('; ', p_problems, 'Debe seleccionar un tipo de gasto');
   END IF;
-  IF p_amount IS NULL OR p_amount <= 0 THEN
+  IF p_amount IS NULL OR p_amount <= 0 OR NOT fn_money_valid(p_amount) THEN
     SET p_problems = CONCAT_WS('; ', p_problems, 'El importe debe ser mayor a cero y dentro del rango permitido');
   END IF;
   IF p_date IS NULL THEN
     SET p_problems = CONCAT_WS('; ', p_problems, 'La fecha del gasto es obligatoria');
+  ELSEIF NOT fn_date_valid(p_date) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La fecha del gasto no es valida');
   END IF;
 END$$
 
@@ -724,11 +734,13 @@ p: BEGIN
   IF p_employee_id IS NULL OR p_employee_id = 0 THEN
     SET p_problems = CONCAT_WS('; ', p_problems, 'Debe seleccionar un operador');
   END IF;
-  IF p_amount IS NULL OR p_amount <= 0 THEN
+  IF p_amount IS NULL OR p_amount <= 0 OR NOT fn_money_valid(p_amount) THEN
     SET p_problems = CONCAT_WS('; ', p_problems, 'El monto del anticipo debe ser mayor a cero y dentro del rango permitido');
   END IF;
   IF p_date IS NULL THEN
     SET p_problems = CONCAT_WS('; ', p_problems, 'La fecha de entrega del anticipo es obligatoria');
+  ELSEIF NOT fn_date_valid(p_date) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La fecha del anticipo no es valida');
   END IF;
 END$$
 
@@ -1026,6 +1038,7 @@ p: BEGIN
   DECLARE v_paid DECIMAL(12,2) DEFAULT 0;
   DECLARE v_due DATE;
   DECLARE v_status VARCHAR(20);
+  DECLARE v_date DATE;
   DECLARE v_payment_id BIGINT;
   DECLARE EXIT HANDLER FOR SQLEXCEPTION
   BEGIN
@@ -1039,6 +1052,9 @@ p: BEGIN
   IF v_amount IS NULL THEN
     ROLLBACK; SET p_problems = 'Factura no encontrada'; LEAVE p;
   END IF;
+  IF v_status = 'cancelled' THEN
+    ROLLBACK; SET p_problems = 'No se pueden registrar pagos de una factura cancelada'; LEAVE p;
+  END IF;
   SELECT COALESCE(SUM(amount),0) INTO v_paid FROM payments WHERE invoice_id = p_invoice_id;
   IF p_amount IS NULL OR p_amount <= 0 THEN
     ROLLBACK; SET p_problems = 'El pago debe ser mayor a cero y dentro del rango permitido'; LEAVE p;
@@ -1046,11 +1062,11 @@ p: BEGIN
   IF v_paid + p_amount > v_amount THEN
     ROLLBACK; SET p_problems = CONCAT('El pago excede el saldo pendiente (', v_amount - v_paid, ')'); LEAVE p;
   END IF;
+  SET v_date = COALESCE(p_date, CURDATE());
   CALL sp_next_id('payments', v_payment_id);
   INSERT INTO payments (id, invoice_id, amount, payment_date, payment_method, created_by)
-    VALUES (v_payment_id, p_invoice_id, p_amount, COALESCE(p_date, CURDATE()),
-            COALESCE(p_method, 'cash'), p_user_id);
-  UPDATE invoices SET status = fn_invoice_status(v_status, v_amount, v_paid + p_amount, v_due, CURDATE())
+    VALUES (v_payment_id, p_invoice_id, p_amount, v_date, COALESCE(p_method, 'cash'), p_user_id);
+  UPDATE invoices SET status = fn_invoice_status(v_status, v_amount, v_paid + p_amount, v_due, v_date)
     WHERE id = p_invoice_id;
   COMMIT;
 END$$
@@ -2441,10 +2457,6 @@ p: BEGIN
   DECLARE v_extra TEXT;
   CALL sp_validate_expense(p_trip_id, p_type, p_amount, p_date, p_problems);
   IF p_problems IS NOT NULL THEN LEAVE p; END IF;
-  IF NOT fn_date_valid(p_date) THEN
-    SET p_problems = 'La fecha del gasto no es valida';
-    LEAVE p;
-  END IF;
   CALL sp_next_id('expenses', p_id);
   INSERT INTO expenses (id, trip_id, expense_type, amount, expense_date, description, created_by)
   VALUES (p_id, p_trip_id, p_type, p_amount, p_date, p_description, p_user_id);
@@ -2486,10 +2498,6 @@ CREATE PROCEDURE sp_advance_save(IN p_trip_id BIGINT, IN p_employee_id BIGINT,
 p: BEGIN
   CALL sp_validate_advance(p_trip_id, p_employee_id, p_amount, p_date, p_problems);
   IF p_problems IS NOT NULL THEN LEAVE p; END IF;
-  IF NOT fn_date_valid(p_date) THEN
-    SET p_problems = 'La fecha del anticipo no es valida';
-    LEAVE p;
-  END IF;
   CALL sp_next_id('advances', p_id);
   INSERT INTO advances (id, trip_id, employee_id, amount_given, delivered_date, status, created_by)
   VALUES (p_id, p_trip_id, p_employee_id, p_amount, p_date, 'pending', p_user_id);
@@ -2550,7 +2558,7 @@ CREATE PROCEDURE sp_fuel_save(IN p_vehicle_id BIGINT, IN p_trip_id BIGINT, IN p_
     IN p_amount DECIMAL(12,2), IN p_odometer DECIMAL(10,1), IN p_user_id BIGINT,
     OUT p_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
-  CALL sp_validate_fuel_load(p_vehicle_id, p_trip_id, p_liters, p_price, p_amount, p_odometer, p_problems);
+  CALL sp_validate_fuel_load(p_vehicle_id, p_trip_id, p_load_date, p_liters, p_price, p_amount, p_odometer, p_problems);
   IF p_problems IS NOT NULL THEN LEAVE p; END IF;
   CALL sp_next_id('fuel_loads', p_id);
   INSERT INTO fuel_loads (id, vehicle_id, trip_id, fuel_station, load_date, liters,
