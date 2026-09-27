@@ -13,7 +13,12 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>21</maven.compiler.release>
-    <exec.mainClass>mx.marjan.App</exec.mainClass>
+    <main.class>mx.marjan.App</main.class>
+    <!-- AtlantaFX 2.1.0 is compiled against OpenJFX 23; keep the JavaFX
+         modules on a single version so no module ends up mixed. -->
+    <javafx.version>23.0.2</javafx.version>
+    <atlantafx.version>2.1.0</atlantafx.version>
+    <ikonli.version>12.4.0</ikonli.version>
   </properties>
 
   <dependencyManagement>
@@ -41,10 +46,46 @@
       <version>0.4</version>
     </dependency>
 
+    <!-- Legacy Swing look & feel; removed once the Swing views are gone. -->
     <dependency>
       <groupId>com.formdev</groupId>
       <artifactId>flatlaf</artifactId>
       <version>3.5.4</version>
+    </dependency>
+
+    <!-- JavaFX: declare the three modules explicitly at one version so the
+         transitive JavaFX pulled in by AtlantaFX cannot mix with ours. -->
+    <dependency>
+      <groupId>org.openjfx</groupId>
+      <artifactId>javafx-base</artifactId>
+      <version>${javafx.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.openjfx</groupId>
+      <artifactId>javafx-graphics</artifactId>
+      <version>${javafx.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.openjfx</groupId>
+      <artifactId>javafx-controls</artifactId>
+      <version>${javafx.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>io.github.mkpaz</groupId>
+      <artifactId>atlantafx-base</artifactId>
+      <version>${atlantafx.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.kordamp.ikonli</groupId>
+      <artifactId>ikonli-javafx</artifactId>
+      <version>${ikonli.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.kordamp.ikonli</groupId>
+      <artifactId>ikonli-feather-pack</artifactId>
+      <version>${ikonli.version}</version>
     </dependency>
 
     <dependency>
@@ -62,12 +103,23 @@
         <version>3.13.0</version>
       </plugin>
 
+      <!-- JavaFX cannot be shaded into a fat jar safely; run with
+           `mvn javafx:run`. Distribution (jlink/jpackage) is added later. -->
+      <plugin>
+        <groupId>org.openjfx</groupId>
+        <artifactId>javafx-maven-plugin</artifactId>
+        <version>0.0.8</version>
+        <configuration>
+          <mainClass>${main.class}</mainClass>
+        </configuration>
+      </plugin>
+
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>exec-maven-plugin</artifactId>
         <version>3.5.0</version>
         <configuration>
-          <mainClass>${exec.mainClass}</mainClass>
+          <mainClass>${main.class}</mainClass>
         </configuration>
       </plugin>
 
@@ -84,7 +136,7 @@
             <configuration>
               <transformers>
                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                  <mainClass>${exec.mainClass}</mainClass>
+                  <mainClass>${main.class}</mainClass>
                 </transformer>
               </transformers>
             </configuration>
