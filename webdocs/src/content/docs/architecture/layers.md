@@ -1,6 +1,6 @@
 ---
 title: The four layers
-description: A vertical slice, file by file, from the record to the Swing view.
+description: A vertical slice, file by file, from the record to the JavaFX view.
 ---
 
 This page follows one feature — **service requests** — through all four layers. Every feature in the
@@ -107,13 +107,13 @@ private void openAuthorize() {
                         .addText("rate", "Tarifa acordada", suggested.toPlainString(),
                                 "Importe sin IVA; se propone la tarifa del cliente")
                         .validate("rate", Validators.money());
-                ModalForm.show(this, "Autorizar " + request.folio(), form, () -> {
+                ModalForm.show(Ui.windowOf(this), "Autorizar " + request.folio(), form, () -> {
                     Result<BigDecimal> rateResult = Money.require(form.text("rate"), "tarifa acordada");
                     return rateResult.isErr() ? rateResult
                             : service.authorize(request.id(), rateResult.value());
                 }, this::reload);
             },
-            failure -> Ui.failure(this, failure));
+            failure -> Ui.failure(Ui.windowOf(this), failure));
 }
 ```
 
@@ -125,14 +125,14 @@ service → on success `reload()`**.
 ```text
 user clicks "Autorizar"
   → ServiceRequestsView.openAuthorize()
-    → Async.run(...)                       (off the EDT)
+    → Async.run(...)                       (off the FX thread)
       → ServiceRequestService.authorize()
         → Session.has(REQUESTS_WRITE)      (permission)
         → ServiceRequestRepository.authorize()
           → Database.callVoid("{call sp_authorize_request(?,?,?,?)}", ...)
             → MySQL: fn_request_can_transition + UPDATE + audit row
       ← Result.ok(...) or Result.err("Solicitud no encontrada")
-    ← on the EDT: ModalForm closes, view.reload()
+    ← on the FX thread: ModalForm closes, view.reload()
 ```
 
 ## Rules for adding code

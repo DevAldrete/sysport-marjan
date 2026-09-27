@@ -33,7 +33,7 @@ A desktop application that models the **entire service lifecycle** so that any o
 
 | Type | Item |
 |---|---|
-| **Hard** | Java Swing UI |
+| **Hard** | JavaFX desktop UI (AtlantaFX Primer theme, Ikonli icons) |
 | **Hard** | MySQL 8.4, run from Docker Compose |
 | **Hard** | JDBC for data access |
 | Preferred | Clean OOP combined with Data-Oriented Programming |
@@ -63,16 +63,20 @@ Permissions are fine-grained strings (e.g. `trips.assign`, `invoices.write`, `re
 - **Maven** for build; dependencies kept minimal:
   - `com.mysql:mysql-connector-j` (JDBC driver, latest 9.x)
   - `jbcrypt` or equivalent BCrypt library (password hashing)
-  - `FlatLaf` (optional, look and feel)
+  - `org.openjfx:javafx-base/graphics/controls` (JavaFX 23 LTS line)
+  - `io.github.mkpaz:atlantafx-base` (Primer light/dark theme + extra controls)
+  - `org.kordamp.ikonli:ikonli-javafx` + `ikonli-feather-pack` (icons)
   - `JUnit 5` (test)
 - **MySQL 8.4** in Docker Compose, schema loaded from `db/init/`.
+- Run with `mvn javafx:run` (JavaFX needs its module path; the plain `exec`/fat-jar
+  path is not used). Distribution via `jpackage`/`jlink` is a later concern.
 
 ### 3.2 Layers (and the only allowed dependency direction)
 
 ```
-   view (Swing)  →  service  →  repository (JDBC)  →  MySQL
-                       ↓
-                  rules + records (pure, no I/O)
+   view (JavaFX)  →  service  →  repository (JDBC)  →  MySQL
+                        ↓
+                   rules + records (pure, no I/O)
 ```
 
 | Layer | Responsibility | Must not |
@@ -80,14 +84,14 @@ Permissions are fine-grained strings (e.g. `trips.assign`, `invoices.write`, `re
 | **records** | Immutable data (`Client`, `Trip`, …) and enums for statuses | Contain logic that needs I/O |
 | **routines** | Stored procedures/functions in the database: validate, calculate, decide transitions | Live in Java |
 | **repository** | Thin JDBC wrappers that call routines. Maps `ResultSet` ↔ records | Contain business decisions |
-| **service** | A use case = one routine call. Checks permission, adapts the outcome | Know about Swing |
-| **view** | Swing panels: display, collect input, call services on a background thread | Contain SQL or business rules |
+| **service** | A use case = one routine call. Checks permission, adapts the outcome | Know about JavaFX |
+| **view** | JavaFX panels: display, collect input, call services on a background thread | Contain SQL or business rules |
 
 ### 3.3 How OOP and DOP combine (the practical rule)
 
 - **Data is dumb and immutable → `record`.** `record Trip(long id, long serviceRequestId, …)`. "Changing" means creating a copy (`trip.withStatus(IN_TRANSIT)`).
 - **Behavior lives in the database**, as stored procedures and functions (`sp_assign_trip`, `fn_invoice_status`, …). Repositories only call them, so changing a routine changes the app without recompiling.
-- **Objects are used where they earn their keep:** services and repositories (they hold a connection/`DataSource` and represent capabilities), Swing components (inherently object-oriented).
+- **Objects are used where they earn their keep:** services and repositories (they hold a connection/`DataSource` and represent capabilities), JavaFX components (inherently object-oriented).
 - **Model states and outcomes explicitly** with enums and sealed types instead of strings, flags and exceptions for normal flow:
 
 ```java
@@ -110,7 +114,10 @@ public enum RequestStatus {
 ```
 mx.marjan
 ├── App.java
-├── shared/     Database, Tx helper, Result, RecordTableModel<T>, BaseView, Money, Dates
+├── ui/         AppShell, Navigation, ThemeManager, Async, Ui, BaseView,
+│               RecordTable<T>, RecordTablePanel<T>, FormPanel, ModalForm,
+│               StatusBadge, StatusTones, Icons  (JavaFX toolkit)
+├── shared/     Database, Result, FormModel, Money, Dates, Numbers, Text, Validators
 ├── security/   User, Role, Permission, AuthService, LoginView
 ├── clients/    Client, ClientRate, repos, service, views
 ├── requests/   ServiceRequest, RequestStatus, ServiceRequestFlow, …
@@ -134,12 +141,14 @@ Grouping by feature keeps everything about "trips" in one place, so a change usu
 - No `AUTO_INCREMENT`: call `Sequences.next(connection, "table")` for the primary key inside the transaction. User input is validated with `Validators` (email, RFC, CURP, phone, plates, date ranges, non-negative amounts).
 - Hand-written SQL with small `RowMapper`-style functions: `rs -> new Client(rs.getLong("id"), …)`.
 
-### 3.6 Swing conventions
-- **Never run DB work on the Event Dispatch Thread.** Use `SwingWorker` (wrapped in one helper: `Async.run(task, onSuccess, onError)`).
-- One generic `RecordTableModel<T>` (columns defined as lambdas) instead of one `TableModel` per entity.
-- Standard screen shape: filter bar → table → action buttons; edit in a modal `JDialog` form.
-- Show validation problems from `Result.Err` in one consistent dialog/label; do not scatter `JOptionPane` calls.
-- Main window: `JFrame` with a `JTabbedPane` or side menu; menu items shown according to permissions.
+### 3.6 JavaFX conventions
+- **Never run DB work on the FX Application Thread.** Use `mx.marjan.ui.Async.run(task, onSuccess, onError)`, a `javafx.concurrent.Task` wrapper that marshals callbacks back to the FX thread.
+- One generic `RecordTable<T>` (columns defined as lambdas) instead of a table per entity. `RecordTablePanel<T>` adds selection + an action row for child lists.
+- Standard screen shape: filter bar → table → action buttons; edit in a modal `ModalForm` dialog. `BaseView` provides the shell, status bar and `load`/`loadRows`.
+- `FormPanel` renders a pure `shared/FormModel` (values, live validation, computed fields), so form logic is unit-testable without a toolkit.
+- Show validation problems from `Result.Err` in one consistent place; do not scatter `Alert` calls.
+- Main window: `AppShell` with a permission-aware `Navigation` sidebar and an app bar (theme toggle, user menu). The theme is chosen in `ThemeManager`.
+- Do **not** block the FX thread; screens fetch data in `reload()` via `Async`/`BaseView`.
 
 ### 3.7 Code quality rules
 - Methods short enough to read without scrolling; one level of abstraction per method.
@@ -440,24 +449,26 @@ LEFT JOIN (SELECT trip_id, SUM(amount) total FROM fuel_loads GROUP BY trip_id) f
 
 ## 9. Screens (UI inventory)
 
+The app is a JavaFX desktop app: a permission-aware **sidebar** (`AppShell` + `Navigation`) groups screens by area, an **app bar** carries the light/dark theme toggle and the user menu (`cambiar contrasena`, `cerrar sesion`), and each screen follows filter bar → sortable table → actions.
+
 | Screen | Content |
 |---|---|
-| Login | user, password |
-| Main window | menu by permission, dashboard tab |
-| Clients | table + form dialog + rates tab |
+| Login | modal card: user, password |
+| Dashboard (Inicio) | clickable KPI cards (expiring licenses, overdue invoices, maintenance due, pending assignments) that navigate to the matching screen |
+| Clients | table + form dialog + rates sub-window |
 | Routes | table + form |
-| Service Requests | filter bar, table, actions (authorize, schedule, assign, cancel, close), detail dialog |
+| Service Requests | filter bar, table with status badges, lifecycle actions (authorize, schedule, assign, cancel, close), structured detail view |
 | Assign Trip (dialog) | eligible vehicles + operators, validation result panel |
-| Trips | table, departure/arrival, expenses, advances, fuel, incidents tabs |
+| Trips | table; detail dialog with tabs (summary, costs, fuel, advances, incidents, delivery) |
 | Delivery | form, evidence reference |
-| Vehicles | table, status actions, history, maintenance tab |
-| Operators | table, form with license section, expiry highlight |
-| Fuel loads | table + form |
-| Invoices & Payments | invoice table, payment dialog, balance |
-| Reports | report picker, filters, table, **Export CSV** |
-| Users & Roles (admin) | user table, role/permission assignment |
+| Vehicles | table + status actions + maintenance sub-window |
+| Operators | table + form with license section, expiry highlighted as a status badge |
+| Fuel loads | table + form with computed importe |
+| Invoices & Payments | invoice table + pending-to-bill panel, payment dialog, balance |
+| Reports | report picker, date pickers, sortable table, **Export CSV** |
+| Users (admin) | user table, role/status, password reset |
 
-UX basics: keyboard-friendly forms (Tab order, Enter to submit), colored status labels, expiring items highlighted, confirm dialogs on cancel/terminate actions.
+UX basics: keyboard-friendly forms (Tab order, Enter to submit, Esc to close), colored **status badges** with one source of truth (`StatusTones`), inline form hints and live validation, empty states, confirm dialogs on cancel/terminate/delete actions, and a persistent light/dark theme.
 
 ---
 
@@ -468,7 +479,7 @@ UX basics: keyboard-friendly forms (Tab order, Enter to submit), colored status 
 | **Simplicity** | New developer (you in 6 months) finds any rule by searching its `BR-xx` |
 | **Integrity** | FK, UNIQUE, NOT NULL, CHECK enforce what the DB can; services enforce the rest inside transactions |
 | **Performance** | Common screens load in < 1 s with ~50k trips; index FKs and filter columns; paginate large tables |
-| **Responsiveness** | No DB call on the EDT |
+| **Responsiveness** | No DB call on the FX Application Thread |
 | **Security** | BCrypt, prepared statements, secrets in env vars, least-privilege DB user for the app |
 | **Portability** | Runs on Windows/macOS/Linux with JDK 21 + Docker |
 | **Recoverability** | Documented `mysqldump` backup/restore commands in the README (P2) |
@@ -495,14 +506,14 @@ Each milestone ends with a working, runnable app and a Git tag. Build **vertical
 
 ### M0: Project skeleton (v0.1.0)
 - Git init, `.gitignore` (`target/`, `.env`, IDE files), `README`, `PRD` in `docs/`
-- Maven project (Java 21), dependencies, `App.java` opening an empty `JFrame`
+- Maven project (Java 21), dependencies (JavaFX + AtlantaFX), `App.java` opening an empty JavaFX window
 - `docker-compose.yml`, `.env.example`, `db/init/01-schema.sql` (**corrected schema, §4**), `02-seed.sql` (roles, permissions, admin)
 - `Database` class + smoke test: app shows "connected" on start
 
-**Done when:** `docker compose up -d && mvn compile exec:java` opens a window and connects.
+**Done when:** `docker compose up -d && mvn javafx:run` opens a window and connects.
 
 ### M1: Foundations & security (v0.2.0)
-- `Result`, `Database.inTransaction`, `Async.run`, `RecordTableModel<T>`, `BaseView`
+- `Result`, `Database.inTransaction`, `Async.run`, `RecordTable<T>`, `BaseView`
 - BCrypt login, `AuthService`, session (`CurrentUser` record with permissions), permission-aware menu
 - Tests: password check, permission check
 
@@ -555,7 +566,7 @@ Build in this order, one vertical slice each: **Clients → Routes → Client ra
 ### M9: Hardening & release (v1.0.0)
 - Audit fields everywhere (BR-22), optional `audit_log`, admin users/roles screens
 - Review empty states, error messages, keyboard navigation
-- Executable JAR (`maven-shade-plugin` or `jpackage`), backup/restore notes, final README pass
+- Distribution via `jpackage`/`jlink` (JavaFX cannot be shaded into a fat jar), backup/restore notes, final README pass
 
 **Done when:** a full scenario runs without touching the DB directly: *client → request → authorize → assign → depart → expenses/fuel → deliver → close → invoice → pay → report.*
 
@@ -577,6 +588,7 @@ Build in this order, one vertical slice each: **Clients → Routes → Client ra
 | D7 | Soft delete via status for normal lifecycle, plus an explicit confirmed hard delete | Keep history by default; allow cleanup when truly needed (BR-14) |
 | D8 | Invoice `paid`/`overdue` derived from payments and dates | Avoids inconsistent stored state |
 | D9 | Feature-based packages | Changes stay local |
+| D10 | UI is **JavaFX + AtlantaFX** (Primer theme, black/white brand, Ikonli icons), not Swing | A modern, intuitive desktop look; form logic split into a pure `FormModel` so it stays testable; the domain layer is UI-agnostic, so this only replaced the view layer |
 
 ## 14. Glossary
 
@@ -596,7 +608,7 @@ Build in this order, one vertical slice each: **Clients → Routes → Client ra
 | Risk / question | Mitigation |
 |---|---|
 | Concurrency: two users assigning the same vehicle | Transaction + `FOR UPDATE` + overlap check (M4) with a dedicated test |
-| Swing UI takes the most time | Generic table model, standard screen shape, one base view; do not polish until M9 |
+| UI takes the most time | Generic `RecordTable<T>`, standard screen shape, one `BaseView`; polish after the vertical slices are done |
 | Scope creep | Anything not in this PRD goes to a "later" list; P2 items only after M8 |
 | Should one request ever have multiple trips (e.g. a breakdown mid-route)? | v1: no (D4). Revisit if needed: would need to drop `UNIQUE(service_request_id)` |
 | Can vehicles carry multiple requests in one trip (consolidation)? | Out of scope v1 |
@@ -639,7 +651,7 @@ feat(clients): add ClientRepository with JDBC CRUD
 test(clients): cover RFC validation (BR-02)
 feat(clients): validate RFC format in ClientRules
 feat(clients): add ClientService with permission checks
-feat(shared): add generic RecordTableModel
+feat(ui): add generic RecordTable<T>
 feat(clients): add clients table view and form dialog
 docs: mark clients slice done in PRD milestones
 ```
@@ -657,7 +669,7 @@ docs: mark clients slice done in PRD milestones
 - [ ] Schema change committed (if any) and `db/init` updated
 - [ ] Records, repository, service, view implemented following the layer rules
 - [ ] Business rules covered by tests, each referencing its `BR-xx`
-- [ ] No SQL outside repositories; no DB calls on the EDT
+- [ ] No SQL outside repositories; no DB calls on the FX Application Thread
 - [ ] Permission checks in the service layer
 - [ ] Manually exercised through the UI with seed data
 - [ ] Commits atomic with conventional messages; README/PRD updated if behavior changed

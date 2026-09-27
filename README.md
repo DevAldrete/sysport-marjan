@@ -29,7 +29,7 @@ Built for the fictional (personal-project) company **Transportes MARJAN**, based
 | Concern | Choice |
 | --- | --- |
 | Language | Java 21 (LTS) |
-| UI | Java Swing (+ FlatLaf for a modern look, optional) |
+| UI | JavaFX 23 + [AtlantaFX](https://github.com/mkpaz/atlantafx) (Primer theme) + Ikonli icons |
 | Database | MySQL 8.4 (in Docker Compose) |
 | Data access | Plain JDBC (no ORM) |
 | Build | Maven |
@@ -50,7 +50,7 @@ cp .env.example .env
 docker compose up -d
 
 # 4. Run the app
-mvn compile exec:java
+mvn javafx:run
 ```
 
 Default dev login (from seed data): `admin` / `admin123` — **change it, dev only.**
@@ -116,8 +116,9 @@ marjan/
 ├── PRD.md                      # requirements, architecture, plan
 └── src/
     ├── main/java/mx/marjan/
-    │   ├── App.java             # entry point
-    │   ├── shared/              # db, Result, UI base classes, utils
+    │   ├── App.java             # entry point (JavaFX Application)
+    │   ├── ui/                  # JavaFX toolkit: AppShell, Navigation, tables, forms, theme
+    │   ├── shared/              # db, Result, pure helpers (Money, Dates, FormModel), utils
     │   ├── security/            # users, roles, login
     │   ├── clients/             # clients, rates
     │   ├── requests/            # service requests
@@ -129,7 +130,7 @@ marjan/
     └── test/java/mx/marjan/
 ```
 
-Each feature package follows the same shape: `Thing` (record) · `ThingRepository` (stored-procedure calls) · `ThingService` (permissions + use cases) · `ThingView` (Swing).
+Each feature package follows the same shape: `Thing` (record) · `ThingRepository` (stored-procedure calls) · `ThingService` (permissions + use cases) · `ThingView` (JavaFX). The shared JavaFX building blocks live in `mx.marjan.ui`.
 
 ## Design in one paragraph
 

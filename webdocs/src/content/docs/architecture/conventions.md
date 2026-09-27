@@ -82,7 +82,7 @@ feat(clients): add ClientRepository with JDBC CRUD
 test(clients): cover RFC validation (BR-02)
 feat(clients): validate RFC format in ClientRules
 feat(clients): add ClientService with permission checks
-feat(shared): add generic RecordTableModel
+feat(ui): add generic RecordTable<T>
 feat(clients): add clients table view and form dialog
 ```
 
@@ -97,7 +97,7 @@ feat(clients): add clients table view and form dialog
 - [ ] Schema change committed (if any) and `SYSPORT_MARJAN.sql` regenerated
 - [ ] Records, repository, service, view implemented following the layer rules
 - [ ] Business rules covered by tests, each referencing its `BR-xx`
-- [ ] No SQL outside repositories; no DB calls on the EDT
+- [ ] No SQL outside repositories; no DB calls on the FX Application Thread
 - [ ] Permission checks in the service layer
 - [ ] Manually exercised through the UI with seed data
 - [ ] Atomic commits with conventional messages

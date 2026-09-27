@@ -49,7 +49,7 @@ Along the way:
 | Concern | Choice |
 | --- | --- |
 | Language | Java 21 (records, sealed interfaces, pattern matching) |
-| UI | Java Swing + FlatLaf |
+| UI | JavaFX 23 + [AtlantaFX](https://github.com/mkpaz/atlantafx) (Primer theme) + Ikonli |
 | Database | MySQL 8.4 (Docker Compose) |
 | Data access | Plain JDBC (no ORM) |
 | Build | Maven |
@@ -64,7 +64,7 @@ Along the way:
 | What does a rule allow? | A `fn_*` function or a `sp_*` procedure | `db/init/` |
 | How does Java talk to the DB? | Repositories calling procedures | `*Repository.java` |
 | Who can do what? | Services check permissions | `*Service.java` |
-| What does the user see? | Swing views | `*View.java` |
+| What does the user see? | JavaFX views | `*View.java` |
 
 ## Glossary (short version)
 

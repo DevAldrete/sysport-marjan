@@ -6,9 +6,9 @@ description: The layered design, the one-way dependency rule, and why the rules 
 ## The one rule that explains everything
 
 ```text
-   view (Swing)  →  service  →  repository (JDBC)  →  MySQL
-                       ↓
-                  records + enums (pure, no I/O)
+   view (JavaFX)  →  service  →  repository (JDBC)  →  MySQL
+                        ↓
+                   records + enums (pure, no I/O)
 ```
 
 Dependencies point **one way**. A view may call a service; a service may call a repository; a
@@ -21,8 +21,8 @@ repository may call the database. Never the reverse. This keeps changes local an
 | **records / enums** | Immutable data (`Client`, `Trip`, …) and typed statuses | Contain logic that needs I/O |
 | **routines** (SQL) | Stored procedures & functions: validate, calculate, decide transitions | Live in Java |
 | **repository** | Thin JDBC wrappers that call routines; map `ResultSet` ↔ records | Contain business decisions |
-| **service** | One use case = one routine call; checks permission; adapts the outcome | Know about Swing |
-| **view** | Swing panels: display, collect input, call services off the EDT | Contain SQL or business rules |
+| **service** | One use case = one routine call; checks permission; adapts the outcome | Know about JavaFX |
+| **view** | JavaFX panels: display, collect input, call services off the FX thread | Contain SQL or business rules |
 
 ## Why the rules live in the database
 
@@ -44,7 +44,7 @@ them live in `fn_request_can_transition` (see [Lifecycles](/domain/lifecycle/)).
 - **Data is dumb and immutable → `record`.** "Changing" means creating a copy.
 - **Behaviour is in SQL**, exposed through procedures.
 - **Objects are used where they earn their keep:** services and repositories (capabilities) and
-  Swing components (inherently object-oriented).
+  JavaFX components (inherently object-oriented).
 - **Model outcomes explicitly** with enums and sealed types instead of flags and exceptions:
 
 ```java
@@ -61,9 +61,10 @@ function** (or, rarely, in `shared/` as a pure helper).
 
 ```text
 mx.marjan
-├── App.java                 entry point
-├── MainFrame.java           tabbed main window, permission-guarded tabs
-├── shared/                  Database, Result, Async, BaseView, FormPanel, Ui, Money, Dates, …
+├── App.java                 entry point (JavaFX Application)
+├── ui/                      AppShell, Navigation, ThemeManager, Async, Ui,
+│                            BaseView, RecordTable, FormPanel, ModalForm, …
+├── shared/                  Database, Result, FormModel, Money, Dates, …
 ├── security/                users, roles, login, session
 ├── clients/                 clients, rates
 ├── routes/                  origin → destination lanes
@@ -82,13 +83,13 @@ package. Each feature package follows the same shape: `Thing` · `ThingRepositor
 ## Startup flow
 
 ```text
-App.main
- ├─ FlatLightLaf.setup()          (optional look & feel)
- ├─ Database.testConnection()     (fail fast with a clear dialog)
- └─ App.start()
-      ├─ LoginView.prompt()       → AuthService.login() → BCrypt + permissions
-      ├─ Session.login(user)
-      └─ new MainFrame()          tabs added only if Session.has(permission)
+App.main (JavaFX Application)
+ ├─ init: Database.testConnection()   (fail fast with a clear dialog)
+ ├─ start: LoginView.prompt()         → AuthService.login() → BCrypt + permissions
+ │    ├─ Session.login(user)
+ │    └─ new AppShell().show()
+ │         └─ Navigation built only from items where Session.has(permission)
+ └─ logout: close the shell, Session.logout(), show login again
 ```
 
 See [Security & users](/features/security/) for the permission model.

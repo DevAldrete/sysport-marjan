@@ -17,7 +17,7 @@ hero:
 
 import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
 
-SysPort-MARJAN is a desktop application (Java 21 Swing + MySQL 8.4, plain JDBC) that runs the
+SysPort-MARJAN is a desktop application (Java 21 JavaFX + MySQL 8.4, plain JDBC) that runs the
 full lifecycle of a trucking operation: client request → trip assignment → costs → delivery →
 invoice → payment → reports. This wiki is written for a developer who has just cloned the repo.
 
@@ -48,7 +48,7 @@ invoice → payment → reports. This wiki is written for a developer who has ju
    single source of truth. Java keeps records, enums and thin JDBC wrappers.
 2. **The layer direction is one-way:** `view → service → repository → MySQL`. A view never runs
    SQL; a repository never makes business decisions.
-3. **Nothing runs on the EDT.** All database work goes through `Async.run(...)`.
+3. **Nothing runs on the FX Application Thread.** All database work goes through `Async.run(...)`.
 4. **No `AUTO_INCREMENT`.** Primary keys come from the `sequences` table via `sp_next_id`.
 5. **Every rule has an ID** (`BR-01` … `BR-24`). Search the codebase for `BR-xx` to find both the
    rule and the code that enforces it.

@@ -10,8 +10,24 @@ A quick index of `src/main/java/mx/marjan`. Each feature package follows the sam
 
 | Class | Purpose |
 | --- | --- |
-| `App` | entry point: connect, login, open the main window |
-| `MainFrame` | tabbed window; tabs added per permission; session menu |
+| `App` | entry point (`Application`): connect, login, open the shell |
+
+## `ui` (JavaFX toolkit + shell)
+
+| Class | Purpose |
+| --- | --- |
+| `AppShell` | main window: sidebar + app bar + content; theme toggle, password change, logout |
+| `Navigation` | permission-aware sidebar built from grouped items; collapsible |
+| `ThemeManager` | Primer light/dark theme + app stylesheet, remembered between sessions |
+| `Async` | `Task` wrapper: DB work off the FX thread |
+| `Ui` | dialogs, confirms, buttons, toolbars, double-click helper |
+| `BaseView` | screen shell: `load`, `loadRows`, `setStatus` |
+| `FormPanel` | renders a `FormModel` into inputs with hints/live validation/computed fields |
+| `ModalForm` | standard Guardar/Cancelar dialog |
+| `RecordTable<T>` | the one generic table (columns as lambdas) |
+| `RecordTablePanel<T>` | table + selection + action row |
+| `StatusBadge`, `StatusTones` | colored status chips and their color mapping |
+| `Icons` | Ikonli Feather icon factory |
 
 ## `shared`
 
@@ -20,13 +36,7 @@ A quick index of `src/main/java/mx/marjan`. Each feature package follows the sam
 | `Database` | connection + all `call*` helpers + `translate` + id/error helpers |
 | `Result` | sealed `Ok` / `Err` outcome type |
 | `DataException` | a JDBC failure already translated for the UI |
-| `Async` | `SwingWorker` wrapper: DB work off the EDT |
-| `BaseView` | screen shell: `load`, `loadRows`, `setStatus`, `selectedRow` |
-| `FormPanel` | labelled forms with hints, live validation, computed fields |
-| `ModalForm` | standard Guardar/Cancelar dialog |
-| `Ui` | dialogs, buttons, layout, table styling, Enter/double-click helpers |
-| `RecordTableModel<T>` | the one generic table model (columns as lambdas) |
-| `RecordTablePanel<T>` | table + selection + action row |
+| `FormModel` | pure form state: values, live validation, computed fields (no toolkit) |
 | `Money` | `BigDecimal` money format/parse |
 | `Numbers` | decimal field parsing/formatting |
 | `Dates` | `LocalDate`/`LocalDateTime` format/parse |

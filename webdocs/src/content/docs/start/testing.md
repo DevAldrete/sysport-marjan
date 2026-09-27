@@ -37,8 +37,7 @@ SYSPORT_IT=1 mvn test -Dtest=SqlRulesTest
 | `rules/DatabaseMessagesTest` | Unit | `Database.translate`: duplicate key, foreign key, connection failure, check constraint. |
 | `rules/DataErrorsTest` | Unit | Coarse mapping of common driver error codes. |
 | `rules/ValidatorsTest` | Unit | Username format. |
-| `rules/FormPanelTest` | Unit | Computed fields and the live date/money/number validators. |
-| `shared/FormPanelTest` | Unit | `FormPanel` reads back text areas, text, combo and check values. |
+| `shared/FormModelTest` | Unit | Form values, computed fields and the live date/money/number validators. |
 | `shared/TextTest` | Unit | `Text.truncate` behaviour. |
 
 ## Writing an integration test
@@ -77,7 +76,7 @@ name states the expectation.
 
 ## What is *not* tested
 
-- Swing screens: exercised manually with seed data (see the PRD's manual checklist).
+- JavaFX screens: exercised manually with seed data (see the PRD's manual checklist).
 - Permissions: covered indirectly; the service checks are one line each.
 
 Next: [Architecture overview](/architecture/overview/).

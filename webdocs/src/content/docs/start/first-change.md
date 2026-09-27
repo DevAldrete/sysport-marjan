@@ -125,7 +125,7 @@ in SQL should; the service stays thin.
 **`VehiclesView.java`** — add a table column and a form field:
 
 ```java
-        RecordTableModel.Column.of("Color", Vehicle::color),
+        RecordTable.Column.of("Color", Vehicle::color),
 ```
 
 ```java

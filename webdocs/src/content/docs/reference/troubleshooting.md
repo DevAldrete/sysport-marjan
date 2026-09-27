@@ -65,8 +65,8 @@ WHERE rp.role_id = 1;
 
 ## The UI freezes during a query
 
-Database work must run off the EDT via `Async.run(...)` / `BaseView.load(...)`. If a view calls a
-service directly on the event thread, it blocks the UI. Move the call into `Async.run`.
+Database work must run off the FX Application Thread via `Async.run(...)` / `BaseView.load(...)`.
+If a view calls a service directly on the FX thread, it blocks the UI. Move the call into `Async.run`.
 
 ## A duplicate/foreign-key error is shown instead of a friendly message
 

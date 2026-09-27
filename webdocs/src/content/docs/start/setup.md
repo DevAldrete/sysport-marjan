@@ -50,11 +50,11 @@ docker compose logs -f mysql   # watch it come up
 ## 3. Run the app
 
 ```bash
-mvn compile exec:java
+mvn javafx:run
 ```
 
-The `exec-maven-plugin` runs `mx.marjan.App`. It first checks the connection, then shows the login
-dialog. Default dev credentials (from seed data):
+The `javafx-maven-plugin` runs `mx.marjan.App` with the JavaFX module path. It first checks the
+connection, then shows the login window. Default dev credentials (from seed data):
 
 ```text
 usuario:  admin
@@ -107,7 +107,8 @@ Full details on [Testing](/start/testing/).
 ## IDE tips
 
 - Import as a **Maven** project; source/target is Java 21.
-- Run configuration: main class `mx.marjan.App` (module classpath includes dependencies).
+- Run with `mvn javafx:run` (main class `mx.marjan.App`). A plain `java`/`exec` launch fails
+  because JavaFX needs its module path; the plugin wires that up for you.
 - The `target/` directory is build output; do not edit it.
 - `SYSPORT_MARJAN.sql` at the repo root is a **generated** single-file bootstrap
   (`db/build-bootstrap.sh` concatenates `db/init/*.sql`). Regenerate it after schema edits.
