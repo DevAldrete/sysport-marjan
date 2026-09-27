@@ -1,17 +1,13 @@
 package mx.marjan.finance;
 
 import java.util.List;
-import mx.marjan.fleet.FuelLoadRepository;
 import mx.marjan.security.Permissions;
 import mx.marjan.security.Session;
-import mx.marjan.shared.Database;
 import mx.marjan.shared.Result;
 
 public class AdvanceService {
 
     private final AdvanceRepository advances = new AdvanceRepository();
-    private final ExpenseRepository expenses = new ExpenseRepository();
-    private final FuelLoadRepository fuels = new FuelLoadRepository();
 
     public List<Advance> listByTrip(long tripId) {
         return advances.listByTrip(tripId);
@@ -21,36 +17,20 @@ public class AdvanceService {
         if (!Session.has(Permissions.ADVANCES_WRITE)) {
             return Result.err("No tiene permiso para registrar anticipos");
         }
-        Result<Void> validated = AdvanceRules.validateResult(advance);
-        if (validated.isErr()) {
-            return validated;
-        }
-        long userId = Session.userId();
-        Database.inTransaction(connection -> {
-            advances.insert(connection, advance, userId);
-            return null;
-        });
-        return Result.ok(null);
+        Result<Long> saved = advances.save(advance, Session.userId());
+        return saved.isOk() ? Result.ok(null) : Result.err(saved.problems());
     }
 
     public Result<Void> settle(long advanceId) {
         if (!Session.has(Permissions.ADVANCES_WRITE)) {
             return Result.err("No tiene permiso para comprobar anticipos");
         }
-        long userId = Session.userId();
-        Database.inTransaction(connection -> {
-            advances.markSettled(connection, advanceId, userId);
-            return null;
-        });
-        return Result.ok(null);
+        return advances.settle(advanceId, Session.userId());
     }
 
     /** BR-16: compares the trip's advance against proven expenses plus fuel. */
     public AdvanceBalance balanceForTrip(long tripId) {
-        java.math.BigDecimal given = advances.listByTrip(tripId).stream()
-                .map(Advance::amountGiven)
-                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
-        return AdvanceRules.balance(given, expenses.sumByTrip(tripId), fuels.sumByTrip(tripId));
+        return advances.balance(tripId);
     }
 
     public Result<Void> delete(long id) {
@@ -60,5 +40,4 @@ public class AdvanceService {
         advances.delete(id);
         return Result.ok(null);
     }
-
 }

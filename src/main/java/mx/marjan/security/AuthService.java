@@ -43,10 +43,6 @@ public class AuthService {
         return users.roles();
     }
 
-    public List<String> permissions() {
-        return users.permissions();
-    }
-
     public Result<Void> createUser(String username, String password, long roleId, Long employeeId, UserStatus status) {
         Result<Void> denied = requireAdmin();
         if (denied != null) {
@@ -68,10 +64,7 @@ public class AuthService {
         }
         String name = username.trim();
         String hash = BCrypt.hashpw(password, BCrypt.gensalt(12));
-        mx.marjan.shared.Database.inTransaction(connection -> {
-            users.insert(connection, name, hash, roleId, employeeId, status);
-            return null;
-        });
+        users.insert(name, hash, roleId, employeeId, status);
         return Result.ok(null);
     }
 
@@ -95,6 +88,8 @@ public class AuthService {
         List<String> problems = new ArrayList<>();
         if (username == null || username.isBlank()) {
             problems.add("El nombre de usuario es obligatorio");
+        } else if (!mx.marjan.shared.Validators.isValidUsername(username)) {
+            problems.add("El usuario solo admite letras, numeros y . _ - (3 a 50 caracteres)");
         }
         Optional<User> byName = username == null ? Optional.empty() : users.findByUsername(username.trim());
         if (byName.isPresent() && byName.get().id() != id) {

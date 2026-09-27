@@ -16,12 +16,25 @@ public enum EmployeeStatus {
         this.label = label;
     }
 
+    private static final EmployeeStatus[] MANUAL = {
+        AVAILABLE, RESTING, VACATION, INCAPACITATED, TERMINATED
+    };
+
     public String dbValue() {
         return dbValue;
     }
 
     public String label() {
         return label;
+    }
+
+    /** Statuses a user may set by hand; 'on_trip' belongs to the trip lifecycle. */
+    public static EmployeeStatus[] manualValues() {
+        return MANUAL.clone();
+    }
+
+    public boolean isManual() {
+        return this != ON_TRIP;
     }
 
     public static EmployeeStatus fromDb(String value) {
@@ -36,11 +49,6 @@ public enum EmployeeStatus {
             case "terminated" -> TERMINATED;
             default -> AVAILABLE;
         };
-    }
-
-    /** BR-09: only available operators can be assigned. */
-    public boolean isAssignable() {
-        return this == AVAILABLE;
     }
 
     @Override

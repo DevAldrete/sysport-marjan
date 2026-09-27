@@ -50,7 +50,7 @@ public final class ModalForm {
                     result -> {
                         if (result.isErr()) {
                             save.setEnabled(true);
-                            Ui.error(dialog, "Validacion", result.problems());
+                            Ui.error(dialog, "No se pudo guardar", result.problems());
                         } else {
                             dialog.dispose();
                             if (afterSave != null) {
@@ -67,6 +67,7 @@ public final class ModalForm {
         dialog.getRootPane().setDefaultButton(save);
         dialog.pack();
         dialog.setLocationRelativeTo(parent);
+        form.focusFirst();
         dialog.setVisible(true);
     }
 }

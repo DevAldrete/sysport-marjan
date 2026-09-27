@@ -1,5 +1,7 @@
 package mx.marjan.trips;
 
+import mx.marjan.shared.Numbers;
+
 import java.awt.BorderLayout;
 import java.math.BigDecimal;
 import java.util.List;
@@ -17,6 +19,7 @@ import mx.marjan.shared.ModalForm;
 import mx.marjan.shared.RecordTableModel;
 import mx.marjan.shared.Result;
 import mx.marjan.shared.Ui;
+import mx.marjan.shared.Validators;
 
 public class TripsView extends BaseView {
 
@@ -39,14 +42,16 @@ public class TripsView extends BaseView {
         for (TripStatus status : TripStatus.values()) {
             statusFilter.addItem(status);
         }
+        Ui.onEnter(searchField, this::reload);
+        Ui.onDoubleClick(table, this::detail);
         add(Ui.row(new JLabel("Buscar:"), searchField, new JLabel("Estado:"), statusFilter,
-                Ui.button("Buscar", this::reload),
-                Ui.button("Salida", this::depart),
-                Ui.button("Llegada", this::arrive),
-                Ui.button("Reasignar", this::reassign),
-                Ui.button("Cancelar", this::cancel),
-                Ui.button("Detalle", this::detail),
-                Ui.button("Eliminar", this::deleteTrip),
+                Ui.button("Buscar", "Aplicar los filtros", this::reload),
+                Ui.button("Salida", "Registrar la salida del viaje", this::depart),
+                Ui.button("Llegada", "Registrar la llegada y los kilometros reales", this::arrive),
+                Ui.button("Reasignar", "Cambiar la unidad o el operador", this::reassign),
+                Ui.button("Cancelar", "Cancelar el viaje", this::cancel),
+                Ui.button("Detalle", "Ver el detalle del viaje", this::detail),
+                Ui.button("Eliminar", "Eliminar el viaje y todo lo relacionado", this::deleteTrip),
                 Ui.button("Recargar", this::reload)), BorderLayout.NORTH);
         add(Ui.scroll(table), BorderLayout.CENTER);
         reload();
@@ -55,15 +60,14 @@ public class TripsView extends BaseView {
     @Override
     public void reload() {
         Object status = statusFilter.getSelectedItem();
-        load(() -> {
+        loadRows(() -> {
             service.sweepLifecycle();
             return service.search(searchField.getText(), status instanceof TripStatus s ? s : null);
         }, model::setRows);
     }
 
     private Trip selected() {
-        int row = table.getSelectedRow();
-        return row < 0 ? null : model.rowAt(table.convertRowIndexToModel(row));
+        return selectedRow(table, model);
     }
 
     private void depart() {
@@ -87,12 +91,12 @@ public class TripsView extends BaseView {
         }
         FormPanel form = new FormPanel()
                 .addText("km", "Kilometros reales", trip.estimatedKm() == null
-                        ? "0" : trip.estimatedKm().toPlainString());
+                        ? "0" : trip.estimatedKm().toPlainString(),
+                        "Recorrido real; se propone el estimado de la ruta")
+                .validate("km", Validators.number());
         ModalForm.show(this, "Llegada del viaje " + trip.folio(), form, () -> {
-            BigDecimal km;
-            try {
-                km = new BigDecimal(form.text("km").isBlank() ? "0" : form.text("km"));
-            } catch (NumberFormatException failure) {
+            BigDecimal km = Numbers.parseOrZero(form.text("km"));
+            if (km == null) {
                 return Result.err("Los kilometros reales deben ser un numero");
             }
             return service.arrive(trip.id(), km);
@@ -131,7 +135,7 @@ public class TripsView extends BaseView {
             Ui.info(this, "Seleccione un viaje");
             return;
         }
-        FormPanel form = new FormPanel().addArea("reason", "Motivo", "");
+        FormPanel form = new FormPanel().addArea("reason", "Motivo", "", "Razon de la cancelacion");
         ModalForm.show(this, "Cancelar " + trip.folio(), form,
                 () -> service.cancel(trip.id(), form.text("reason")), this::reload);
     }

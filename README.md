@@ -26,7 +26,7 @@ Built for the fictional (personal-project) company **Transportes MARJAN**, based
 | --- | --- |
 | Language | Java 21 (LTS) |
 | UI | Java Swing (+ FlatLaf for a modern look, optional) |
-| Database | MariaDB 11 (in Docker Compose; MySQL-compatible) |
+| Database | MySQL 8.4 (in Docker Compose) |
 | Data access | Plain JDBC (no ORM) |
 | Build | Maven |
 | Tests | JUnit 5 |
@@ -55,12 +55,26 @@ Default dev login (from seed data): `admin` / `admin123` — **change it, dev on
 
 ```bash
 docker compose up -d          # start
-docker compose logs -f db     # view logs
+docker compose logs -f mysql  # view logs
 docker compose down           # stop (data kept)
 docker compose down -v        # stop AND wipe data (re-runs db/init scripts)
 ```
 
 > Scripts in `db/init/` only run when the data volume is empty. After changing the schema in early development, use `docker compose down -v && docker compose up -d`.
+
+### Tests
+
+```bash
+mvn test                              # fast unit tests (no database)
+
+# Integration tests against the real MySQL rules (opt-in):
+docker compose down -v && docker compose up -d
+SYSPORT_IT=1 mvn test                 # or mvn test -Dtest=SqlRulesTest
+```
+
+The business rules live in the database, so the integration tests exercise the
+stored procedures directly (`SqlRulesTest`). They are skipped unless
+`SYSPORT_IT=1`, and expect a freshly seeded database.
 
 ### Connection settings
 
@@ -68,7 +82,7 @@ Read from environment variables, with these defaults:
 
 | Variable | Default |
 | --- | --- |
-| `DB_URL` | `jdbc:mariadb://localhost:3306/sysportdb` |
+| `DB_URL` | `jdbc:mysql://localhost:3306/sysportdb` |
 | `DB_USER` | `marjan` |
 | `DB_PASSWORD` | `changeme` |
 
@@ -80,10 +94,21 @@ marjan/
 ├── .env.example
 ├── pom.xml
 ├── db/
-│   └── init/
-│       ├── 01-schema.sql        # tables, constraints
-│       ├── 02-seed.sql          # roles, permissions, admin user, sample data
-│       └── 03-demo-seed.sql     # large showcase dataset (50 routes, 70 clients/operators/vehicles, demo requests)
+│   ├── build-bootstrap.sh      # concatenates db/init/*.sql into SYSPORT_MARJAN.sql
+│   └── init/                   # loaded by Docker in filename order
+│       ├── 01-tables.sql       # database and tables
+│       ├── 02-functions.sql    # rule functions + id/folio allocators
+│       ├── 05-views.sql        # shared read projections
+│       ├── 10-security.sql     # users, roles, permissions, audit
+│       ├── 20-clients.sql      # clients, rates, routes
+│       ├── 30-fleet.sql        # vehicles, fuel, maintenance
+│       ├── 40-operators.sql    # employees, licences
+│       ├── 50-requests.sql     # service requests + lifecycle actions
+│       ├── 60-trips.sql        # assignment, trips, deliveries, incidents
+│       ├── 70-costs.sql        # expenses, advances
+│       ├── 80-finance.sql      # invoices, payments
+│       ├── 90-reports.sql      # report and dashboard queries
+│       └── 99-seed.sql         # roles, permissions, admin user, demo rows
 ├── PRD.md                      # requirements, architecture, plan
 └── src/
     ├── main/java/mx/marjan/
@@ -100,11 +125,11 @@ marjan/
     └── test/java/mx/marjan/
 ```
 
-Each feature package follows the same shape: `Thing` (record) · `ThingRepository` (JDBC) · `ThingService` (use cases) · `ThingRules` (pure functions) · `ThingView` (Swing).
+Each feature package follows the same shape: `Thing` (record) · `ThingRepository` (stored-procedure calls) · `ThingService` (permissions + use cases) · `ThingView` (Swing).
 
 ## Design in one paragraph
 
-Data is modeled as **immutable records**; business rules are **pure functions** over those records (easy to test without a database or UI); **repositories** are the only place with SQL; **services** open transactions and coordinate; **views** only display and collect input. Simple over clever.
+Data is modeled as **immutable records**; **business rules live in the database** as stored procedures and functions (the single source of truth); **repositories** are thin JDBC wrappers that call those routines; **services** enforce permissions and coordinate; **views** only display and collect input. Simple over clever.
 
 ## Contributing to your future self
 

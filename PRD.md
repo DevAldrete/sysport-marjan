@@ -34,7 +34,7 @@ A desktop application that models the **entire service lifecycle** so that any o
 | Type | Item |
 |---|---|
 | **Hard** | Java Swing UI |
-| **Hard** | MariaDB (MySQL-compatible), run from Docker Compose |
+| **Hard** | MySQL 8.4, run from Docker Compose |
 | **Hard** | JDBC for data access |
 | Preferred | Clean OOP combined with Data-Oriented Programming |
 | Preferred | Low complexity, readability, maintainability |
@@ -61,16 +61,16 @@ Permissions are fine-grained strings (e.g. `trips.assign`, `invoices.write`, `re
 ### 3.1 Stack
 - **Java 21**: records, sealed interfaces, pattern-matching `switch`, `Optional`. All are natural fits for DOP.
 - **Maven** for build; dependencies kept minimal:
-  - `org.mariadb.jdbc:mariadb-java-client` (JDBC driver, latest 3.x)
+  - `com.mysql:mysql-connector-j` (JDBC driver, latest 9.x)
   - `jbcrypt` or equivalent BCrypt library (password hashing)
   - `FlatLaf` (optional, look and feel)
   - `JUnit 5` (test)
-- **MariaDB 11** in Docker Compose, schema loaded from `db/init/`.
+- **MySQL 8.4** in Docker Compose, schema loaded from `db/init/`.
 
 ### 3.2 Layers (and the only allowed dependency direction)
 
 ```
-   view (Swing)  →  service  →  repository (JDBC)  →  MariaDB
+   view (Swing)  →  service  →  repository (JDBC)  →  MySQL
                        ↓
                   rules + records (pure, no I/O)
 ```
@@ -78,15 +78,15 @@ Permissions are fine-grained strings (e.g. `trips.assign`, `invoices.write`, `re
 | Layer | Responsibility | Must not |
 |---|---|---|
 | **records** | Immutable data (`Client`, `Trip`, …) and enums for statuses | Contain logic that needs I/O |
-| **rules** | Pure functions: `(data) → Result`. Validate, calculate, decide transitions | Touch DB, Swing or the clock (pass `LocalDate` in) |
-| **repository** | The **only** place with SQL. Maps `ResultSet` ↔ records | Contain business decisions |
-| **service** | A use case = one transaction. Loads data, calls rules, saves, checks permission | Know about Swing |
+| **routines** | Stored procedures/functions in the database: validate, calculate, decide transitions | Live in Java |
+| **repository** | Thin JDBC wrappers that call routines. Maps `ResultSet` ↔ records | Contain business decisions |
+| **service** | A use case = one routine call. Checks permission, adapts the outcome | Know about Swing |
 | **view** | Swing panels: display, collect input, call services on a background thread | Contain SQL or business rules |
 
 ### 3.3 How OOP and DOP combine (the practical rule)
 
 - **Data is dumb and immutable → `record`.** `record Trip(long id, long serviceRequestId, …)`. "Changing" means creating a copy (`trip.withStatus(IN_TRANSIT)`).
-- **Behavior lives in small, stateless, pure functions**, grouped in classes named after what they decide (`AssignmentRules`, `AdvanceRules`, `ServiceRequestFlow`).
+- **Behavior lives in the database**, as stored procedures and functions (`sp_assign_trip`, `fn_invoice_status`, …). Repositories only call them, so changing a routine changes the app without recompiling.
 - **Objects are used where they earn their keep:** services and repositories (they hold a connection/`DataSource` and represent capabilities), Swing components (inherently object-oriented).
 - **Model states and outcomes explicitly** with enums and sealed types instead of strings, flags and exceptions for normal flow:
 
@@ -160,9 +160,9 @@ The ER design in the SQL/PDF is a solid base. It maps well to the interview. Bef
 | # | Issue | Fix |
 |---|---|---|
 | F1 | **Foreign keys are inverted** (diagram-export artifact). `employees.id → users.employee_id`, `licenses.id → employees.license_id`, `service_requests.id → trips.service_request_id`, `trips.id → deliveries.trip_id` make the parent reference the child, creating impossible/circular constraints. | The **child** column references the **parent** `id`: `users.employee_id → employees.id`, `employees.license_id → licenses.id`, `trips.service_request_id → service_requests.id`, `deliveries.trip_id → trips.id`. Keep the `UNIQUE` on those columns to preserve the 1:1. |
-| F2 | **`decimal` with no precision** defaults to `DECIMAL(10,0)` in MariaDB, so **cents are silently rounded away**. | Money: `DECIMAL(12,2)`. Quantities: liters `DECIMAL(8,2)`, price/liter `DECIMAL(8,3)`, km/weight/odometer `DECIMAL(10,1)`. |
+| F2 | **`decimal` with no precision** defaults to `DECIMAL(10,0)` in MySQL, so **cents are silently rounded away**. | Money: `DECIMAL(12,2)`. Quantities: liters `DECIMAL(8,2)`, price/liter `DECIMAL(8,3)`, km/weight/odometer `DECIMAL(10,1)`. |
 | F3 | No key generation. | **No `AUTO_INCREMENT`.** Ids are `BIGINT PRIMARY KEY` (matching `BIGINT` FKs) allocated by the application through the `sequences` table inside the same transaction (`Sequences.next`). |
-| F4 | Status columns are free text. | Add `CHECK (status IN (...))` constraints (MariaDB ≥ 10.2 enforces them) and mirror them as Java enums. |
+| F4 | Status columns are free text. | Add `CHECK (status IN (...))` constraints (MySQL ≥ 8.0.16 enforces them) and mirror them as Java enums. |
 | F5 | Missing `NOT NULL`/defaults. | `created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`; `NOT NULL` where the domain demands it. |
 | F6 | `licenses.updated_at` exists but no other table has one. | Keep only where edits are expected (`licenses`, `service_requests`, `trips`, `vehicles`, `employees`). |
 | F7 | Status vocabulary mixes Spanish (`solicitada`…) and English. | Use English codes everywhere (see §5). Display labels can be localized in the UI. |
@@ -482,7 +482,7 @@ UX basics: keyboard-friendly forms (Tab order, Enter to submit), colored status 
 | Level | What | How |
 |---|---|---|
 | **Unit** (most tests) | `rules` and state machines: BR-03…BR-20 | JUnit 5, plain records in, `Result` out; no mocks needed |
-| **Integration** | Repositories and transactions (double-booking under concurrency, rollback) | Real MariaDB from compose, separate `marjan_test` database, schema reset per test class |
+| **Integration** | Repositories and transactions (double-booking under concurrency, rollback) | Real MySQL from compose, separate `marjan_test` database, schema reset per test class |
 | **Manual/UI** | Screen flows | A short checklist per milestone (§12 acceptance) |
 
 Test naming: `AssignmentRulesTest.rejectsVehicleWithOverlappingTrip()`. **Every BR gets at least one test**, and the commit that adds a rule includes its test.

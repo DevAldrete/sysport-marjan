@@ -21,11 +21,6 @@ public record Client(
                 ClientType.OCCASIONAL, PaymentTerms.CASH, BigDecimal.ZERO, 0, ClientStatus.ACTIVE);
     }
 
-    public Client withId(long newId) {
-        return new Client(newId, name, rfc, address, phone, email, contactName,
-                clientType, paymentTerms, creditLimit, creditDays, status);
-    }
-
     @Override
     public String toString() {
         return name;

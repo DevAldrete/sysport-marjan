@@ -1,5 +1,7 @@
 package mx.marjan.fleet;
 
+import mx.marjan.shared.Numbers;
+
 import java.awt.BorderLayout;
 import java.awt.Dialog;
 import java.math.BigDecimal;
@@ -19,6 +21,7 @@ import mx.marjan.shared.Money;
 import mx.marjan.shared.RecordTableModel;
 import mx.marjan.shared.Result;
 import mx.marjan.shared.Ui;
+import mx.marjan.shared.Validators;
 
 public class VehiclesView extends BaseView {
 
@@ -37,6 +40,8 @@ public class VehiclesView extends BaseView {
     private final JTextField searchField = new JTextField(18);
 
     public VehiclesView() {
+        Ui.onEnter(searchField, this::reload);
+        Ui.onDoubleClick(table, this::openEdit);
         add(Ui.row(new JLabel("Buscar:"), searchField,
                 Ui.button("Buscar", this::reload),
                 Ui.button("Nuevo", this::openNew),
@@ -52,12 +57,11 @@ public class VehiclesView extends BaseView {
     @Override
     public void reload() {
         String term = searchField.getText();
-        load(() -> service.search(term), model::setRows);
+        loadRows(() -> service.search(term), model::setRows);
     }
 
     private Vehicle selected() {
-        int row = table.getSelectedRow();
-        return row < 0 ? null : model.rowAt(table.convertRowIndexToModel(row));
+        return selectedRow(table, model);
     }
 
     private void openNew() {
@@ -76,16 +80,19 @@ public class VehiclesView extends BaseView {
     private void openForm(Vehicle vehicle) {
         boolean isNew = vehicle.id() == 0;
         FormPanel form = new FormPanel()
-                .addText("code", "No. economico", vehicle.internalCode())
+                .addText("code", "No. economico", vehicle.internalCode(), "Identificador interno de la unidad")
                 .addText("plates", "Placas", vehicle.plates())
                 .addText("brand", "Marca", vehicle.brand())
                 .addText("model", "Modelo", vehicle.model())
-                .addText("year", "Anio", vehicle.year() == null ? "" : vehicle.year().toString())
-                .addText("serial", "No. de serie", vehicle.serialNumber())
+                .addText("year", "Anio", vehicle.year() == null ? "" : vehicle.year().toString(), "Ej. 2020")
+                .addText("serial", "No. de serie", vehicle.serialNumber(), "VIN del vehiculo")
                 .addText("type", "Tipo de unidad", vehicle.vehicleType())
-                .addText("capacity", "Capacidad de carga (kg)", plain(vehicle.loadCapacity()))
-                .addText("mileage", "Kilometraje", plain(vehicle.mileage()))
-                .addCombo("status", "Estado", VehicleStatus.values(), vehicle.status());
+                .addText("capacity", "Capacidad de carga (kg)", Numbers.plain(vehicle.loadCapacity()),
+                        "En kilogramos")
+                .addText("mileage", "Kilometraje", Numbers.plain(vehicle.mileage()), "Odometro actual en km");
+        form.validate("year", Validators.number());
+        form.validate("capacity", Validators.number());
+        form.validate("mileage", Validators.number());
         ModalForm.show(this, isNew ? "Nueva unidad" : "Editar unidad", form, () -> {
             Integer year = null;
             if (!form.text("year").isBlank()) {
@@ -95,14 +102,14 @@ public class VehiclesView extends BaseView {
                     return Result.err("El anio debe ser un numero");
                 }
             }
-            BigDecimal capacity = number(form.text("capacity"));
-            BigDecimal mileage = number(form.text("mileage"));
+            BigDecimal capacity = Numbers.parseOrZero(form.text("capacity"));
+            BigDecimal mileage = Numbers.parseOrZero(form.text("mileage"));
             if (capacity == null || mileage == null) {
                 return Result.err("Capacidad y kilometraje deben ser numeros");
             }
             Vehicle built = new Vehicle(vehicle.id(), form.text("code"), form.text("plates"),
                     form.text("brand"), form.text("model"), year, form.text("serial"),
-                    form.text("type"), capacity, mileage, (VehicleStatus) form.selected("status"));
+                    form.text("type"), capacity, mileage, vehicle.status());
             return service.save(built);
         }, this::reload);
     }
@@ -113,8 +120,9 @@ public class VehiclesView extends BaseView {
             Ui.info(this, "Seleccione una unidad");
             return;
         }
-        FormPanel form = new FormPanel().addCombo("status", "Nuevo estado",
-                VehicleStatus.values(), vehicle.status());
+        VehicleStatus[] options = VehicleStatus.manualValues();
+        VehicleStatus initial = vehicle.status().isManual() ? vehicle.status() : options[0];
+        FormPanel form = new FormPanel().addCombo("status", "Nuevo estado", options, initial);
         ModalForm.show(this, "Cambiar estado de " + vehicle.label(), form,
                 () -> service.setStatus(vehicle.id(), (VehicleStatus) form.selected("status")),
                 this::reload);
@@ -175,43 +183,33 @@ public class VehiclesView extends BaseView {
 
     private void openMaintenanceForm(Vehicle vehicle, Runnable onSaved) {
         FormPanel form = new FormPanel()
-                .addText("date", "Fecha (yyyy-MM-dd)", Dates.format(Dates.today()))
-                .addText("odometer", "Odometro", plain(vehicle.mileage()))
+                .addText("date", "Fecha", Dates.format(Dates.today()), "Formato: AAAA-MM-DD")
+                .addText("odometer", "Odometro", Numbers.plain(vehicle.mileage()), "Lectura del tablero en km")
                 .addCombo("type", "Tipo", MaintenanceType.values(), MaintenanceType.PREVENTIVE)
-                .addArea("work", "Trabajos realizados", "")
+                .addArea("work", "Trabajos realizados", "", "Descripcion de lo realizado")
                 .addText("provider", "Proveedor / taller", "")
-                .addText("cost", "Costo", "0")
-                .addText("nextDate", "Proxima fecha (opcional)", "")
-                .addText("nextKm", "Proximo km (opcional)", "");
+                .addText("cost", "Costo", "0", "Importe del mantenimiento")
+                .addText("nextDate", "Proxima fecha (opcional)", "", "Formato: AAAA-MM-DD")
+                .addText("nextKm", "Proximo km (opcional)", "", "Kilometraje del proximo servicio");
+        form.validate("date", Validators.date());
+        form.validate("odometer", Validators.number());
+        form.validate("cost", Validators.money());
+        form.validate("nextDate", Validators.date());
+        form.validate("nextKm", Validators.number());
         ModalForm.show(this, "Mantenimiento de " + vehicle.label(), form, () -> {
             LocalDate date = Dates.parseDate(form.text("date")).orElse(null);
             if (date == null) {
                 return Result.err("La fecha es obligatoria (yyyy-MM-dd)");
             }
-            BigDecimal odometer = number(form.text("odometer"));
+            BigDecimal odometer = Numbers.parseOrZero(form.text("odometer"));
             BigDecimal cost = Money.parse(form.text("cost")).orElse(BigDecimal.ZERO);
             LocalDate nextDate = form.text("nextDate").isBlank() ? null
                     : Dates.parseDate(form.text("nextDate")).orElse(null);
-            BigDecimal nextKm = form.text("nextKm").isBlank() ? null : number(form.text("nextKm"));
+            BigDecimal nextKm = form.text("nextKm").isBlank() ? null : Numbers.parseOrZero(form.text("nextKm"));
             Maintenance record = new Maintenance(0, vehicle.id(), vehicle.label(), date, odometer,
                     (MaintenanceType) form.selected("type"), form.text("work"), form.text("provider"),
                     cost, nextDate, nextKm);
             return maintenanceService.register(record);
         }, onSaved);
-    }
-
-    private BigDecimal number(String text) {
-        if (text == null || text.isBlank()) {
-            return BigDecimal.ZERO;
-        }
-        try {
-            return new BigDecimal(text.replace(",", ""));
-        } catch (NumberFormatException failure) {
-            return null;
-        }
-    }
-
-    private String plain(BigDecimal value) {
-        return value == null ? "0" : value.toPlainString();
     }
 }

@@ -1,24 +1,22 @@
 package mx.marjan.requests;
 
 import java.awt.BorderLayout;
-import java.awt.Dialog;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
-import javax.swing.JDialog;
+import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTable;
-import javax.swing.JTextArea;
 import javax.swing.JTextField;
-import javax.swing.SwingUtilities;
 import mx.marjan.clients.Client;
 import mx.marjan.clients.ClientService;
 import mx.marjan.fleet.Vehicle;
 import mx.marjan.operators.Employee;
 import mx.marjan.routes.Route;
 import mx.marjan.routes.RouteService;
+import mx.marjan.shared.Async;
 import mx.marjan.shared.BaseView;
 import mx.marjan.shared.Dates;
 import mx.marjan.shared.FormPanel;
@@ -27,14 +25,8 @@ import mx.marjan.shared.Money;
 import mx.marjan.shared.RecordTableModel;
 import mx.marjan.shared.Result;
 import mx.marjan.shared.Ui;
-import mx.marjan.trips.Delivery;
-import mx.marjan.trips.DeliveryService;
-import mx.marjan.trips.Trip;
+import mx.marjan.shared.Validators;
 import mx.marjan.trips.TripService;
-import mx.marjan.finance.AdvanceService;
-import mx.marjan.finance.ExpenseService;
-import mx.marjan.finance.Invoice;
-import mx.marjan.finance.InvoiceService;
 
 public class ServiceRequestsView extends BaseView {
 
@@ -42,10 +34,6 @@ public class ServiceRequestsView extends BaseView {
     private final ClientService clientService = new ClientService();
     private final RouteService routeService = new RouteService();
     private final TripService tripService = new TripService();
-    private final ExpenseService expenseService = new ExpenseService();
-    private final AdvanceService advanceService = new AdvanceService();
-    private final DeliveryService deliveryService = new DeliveryService();
-    private final InvoiceService invoiceService = new InvoiceService();
 
     private final RecordTableModel<ServiceRequest> model = new RecordTableModel<>(List.of(
             RecordTableModel.Column.of("Folio", ServiceRequest::folio),
@@ -62,10 +50,12 @@ public class ServiceRequestsView extends BaseView {
     private final JTextField folioField = new JTextField(10);
     private final JTextField fromField = new JTextField(10);
     private final JTextField toField = new JTextField(10);
-    private final javax.swing.JComboBox<Object> clientFilter = new javax.swing.JComboBox<>();
-    private final javax.swing.JComboBox<Object> statusFilter = new javax.swing.JComboBox<>();
+    private final JComboBox<Object> clientFilter = new JComboBox<>();
+    private final JComboBox<Object> statusFilter = new JComboBox<>();
 
     public ServiceRequestsView() {
+        Ui.onEnter(folioField, this::reload);
+        Ui.onDoubleClick(table, this::openDetail);
         add(buildFilters(), BorderLayout.NORTH);
         add(Ui.scroll(table), BorderLayout.CENTER);
         reloadClients();
@@ -75,13 +65,11 @@ public class ServiceRequestsView extends BaseView {
     }
 
     private void sweep() {
-        mx.marjan.shared.Async.run(() -> tripService.sweepLifecycle(),
-                changes -> {
-                    if (changes > 0) {
-                        reload();
-                    }
-                },
-                failure -> System.err.println("Lifecycle sweep failed: " + failure.getMessage()));
+        Async.run(() -> tripService.sweepLifecycle(), changes -> {
+            if (changes > 0) {
+                reload();
+            }
+        }, failure -> setStatus("No se pudo actualizar el ciclo de vida de las solicitudes"));
     }
 
     private JPanel buildFilters() {
@@ -98,15 +86,15 @@ public class ServiceRequestsView extends BaseView {
                 Ui.button("Limpiar", this::clearFilters),
                 Ui.button("Recargar", this::reload));
         JPanel actions = Ui.row(
-                Ui.button("Nueva", this::openNew),
-                Ui.button("Editar", this::openEdit),
-                Ui.button("Autorizar", this::openAuthorize),
-                Ui.button("Programar", this::openSchedule),
-                Ui.button("Asignar viaje", this::openAssign),
-                Ui.button("Cancelar", this::openCancel),
-                Ui.button("Cerrar", this::closeRequest),
-                Ui.button("Detalle", this::openDetail),
-                Ui.button("Eliminar", this::deleteRequest));
+                Ui.button("Nueva", "Registrar una solicitud de servicio", this::openNew),
+                Ui.button("Editar", "Editar los datos de la solicitud", this::openEdit),
+                Ui.button("Autorizar", "Definir la tarifa acordada", this::openAuthorize),
+                Ui.button("Programar", "Definir recoleccion y entrega", this::openSchedule),
+                Ui.button("Asignar viaje", "Elegir unidad y operador", this::openAssign),
+                Ui.button("Cancelar", "Cancelar la solicitud", this::openCancel),
+                Ui.button("Cerrar", "Cerrar la solicitud entregada", this::closeRequest),
+                Ui.button("Detalle", "Ver la historia completa de la solicitud", this::openDetail),
+                Ui.button("Eliminar", "Eliminar la solicitud y todo lo relacionado", this::deleteRequest));
         return Ui.column(filters, actions);
     }
 
@@ -146,44 +134,51 @@ public class ServiceRequestsView extends BaseView {
                 client instanceof Client c ? c.id() : null,
                 status instanceof RequestStatus s ? s : null,
                 from, to);
-        load(() -> {
+        loadRows(() -> {
             tripService.sweepLifecycle();
             return service.search(filter);
         }, model::setRows);
     }
 
     private ServiceRequest selected() {
-        int row = table.getSelectedRow();
-        return row < 0 ? null : model.rowAt(table.convertRowIndexToModel(row));
+        return selectedRow(table, model);
+    }
+
+    private ServiceRequest requireSelection() {
+        ServiceRequest request = selected();
+        if (request == null) {
+            Ui.info(this, "Seleccione una solicitud");
+        }
+        return request;
     }
 
     private void openNew() {
-        mx.marjan.shared.Async.run(
-                () -> new Object[] { clientService.listActive(), routeService.listAll() },
-                data -> {
-                    @SuppressWarnings("unchecked")
-                    List<Client> clients = (List<Client>) data[0];
-                    @SuppressWarnings("unchecked")
-                    List<Route> routes = (List<Route>) data[1];
-                    if (clients.isEmpty() || routes.isEmpty()) {
-                        Ui.info(this, "Se necesitan al menos un cliente y una ruta");
-                        return;
-                    }
-                    showNewForm(clients, routes);
-                },
-                failure -> Ui.failure(this, failure));
+        Async.run(() -> new Object[] { clientService.listActive(), routeService.listAll() }, data -> {
+            @SuppressWarnings("unchecked")
+            List<Client> clients = (List<Client>) data[0];
+            @SuppressWarnings("unchecked")
+            List<Route> routes = (List<Route>) data[1];
+            if (clients.isEmpty() || routes.isEmpty()) {
+                Ui.info(this, "Se necesitan al menos un cliente y una ruta");
+                return;
+            }
+            showNewForm(clients, routes);
+        }, failure -> Ui.failure(this, failure));
     }
 
     private void showNewForm(List<Client> clients, List<Route> routes) {
         FormPanel form = new FormPanel()
                 .addCombo("client", "Cliente", clients.toArray(), clients.get(0))
                 .addCombo("route", "Ruta", routes.toArray(), routes.get(0))
-                .addText("cargo", "Descripcion de la mercancia", "")
-                .addText("weight", "Peso aproximado (kg)", "0")
-                .addText("pickup", "Recoleccion (yyyy-MM-dd HH:mm)", "")
-                .addText("delivery", "Entrega (yyyy-MM-dd HH:mm)", "")
+                .addText("cargo", "Descripcion de la mercancia", "", "Que se va a transportar")
+                .addText("weight", "Peso aproximado (kg)", "0", "En kilogramos, ej. 1200")
+                .addText("pickup", "Recoleccion (opcional)", "", "Formato: AAAA-MM-DD HH:MM")
+                .addText("delivery", "Entrega (opcional)", "", "Formato: AAAA-MM-DD HH:MM")
                 .addCheck("documents", "Requiere documentacion", true)
-                .addArea("notes", "Observaciones", "");
+                .addArea("notes", "Observaciones", "", "Notas internas (opcional)");
+        form.validate("weight", Validators.number());
+        form.validate("pickup", Validators.dateTime());
+        form.validate("delivery", Validators.dateTime());
         ModalForm.show(this, "Nueva solicitud", form, () -> {
             Result<BigDecimal> weightResult = Money.require(form.text("weight"), "peso aproximado");
             if (weightResult.isErr()) {
@@ -194,7 +189,7 @@ public class ServiceRequestsView extends BaseView {
             LocalDateTime delivery = optionalDateTime(form.text("delivery"));
             if (!form.text("pickup").isBlank() && pickup == null
                     || !form.text("delivery").isBlank() && delivery == null) {
-                return Result.err("Las fechas deben tener el formato yyyy-MM-dd HH:mm");
+                return Result.err("Las fechas deben tener el formato AAAA-MM-DD HH:MM");
             }
             Client client = (Client) form.selected("client");
             Route route = (Route) form.selected("route");
@@ -207,45 +202,46 @@ public class ServiceRequestsView extends BaseView {
     }
 
     private void openEdit() {
-        ServiceRequest request = selected();
+        ServiceRequest request = requireSelection();
         if (request == null) {
-            Ui.info(this, "Seleccione una solicitud");
             return;
         }
         FormPanel form = new FormPanel()
-                .addText("cargo", "Descripcion de la mercancia", request.cargoDescription())
+                .addText("cargo", "Descripcion de la mercancia", request.cargoDescription(), "Que se va a transportar")
                 .addText("weight", "Peso aproximado (kg)",
-                        request.estimatedWeight() == null ? "0" : request.estimatedWeight().toPlainString())
+                        request.estimatedWeight() == null ? "0" : request.estimatedWeight().toPlainString(),
+                        "En kilogramos, ej. 1200")
                 .addCheck("documents", "Requiere documentacion", request.requiresDocuments())
-                .addArea("notes", "Observaciones", request.notes());
+                .addArea("notes", "Observaciones", request.notes(), "Notas internas (opcional)");
+        form.validate("weight", Validators.number());
         ModalForm.show(this, "Editar solicitud " + request.folio(), form, () -> {
             Result<BigDecimal> weightResult = Money.require(form.text("weight"), "peso aproximado");
             if (weightResult.isErr()) {
                 return weightResult;
             }
-            BigDecimal weight = weightResult.value();
             ServiceRequest updated = new ServiceRequest(request.id(), request.folio(),
                     request.clientId(), request.clientName(), request.routeId(), request.routeLabel(),
-                    form.text("cargo"), weight, request.pickupScheduled(), request.deliveryScheduled(),
-                    request.agreedRate(), form.checked("documents"), request.status(),
-                    form.text("notes"), request.createdAt());
+                    form.text("cargo"), weightResult.value(), request.pickupScheduled(),
+                    request.deliveryScheduled(), request.agreedRate(), form.checked("documents"),
+                    request.status(), form.text("notes"), request.createdAt());
             return service.update(updated);
         }, this::reload);
     }
 
     private void openAuthorize() {
-        ServiceRequest request = selected();
+        ServiceRequest request = requireSelection();
         if (request == null) {
-            Ui.info(this, "Seleccione una solicitud");
             return;
         }
-        mx.marjan.shared.Async.run(
+        Async.run(
                 () -> request.agreedRate() != null ? request.agreedRate()
                         : clientService.suggestRate(request.clientId(), request.routeId(), Dates.today())
                                 .orElse(BigDecimal.ZERO),
                 suggested -> {
                     FormPanel form = new FormPanel()
-                            .addText("rate", "Tarifa acordada", suggested.toPlainString());
+                            .addText("rate", "Tarifa acordada", suggested.toPlainString(),
+                                    "Importe sin IVA; se propone la tarifa del cliente")
+                            .validate("rate", Validators.money());
                     ModalForm.show(this, "Autorizar " + request.folio(), form, () -> {
                         Result<BigDecimal> rateResult = Money.require(form.text("rate"), "tarifa acordada");
                         return rateResult.isErr() ? rateResult
@@ -256,14 +252,17 @@ public class ServiceRequestsView extends BaseView {
     }
 
     private void openSchedule() {
-        ServiceRequest request = selected();
+        ServiceRequest request = requireSelection();
         if (request == null) {
-            Ui.info(this, "Seleccione una solicitud");
             return;
         }
         FormPanel form = new FormPanel()
-                .addText("pickup", "Recoleccion (yyyy-MM-dd HH:mm)", Dates.format(request.pickupScheduled()))
-                .addText("delivery", "Entrega (yyyy-MM-dd HH:mm)", Dates.format(request.deliveryScheduled()));
+                .addText("pickup", "Recoleccion", Dates.format(request.pickupScheduled()),
+                        "Formato: AAAA-MM-DD HH:MM")
+                .addText("delivery", "Entrega", Dates.format(request.deliveryScheduled()),
+                        "Formato: AAAA-MM-DD HH:MM");
+        form.validate("pickup", Validators.dateTime());
+        form.validate("delivery", Validators.dateTime());
         ModalForm.show(this, "Programar " + request.folio(), form, () -> {
             LocalDateTime pickup = Dates.parseDateTime(form.text("pickup")).orElse(null);
             LocalDateTime delivery = Dates.parseDateTime(form.text("delivery")).orElse(null);
@@ -272,16 +271,15 @@ public class ServiceRequestsView extends BaseView {
     }
 
     private void openAssign() {
-        ServiceRequest request = selected();
+        ServiceRequest request = requireSelection();
         if (request == null) {
-            Ui.info(this, "Seleccione una solicitud");
             return;
         }
         if (request.pickupScheduled() == null || request.deliveryScheduled() == null) {
             Ui.info(this, "La solicitud debe estar programada");
             return;
         }
-        mx.marjan.shared.Async.run(
+        Async.run(
                 () -> new java.util.AbstractMap.SimpleEntry<>(
                         tripService.eligibleVehicles(request.pickupScheduled(), request.deliveryScheduled()),
                         tripService.eligibleOperators(request.pickupScheduled(), request.deliveryScheduled())),
@@ -309,38 +307,33 @@ public class ServiceRequestsView extends BaseView {
     }
 
     private void openCancel() {
-        ServiceRequest request = selected();
+        ServiceRequest request = requireSelection();
         if (request == null) {
-            Ui.info(this, "Seleccione una solicitud");
             return;
         }
-        FormPanel form = new FormPanel().addArea("reason", "Motivo", "");
+        FormPanel form = new FormPanel().addArea("reason", "Motivo", "", "Razon de la cancelacion");
         ModalForm.show(this, "Cancelar " + request.folio(), form,
                 () -> service.cancel(request.id(), form.text("reason")), this::reload);
     }
 
     private void closeRequest() {
-        ServiceRequest request = selected();
+        ServiceRequest request = requireSelection();
         if (request == null) {
-            Ui.info(this, "Seleccione una solicitud");
             return;
         }
-        mx.marjan.shared.Async.run(() -> tripService.closeRequest(request.id()),
-                result -> {
-                    if (result.isErr()) {
-                        Ui.error(this, "No se puede cerrar", result.problems());
-                    } else {
-                        Ui.info(this, "Solicitud cerrada");
-                        reload();
-                    }
-                },
-                failure -> Ui.failure(this, failure));
+        Async.run(() -> tripService.closeRequest(request.id()), result -> {
+            if (result.isErr()) {
+                Ui.error(this, "No se puede cerrar", result.problems());
+            } else {
+                Ui.info(this, "Solicitud cerrada");
+                reload();
+            }
+        }, failure -> Ui.failure(this, failure));
     }
 
     private void deleteRequest() {
-        ServiceRequest request = selected();
+        ServiceRequest request = requireSelection();
         if (request == null) {
-            Ui.info(this, "Seleccione una solicitud");
             return;
         }
         Ui.delete(this, "la solicitud " + request.folio()
@@ -349,69 +342,11 @@ public class ServiceRequestsView extends BaseView {
     }
 
     private void openDetail() {
-        ServiceRequest request = selected();
+        ServiceRequest request = requireSelection();
         if (request == null) {
-            Ui.info(this, "Seleccione una solicitud");
             return;
         }
-        mx.marjan.shared.Async.run(() -> {
-            StringBuilder text = new StringBuilder();
-            text.append("Folio: ").append(request.folio()).append('\n')
-                    .append("Cliente: ").append(request.clientName()).append('\n')
-                    .append("Ruta: ").append(request.routeLabel()).append('\n')
-                    .append("Estado: ").append(request.status().label()).append('\n')
-                    .append("Tarifa: ").append(request.agreedRate() == null ? "-" : Money.format(request.agreedRate()))
-                    .append("\n\n");
-            tripService.findByRequest(request.id()).ifPresent(trip -> appendTrip(text, trip));
-            return text.toString();
-        }, text -> showDetailDialog(request, text), failure -> Ui.failure(this, failure));
-    }
-
-    private void showDetailDialog(ServiceRequest request, String text) {
-        javax.swing.JDialog dialog = new JDialog(SwingUtilities.getWindowAncestor(this),
-                "Detalle " + request.folio(), Dialog.ModalityType.APPLICATION_MODAL);
-        JTextArea area = new JTextArea(text, 18, 60);
-        area.setEditable(false);
-        dialog.add(Ui.scroll(area), BorderLayout.CENTER);
-        dialog.add(Ui.row(Ui.button("Cerrar", dialog::dispose)), BorderLayout.SOUTH);
-        dialog.pack();
-        dialog.setLocationRelativeTo(this);
-        dialog.setVisible(true);
-    }
-
-    private void appendTrip(StringBuilder text, Trip trip) {
-        text.append("--- Viaje ---\n")
-                .append("Unidad: ").append(trip.vehicleLabel()).append('\n')
-                .append("Operador: ").append(trip.employeeName()).append('\n')
-                .append("Estado: ").append(trip.status().label()).append('\n')
-                .append("Salida: ").append(Dates.format(trip.departure())).append('\n')
-                .append("Llegada: ").append(Dates.format(trip.arrival())).append('\n')
-                .append("Km reales: ").append(trip.actualKm() == null ? "-" : trip.actualKm()).append('\n');
-        BigDecimal expenses = expenseService.listByTrip(trip.id()).stream()
-                .map(expense -> expense.amount())
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        text.append("Gastos: ").append(Money.format(expenses)).append('\n')
-                .append("Anticipo: ").append(advanceService.balanceForTrip(trip.id()).label()).append('\n');
-        deliveryService.findByTrip(trip.id()).ifPresent(delivery -> appendDelivery(text, delivery));
-        invoiceService.findByRequest(trip.serviceRequestId())
-                .ifPresent(invoice -> appendInvoice(text, invoice));
-    }
-
-    private void appendDelivery(StringBuilder text, Delivery delivery) {
-        text.append("--- Entrega ---\n")
-                .append("Fecha: ").append(Dates.format(delivery.actualDatetime())).append('\n')
-                .append("Recibio: ").append(delivery.receivedBy()).append('\n')
-                .append("Evidencia: ").append(delivery.evidenceReference()).append('\n')
-                .append("Estado: ").append(delivery.status().label()).append('\n');
-    }
-
-    private void appendInvoice(StringBuilder text, Invoice invoice) {
-        text.append("--- Factura ---\n")
-                .append("No.: ").append(invoice.invoiceNumber()).append('\n')
-                .append("Importe: ").append(Money.format(invoice.amount())).append('\n')
-                .append("Pagado: ").append(Money.format(invoice.paid())).append('\n')
-                .append("Saldo: ").append(Money.format(invoice.balance())).append('\n')
-                .append("Estado: ").append(invoice.status().label()).append('\n');
+        ServiceRequestDetailDialog.show(this, request);
     }
 
     private LocalDateTime optionalDateTime(String text) {

@@ -1,23 +1,16 @@
 package mx.marjan.requests;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import mx.marjan.finance.InvoiceRepository;
 import mx.marjan.security.Permissions;
 import mx.marjan.security.Session;
-import mx.marjan.shared.Database;
 import mx.marjan.shared.Result;
-import mx.marjan.trips.TripRepository;
 
 public class ServiceRequestService {
 
     private final ServiceRequestRepository requests = new ServiceRequestRepository();
-    private final TripRepository trips = new TripRepository();
-    private final InvoiceRepository invoices = new InvoiceRepository();
 
     public List<ServiceRequest> search(RequestFilter filter) {
         return requests.search(filter);
@@ -36,46 +29,18 @@ public class ServiceRequestService {
         return requests.listPendingBilling();
     }
 
-    /** BR-01: assigns the next folio for the request's year. */
+    /** BR-01: the database assigns the next folio for the request's year. */
     public Result<ServiceRequest> create(ServiceRequest draft) {
         if (!Session.has(Permissions.REQUESTS_WRITE)) {
             return Result.err("No tiene permiso para crear solicitudes");
         }
-        List<String> problems = new ArrayList<>();
-        if (draft.clientId() == 0) {
-            problems.add("Debe seleccionar un cliente");
+        Result<Long> saved = requests.create(draft, Session.userId());
+        if (saved.isErr()) {
+            return Result.err(saved.problems());
         }
-        if (draft.routeId() == 0) {
-            problems.add("Debe seleccionar una ruta");
-        }
-        if (!mx.marjan.shared.Validators.isMeasure(draft.estimatedWeight())) {
-            problems.add("El peso estimado es invalido o excede el maximo permitido");
-        }
-        if (!mx.marjan.shared.Validators.isValidDate(
-                draft.pickupScheduled() == null ? null : draft.pickupScheduled().toLocalDate())
-                || !mx.marjan.shared.Validators.isValidDate(
-                        draft.deliveryScheduled() == null ? null : draft.deliveryScheduled().toLocalDate())) {
-            problems.add("Las fechas programadas no son validas");
-        }
-        if ((draft.pickupScheduled() == null) != (draft.deliveryScheduled() == null)) {
-            problems.add("Debe indicar ambas fechas o ninguna");
-        } else if (draft.pickupScheduled() != null
-                && !draft.deliveryScheduled().isAfter(draft.pickupScheduled())) {
-            problems.add("La fecha de entrega debe ser posterior a la de recoleccion");
-        }
-        if (!problems.isEmpty()) {
-            return Result.err(problems);
-        }
-        int year = draft.pickupScheduled() != null ? draft.pickupScheduled().getYear() : LocalDate.now().getYear();
-        String folio = FolioGenerator.format(year, requests.nextSequence(year));
-        ServiceRequest toInsert = new ServiceRequest(0, folio, draft.clientId(), draft.clientName(),
-                draft.routeId(), draft.routeLabel(), draft.cargoDescription(), draft.estimatedWeight(),
-                draft.pickupScheduled(), draft.deliveryScheduled(), draft.agreedRate(),
-                draft.requiresDocuments(), RequestStatus.REQUESTED, draft.notes(), LocalDateTime.now());
-        long userId = Session.userId();
-        Long id = mx.marjan.shared.Database.inTransaction(connection ->
-                requests.insert(connection, toInsert, userId));
-        return Result.ok(withId(toInsert, id));
+        return requests.findById(saved.value())
+                .map(Result::ok)
+                .orElse(Result.err("Solicitud no encontrada"));
     }
 
     /** BR-14: careful cascade; removes the request with its trip, costs, delivery and invoices. */
@@ -83,76 +48,42 @@ public class ServiceRequestService {
         if (!Session.has(Permissions.REQUESTS_WRITE)) {
             return Result.err("No tiene permiso para eliminar solicitudes");
         }
-        Database.inTransaction(connection -> {
-            trips.deleteByServiceRequest(connection, id);
-            invoices.deleteByRequest(connection, id);
-            Database.update(connection,
-                    "DELETE FROM audit_log WHERE entity = 'service_request' AND entity_id = ?", id);
-            requests.delete(connection, id);
-            return null;
-        });
-        return Result.ok(null);
+        return requests.delete(id);
     }
 
     public Result<ServiceRequest> update(ServiceRequest request) {
         if (!Session.has(Permissions.REQUESTS_WRITE)) {
             return Result.err("No tiene permiso para modificar solicitudes");
         }
-        if (!mx.marjan.shared.Validators.isMeasure(request.estimatedWeight())) {
-            return Result.err("El peso estimado es invalido o excede el maximo permitido");
-        }
-        requests.update(request, Session.userId());
-        return Result.ok(request);
+        Result<Void> saved = requests.update(request, Session.userId());
+        return saved.isErr() ? Result.err(saved.problems()) : Result.ok(request);
     }
 
     public Result<ServiceRequest> authorize(long id, BigDecimal rate) {
         if (!Session.has(Permissions.REQUESTS_WRITE)) {
             return Result.err("No tiene permiso para autorizar solicitudes");
         }
-        return requests.findById(id)
-                .map(request -> save(ServiceRequestFlow.authorize(request, rate)))
-                .orElse(Result.err("Solicitud no encontrada"));
+        return afterMove(requests.authorize(id, rate, Session.userId()), id);
     }
 
     public Result<ServiceRequest> schedule(long id, LocalDateTime pickup, LocalDateTime delivery) {
         if (!Session.has(Permissions.REQUESTS_WRITE)) {
             return Result.err("No tiene permiso para programar solicitudes");
         }
-        return requests.findById(id)
-                .map(request -> save(ServiceRequestFlow.schedule(request, pickup, delivery)))
-                .orElse(Result.err("Solicitud no encontrada"));
+        return afterMove(requests.schedule(id, pickup, delivery, Session.userId()), id);
     }
 
     public Result<ServiceRequest> cancel(long id, String reason) {
         if (!Session.has(Permissions.REQUESTS_WRITE)) {
             return Result.err("No tiene permiso para cancelar solicitudes");
         }
-        return requests.findById(id)
-                .map(request -> save(ServiceRequestFlow.cancel(request, reason)))
-                .orElse(Result.err("Solicitud no encontrada"));
+        return afterMove(requests.cancel(id, reason, Session.userId()), id);
     }
 
-    /** Used by trip assignment; the caller (TripService) already checked permission. */
-    public void markAssigned(long id) {
-        requests.findById(id).ifPresent(request -> {
-            requests.update(request.withStatus(RequestStatus.ASSIGNED), Session.userId());
-        });
-    }
-
-    private <T> Result<ServiceRequest> save(Result<ServiceRequest> moved) {
+    private Result<ServiceRequest> afterMove(Result<Void> moved, long id) {
         if (moved.isErr()) {
-            return moved;
+            return Result.err(moved.problems());
         }
-        ServiceRequest request = moved.value();
-        requests.update(request, Session.userId());
-        return Result.ok(request);
-    }
-
-    private ServiceRequest withId(ServiceRequest request, long id) {
-        return new ServiceRequest(id, request.folio(), request.clientId(), request.clientName(),
-                request.routeId(), request.routeLabel(), request.cargoDescription(),
-                request.estimatedWeight(), request.pickupScheduled(), request.deliveryScheduled(),
-                request.agreedRate(), request.requiresDocuments(), request.status(),
-                request.notes(), request.createdAt());
+        return requests.findById(id).map(Result::ok).orElse(Result.err("Solicitud no encontrada"));
     }
 }

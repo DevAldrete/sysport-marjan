@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.Optional;
 import mx.marjan.security.Permissions;
 import mx.marjan.security.Session;
-import mx.marjan.shared.Database;
 import mx.marjan.shared.Result;
 
 /** Use cases for clients and negotiated rates. Permission checks live here, not in the UI. */
@@ -31,16 +30,11 @@ public class ClientService {
         if (!Session.has(Permissions.CLIENTS_WRITE)) {
             return Result.err("No tiene permiso para modificar clientes");
         }
-        Result<Client> validated = ClientRules.validate(client);
-        if (validated.isErr()) {
-            return validated;
+        Result<Long> saved = clients.save(client);
+        if (saved.isErr()) {
+            return Result.err(saved.problems());
         }
-        if (client.id() == 0) {
-            Long id = Database.inTransaction(connection -> clients.insert(connection, client));
-            return Result.ok(client.withId(id));
-        }
-        clients.update(client);
-        return Result.ok(client);
+        return Result.ok(withId(client, saved.value()));
     }
 
     /** Hard delete. Fails (surfaced to the UI) when the client has related records. */
@@ -48,8 +42,7 @@ public class ClientService {
         if (!Session.has(Permissions.CLIENTS_WRITE)) {
             return Result.err("No tiene permiso para eliminar clientes");
         }
-        clients.delete(id);
-        return Result.ok(null);
+        return clients.delete(id);
     }
 
     public Result<Void> deactivate(long id) {
@@ -64,8 +57,7 @@ public class ClientService {
         if (!Session.has(Permissions.CLIENTS_WRITE)) {
             return Result.err("No tiene permiso para modificar clientes");
         }
-        clients.setStatus(id, status);
-        return Result.ok(null);
+        return clients.setStatus(id, status);
     }
 
     public List<ClientRate> ratesFor(long clientId) {
@@ -73,40 +65,31 @@ public class ClientService {
     }
 
     public Optional<BigDecimal> suggestRate(long clientId, long routeId, LocalDate date) {
-        return ClientRules.suggestRate(rates.listByClient(clientId), routeId, date);
+        return rates.suggestRate(clientId, routeId, date);
     }
 
     public Result<ClientRate> saveRate(ClientRate rate) {
         if (!Session.has(Permissions.RATES_WRITE)) {
             return Result.err("No tiene permiso para modificar tarifas");
         }
-        if (rate.routeId() == 0) {
-            return Result.err("Debe seleccionar una ruta");
+        Result<Long> saved = rates.save(rate);
+        if (saved.isErr()) {
+            return Result.err(saved.problems());
         }
-        if (rate.rate() == null || rate.rate().signum() <= 0
-                || !mx.marjan.shared.Validators.isMoney(rate.rate())) {
-            return Result.err("La tarifa debe ser mayor a cero y dentro del rango permitido");
-        }
-        if (rate.validFrom() == null) {
-            return Result.err("La fecha de vigencia inicial es obligatoria");
-        }
-        if (rate.validTo() != null && rate.validTo().isBefore(rate.validFrom())) {
-            return Result.err("La vigencia final no puede ser anterior a la inicial");
-        }
-        if (rate.id() == 0) {
-            Long id = Database.inTransaction(connection -> rates.insert(connection, rate));
-            return Result.ok(new ClientRate(id, rate.clientId(), rate.routeId(), rate.routeLabel(),
-                    rate.rate(), rate.validFrom(), rate.validTo()));
-        }
-        rates.update(rate);
-        return Result.ok(rate);
+        return Result.ok(new ClientRate(saved.value(), rate.clientId(), rate.routeId(),
+                rate.routeLabel(), rate.rate(), rate.validFrom(), rate.validTo()));
     }
 
     public Result<Void> deleteRate(long id) {
         if (!Session.has(Permissions.RATES_WRITE)) {
             return Result.err("No tiene permiso para eliminar tarifas");
         }
-        rates.delete(id);
-        return Result.ok(null);
+        return rates.delete(id);
+    }
+
+    private Client withId(Client client, long id) {
+        return new Client(id, client.name(), client.rfc(), client.address(), client.phone(),
+                client.email(), client.contactName(), client.clientType(), client.paymentTerms(),
+                client.creditLimit(), client.creditDays(), client.status());
     }
 }

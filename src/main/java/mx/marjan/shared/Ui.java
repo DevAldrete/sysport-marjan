@@ -20,7 +20,10 @@ public final class Ui {
     private Ui() {}
 
     public static void error(Component parent, String title, List<String> problems) {
-        JOptionPane.showMessageDialog(parent, String.join("\n", problems), title, JOptionPane.ERROR_MESSAGE);
+        String text = problems.size() <= 1
+                ? String.join("\n", problems)
+                : "\u2022 " + String.join("\n\u2022 ", problems);
+        JOptionPane.showMessageDialog(parent, text, title, JOptionPane.ERROR_MESSAGE);
     }
 
     public static void error(Component parent, String message) {
@@ -38,7 +41,8 @@ public final class Ui {
 
     public static void failure(Component parent, Throwable failure) {
         String message = failure.getMessage() == null ? failure.toString() : failure.getMessage();
-        error(parent, "Error inesperado", List.of(message));
+        String title = failure instanceof DataException ? "No se pudo completar la operacion" : "Error inesperado";
+        error(parent, title, List.of(message));
     }
 
     /** Confirms a hard delete, runs it off the EDT, and reports success or problems uniformly. */
@@ -59,6 +63,30 @@ public final class Ui {
         JButton button = new JButton(text);
         button.addActionListener(event -> action.run());
         return button;
+    }
+
+    /** A button with a hover hint, for actions whose label is not self-explanatory. */
+    public static JButton button(String text, String tooltip, Runnable action) {
+        JButton button = button(text, action);
+        button.setToolTipText(tooltip);
+        return button;
+    }
+
+    /** Runs an action when the user presses Enter in a search field. */
+    public static void onEnter(JTextField field, Runnable action) {
+        field.addActionListener(event -> action.run());
+    }
+
+    /** Runs an action when the user double-clicks a row (empty space is ignored). */
+    public static void onDoubleClick(JTable table, Runnable action) {
+        table.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent event) {
+                if (event.getClickCount() == 2 && table.rowAtPoint(event.getPoint()) >= 0) {
+                    action.run();
+                }
+            }
+        });
     }
 
     public static JPanel row(Component... components) {
@@ -100,7 +128,11 @@ public final class Ui {
     }
 
     public static JTable table(RecordTableModel<?> model) {
-        JTable table = new JTable(model);
+        return style(new JTable(model));
+    }
+
+    /** Applies the shared look (sorter, row height, left alignment) to any table. */
+    public static JTable style(JTable table) {
         table.setAutoCreateRowSorter(true);
         table.setRowHeight(24);
         DefaultTableCellRenderer renderer = new DefaultTableCellRenderer();

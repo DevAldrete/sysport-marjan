@@ -2,6 +2,7 @@ package mx.marjan.fleet;
 
 import java.awt.BorderLayout;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -11,9 +12,11 @@ import mx.marjan.shared.Dates;
 import mx.marjan.shared.FormPanel;
 import mx.marjan.shared.ModalForm;
 import mx.marjan.shared.Money;
+import mx.marjan.shared.Numbers;
 import mx.marjan.shared.RecordTableModel;
 import mx.marjan.shared.Result;
 import mx.marjan.shared.Ui;
+import mx.marjan.shared.Validators;
 import mx.marjan.trips.Trip;
 import mx.marjan.trips.TripService;
 
@@ -33,13 +36,7 @@ public class FuelLoadsView extends BaseView {
             RecordTableModel.Column.of("Odometro", FuelLoad::odometerReading)));
     private final JTable table = Ui.table(model);
 
-    private final FuelLoad[] selectedLoad = new FuelLoad[1];
-
     public FuelLoadsView() {
-        table.getSelectionModel().addListSelectionListener(event -> {
-            int row = table.getSelectedRow();
-            selectedLoad[0] = row < 0 ? null : model.rowAt(table.convertRowIndexToModel(row));
-        });
         add(Ui.row(Ui.button("Nueva carga", this::openNew),
                 Ui.button("Eliminar", this::deleteLoad),
                 Ui.button("Recargar", this::reload)), BorderLayout.NORTH);
@@ -48,17 +45,17 @@ public class FuelLoadsView extends BaseView {
     }
 
     private void deleteLoad() {
-        if (selectedLoad[0] == null) {
+        FuelLoad load = selectedRow(table, model);
+        if (load == null) {
             Ui.info(this, "Seleccione una carga");
             return;
         }
-        Ui.delete(this, "la carga seleccionada",
-                () -> service.delete(selectedLoad[0].id()), this::reload);
+        Ui.delete(this, "la carga seleccionada", () -> service.delete(load.id()), this::reload);
     }
 
     @Override
     public void reload() {
-        load(service::listAll, model::setRows);
+        loadRows(service::listAll, model::setRows);
     }
 
     private void openNew() {
@@ -82,45 +79,55 @@ public class FuelLoadsView extends BaseView {
         List<Object> tripOptions = new ArrayList<>();
         tripOptions.add("(sin viaje)");
         tripOptions.addAll(trips);
+        Vehicle initial = vehicles.get(0);
         FormPanel form = new FormPanel()
-                .addCombo("vehicle", "Unidad", vehicles.toArray(), vehicles.get(0))
+                .addCombo("vehicle", "Unidad", vehicles.toArray(), initial)
                 .addCombo("trip", "Viaje (opcional)", tripOptions.toArray(), "(sin viaje)")
-                .addText("station", "Estacion de servicio", "")
-                .addText("date", "Fecha y hora (yyyy-MM-dd HH:mm)", Dates.format(Dates.now()))
-                .addText("liters", "Litros", "0")
-                .addText("price", "Precio por litro", "0")
-                .addText("amount", "Importe", "0")
-                .addText("odometer", "Odometro", "0");
+                .addText("station", "Estacion de servicio", "", "Nombre o numero de la estacion")
+                .addText("date", "Fecha y hora", Dates.format(Dates.now()), "Formato: AAAA-MM-DD HH:MM")
+                .addText("liters", "Litros", "0", "Litros cargados, ej. 45.5")
+                .addText("price", "Precio por litro", "0", "Precio unitario, ej. 24.90");
+        form.addComputed("amount", "Importe", () -> Money.format(amountFor(form)));
+        form.addText("odometer", "Odometro (km)", Numbers.plain(initial.mileage()),
+                "Lectura del tablero; se propone el ultimo kilometraje de la unidad");
+        form.validate("date", Validators.dateTime());
+        form.validate("liters", Validators.number());
+        form.validate("price", Validators.number());
+        form.validate("odometer", Validators.number());
+        form.onSelect("vehicle", () -> {
+            Vehicle vehicle = (Vehicle) form.selected("vehicle");
+            if (vehicle != null) {
+                form.setText("odometer", Numbers.plain(vehicle.mileage()));
+            }
+        });
         ModalForm.show(this, "Nueva carga de combustible", form, () -> {
             Vehicle vehicle = (Vehicle) form.selected("vehicle");
             Object tripValue = form.selected("trip");
             Long tripId = tripValue instanceof Trip trip ? trip.id() : null;
             LocalDateTime date = Dates.parseDateTime(form.text("date")).orElse(null);
             if (date == null) {
-                return Result.err("La fecha es obligatoria (yyyy-MM-dd HH:mm)");
+                return Result.err("La fecha es obligatoria (AAAA-MM-DD HH:MM)");
             }
-            BigDecimal liters = number(form.text("liters"));
-            BigDecimal price = number(form.text("price"));
-            BigDecimal amount = number(form.text("amount"));
-            BigDecimal odometer = number(form.text("odometer"));
-            if (liters == null || price == null || amount == null || odometer == null) {
-                return Result.err("Litros, precio, importe y odometro deben ser numeros");
+            BigDecimal liters = Numbers.parseOrZero(form.text("liters"));
+            BigDecimal price = Numbers.parseOrZero(form.text("price"));
+            BigDecimal odometer = Numbers.parseOrZero(form.text("odometer"));
+            if (liters == null || price == null || odometer == null) {
+                return Result.err("Litros, precio y odometro deben ser numeros");
             }
             FuelLoad load = new FuelLoad(0, vehicle.id(), vehicle.label(), tripId,
                     tripValue instanceof Trip trip ? trip.folio() : "", form.text("station"),
-                    date, liters, price, amount, odometer);
+                    date, liters, price, amountFor(form), odometer);
             return service.register(load);
         }, this::reload);
     }
 
-    private BigDecimal number(String text) {
-        if (text == null || text.isBlank()) {
+    /** The importe is always liters x price; the database rejects a mismatch. */
+    private static BigDecimal amountFor(FormPanel form) {
+        BigDecimal liters = Numbers.parseOrZero(form.text("liters"));
+        BigDecimal price = Numbers.parseOrZero(form.text("price"));
+        if (liters == null || price == null) {
             return BigDecimal.ZERO;
         }
-        try {
-            return new BigDecimal(text.replace(",", ""));
-        } catch (NumberFormatException failure) {
-            return null;
-        }
+        return liters.multiply(price).setScale(2, RoundingMode.HALF_UP);
     }
 }

@@ -5,13 +5,10 @@ import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
 import mx.marjan.shared.Database;
+import mx.marjan.shared.Result;
 
+/** Thin JDBC wrapper over the client stored procedures. */
 public class ClientRepository {
-
-    private static final String COLUMNS = """
-            id, name, rfc, address, phone, email, contact_name,
-            client_type, payment_terms, credit_limit, credit_days, status
-            """;
 
     private Client map(ResultSet rs) throws SQLException {
         return new Client(
@@ -30,55 +27,31 @@ public class ClientRepository {
     }
 
     public List<Client> search(String term) {
-        if (term == null || term.isBlank()) {
-            return Database.queryList("SELECT " + COLUMNS + " FROM clients ORDER BY name", this::map);
-        }
-        String like = "%" + term.trim() + "%";
-        return Database.queryList("SELECT " + COLUMNS + """
-                 FROM clients WHERE name LIKE ? OR rfc LIKE ? ORDER BY name
-                """, this::map, like, like);
+        String value = term == null || term.isBlank() ? null : term.trim();
+        return Database.callList("{call sp_clients_search(?)}", this::map, value);
     }
 
     public List<Client> listActive() {
-        return Database.queryList(
-                "SELECT " + COLUMNS + " FROM clients WHERE status = 'active' ORDER BY name", this::map);
+        return Database.callList("{call sp_clients_active()}", this::map);
     }
 
     public Optional<Client> findById(long id) {
-        return Database.queryOne("SELECT " + COLUMNS + " FROM clients WHERE id = ?", this::map, id);
+        return Database.callOne("{call sp_client_by_id(?)}", this::map, id);
     }
 
-    public long insert(java.sql.Connection connection, Client client) throws SQLException {
-        long id = mx.marjan.shared.Sequences.next(connection, "clients");
-        Database.update(connection, """
-                INSERT INTO clients
-                  (id, name, rfc, address, phone, email, contact_name, client_type,
-                   payment_terms, credit_limit, credit_days, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                id, client.name(), client.rfc(), client.address(), client.phone(), client.email(),
-                client.contactName(), client.clientType().dbValue(), client.paymentTerms().dbValue(),
-                client.creditLimit(), client.creditDays(), client.status().dbValue());
-        return id;
+    public Result<Long> save(Client client) {
+        return Database.callForId("{call sp_client_save(?,?,?,?,?,?,?,?,?,?,?,?,?,?)}",
+                client.id(), client.name(), client.rfc(), client.address(), client.phone(),
+                client.email(), client.contactName(), client.clientType().dbValue(),
+                client.paymentTerms().dbValue(), client.creditLimit(), client.creditDays(),
+                client.status().dbValue());
     }
 
-    public void update(Client client) {
-        Database.update("""
-                UPDATE clients SET
-                  name = ?, rfc = ?, address = ?, phone = ?, email = ?, contact_name = ?,
-                  client_type = ?, payment_terms = ?, credit_limit = ?, credit_days = ?, status = ?
-                WHERE id = ?
-                """,
-                client.name(), client.rfc(), client.address(), client.phone(), client.email(),
-                client.contactName(), client.clientType().dbValue(), client.paymentTerms().dbValue(),
-                client.creditLimit(), client.creditDays(), client.status().dbValue(), client.id());
+    public Result<Void> setStatus(long id, ClientStatus status) {
+        return Database.callVoid("{call sp_client_set_status(?,?,?)}", id, status.dbValue());
     }
 
-    public void setStatus(long id, ClientStatus status) {
-        Database.update("UPDATE clients SET status = ? WHERE id = ?", status.dbValue(), id);
-    }
-
-    public void delete(long id) {
-        Database.update("DELETE FROM clients WHERE id = ?", id);
+    public Result<Void> delete(long id) {
+        return Database.callVoid("{call sp_client_delete(?,?)}", id);
     }
 }

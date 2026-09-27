@@ -2,21 +2,15 @@ package mx.marjan.security;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import mx.marjan.shared.Database;
 
-/** The only place with SQL for users, roles and permissions. */
+/** The only place with SQL for users, roles and permissions (stored procedures). */
 public class UserRepository {
-
-    private static final String BASE = """
-            SELECT u.id, u.employee_id, u.username, u.password_hash,
-                   u.role_id, r.name AS role_name, u.status
-            FROM users u
-            JOIN roles r ON r.id = u.role_id
-            """;
 
     private User map(ResultSet rs) throws SQLException {
         Long employeeId = rs.getObject("employee_id", Long.class);
@@ -31,59 +25,46 @@ public class UserRepository {
     }
 
     public Optional<User> findByUsername(String username) {
-        return Database.queryOne(BASE + " WHERE u.username = ?", this::map, username);
+        return Database.callOne("{call sp_user_by_username(?)}", this::map, username);
     }
 
     public Optional<User> findById(long id) {
-        return Database.queryOne(BASE + " WHERE u.id = ?", this::map, id);
+        return Database.callOne("{call sp_user_by_id(?)}", this::map, id);
     }
 
     public List<User> list() {
-        return Database.queryList(BASE + " ORDER BY u.username", this::map);
+        return Database.callList("{call sp_users_list()}", this::map);
     }
 
     public List<Role> roles() {
-        return Database.queryList("SELECT id, name FROM roles ORDER BY name",
+        return Database.callList("{call sp_roles_list()}",
                 rs -> new Role(rs.getLong("id"), rs.getString("name")));
     }
 
     public Set<String> permissionsForRole(long roleId) {
-        List<String> names = Database.queryList("""
-                SELECT p.name
-                FROM role_permissions rp
-                JOIN permissions p ON p.id = rp.permission_id
-                WHERE rp.role_id = ?
-                ORDER BY p.name
-                """, rs -> rs.getString("name"), roleId);
+        List<String> names = Database.callList("{call sp_role_permissions(?)}",
+                rs -> rs.getString("name"), roleId);
         return new LinkedHashSet<>(names);
     }
 
-    public List<String> permissions() {
-        return Database.queryList("SELECT name FROM permissions ORDER BY name", rs -> rs.getString("name"));
-    }
-
-    public long insert(java.sql.Connection connection, String username, String passwordHash, long roleId,
-            Long employeeId, UserStatus status) throws SQLException {
-        long id = mx.marjan.shared.Sequences.next(connection, "users");
-        Database.update(connection, """
-                INSERT INTO users (id, username, password_hash, role_id, employee_id, status)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """, id, username, passwordHash, roleId, employeeId, status.dbValue());
-        return id;
+    public long insert(String username, String passwordHash, long roleId, Long employeeId,
+            UserStatus status) {
+        Object[] out = Database.call("{call sp_user_insert(?,?,?,?,?,?)}",
+                new int[] { Types.BIGINT }, username, passwordHash, roleId, employeeId,
+                status.dbValue());
+        return Database.asLong(out[0]);
     }
 
     public void delete(long id) {
-        Database.update("DELETE FROM users WHERE id = ?", id);
+        Database.callNoOut("{call sp_user_delete(?)}", id);
     }
 
     public void update(long id, String username, long roleId, Long employeeId, UserStatus status) {
-        Database.update("""
-                UPDATE users SET username = ?, role_id = ?, employee_id = ?, status = ?
-                WHERE id = ?
-                """, username, roleId, employeeId, status.dbValue(), id);
+        Database.callNoOut("{call sp_user_update(?,?,?,?,?)}",
+                id, username, roleId, employeeId, status.dbValue());
     }
 
     public void updatePassword(long id, String passwordHash) {
-        Database.update("UPDATE users SET password_hash = ? WHERE id = ?", passwordHash, id);
+        Database.callNoOut("{call sp_user_update_password(?,?)}", id, passwordHash);
     }
 }

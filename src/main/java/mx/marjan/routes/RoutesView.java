@@ -1,5 +1,7 @@
 package mx.marjan.routes;
 
+import mx.marjan.shared.Numbers;
+
 import java.awt.BorderLayout;
 import java.math.BigDecimal;
 import java.util.List;
@@ -12,6 +14,7 @@ import mx.marjan.shared.ModalForm;
 import mx.marjan.shared.RecordTableModel;
 import mx.marjan.shared.Result;
 import mx.marjan.shared.Ui;
+import mx.marjan.shared.Validators;
 
 public class RoutesView extends BaseView {
 
@@ -25,6 +28,8 @@ public class RoutesView extends BaseView {
     private final JTextField searchField = new JTextField(18);
 
     public RoutesView() {
+        Ui.onEnter(searchField, this::reload);
+        Ui.onDoubleClick(table, this::openEdit);
         add(Ui.row(new JLabel("Buscar:"), searchField,
                 Ui.button("Buscar", this::reload),
                 Ui.button("Nuevo", this::openNew),
@@ -48,12 +53,11 @@ public class RoutesView extends BaseView {
     @Override
     public void reload() {
         String term = searchField.getText();
-        load(() -> service.search(term), model::setRows);
+        loadRows(() -> service.search(term), model::setRows);
     }
 
     private Route selected() {
-        int row = table.getSelectedRow();
-        return row < 0 ? null : model.rowAt(table.convertRowIndexToModel(row));
+        return selectedRow(table, model);
     }
 
     private void openNew() {
@@ -72,13 +76,14 @@ public class RoutesView extends BaseView {
     private void openForm(Route route) {
         boolean isNew = route.id() == 0;
         FormPanel form = new FormPanel()
-                .addText("origin", "Origen", route.origin())
-                .addText("destination", "Destino", route.destination())
-                .addText("km", "Km estimados", route.estimatedKm() == null ? "0" : route.estimatedKm().toPlainString())
-                .addArea("description", "Descripcion", route.description());
+                .addText("origin", "Origen", route.origin(), "Ciudad o punto de salida")
+                .addText("destination", "Destino", route.destination(), "Ciudad o punto de entrega")
+                .addText("km", "Km estimados", route.estimatedKm() == null ? "0" : route.estimatedKm().toPlainString(),
+                        "Distancia aproximada en kilometros")
+                .addArea("description", "Descripcion", route.description(), "Notas de la ruta (opcional)");
+        form.validate("km", Validators.number());
         ModalForm.show(this, isNew ? "Nueva ruta" : "Editar ruta", form, () -> {
-            BigDecimal km = form.text("km").isBlank() ? BigDecimal.ZERO
-                    : parse(form.text("km"));
+            BigDecimal km = Numbers.parseOrZero(form.text("km"));
             if (km == null) {
                 return Result.err("Los km estimados deben ser un numero");
             }
@@ -86,13 +91,5 @@ public class RoutesView extends BaseView {
                     km, form.text("description"));
             return service.save(built);
         }, this::reload);
-    }
-
-    private BigDecimal parse(String text) {
-        try {
-            return new BigDecimal(text.replace(",", ""));
-        } catch (NumberFormatException failure) {
-            return null;
-        }
     }
 }

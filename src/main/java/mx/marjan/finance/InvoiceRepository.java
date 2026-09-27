@@ -1,24 +1,17 @@
 package mx.marjan.finance;
 
-import java.sql.Connection;
+import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import mx.marjan.shared.Database;
+import mx.marjan.shared.Result;
 
+/** Thin JDBC wrapper over the invoice stored procedures. */
 public class InvoiceRepository {
-
-    private static final String BASE = """
-            SELECT i.id, i.client_id, c.name AS client_name, i.service_request_id, sr.folio,
-                   i.invoice_number, i.amount, i.issue_date, i.due_date, i.status,
-                   COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.id), 0) AS paid
-            FROM invoices i
-            JOIN clients c ON c.id = i.client_id
-            JOIN service_requests sr ON sr.id = i.service_request_id
-            """;
 
     private Invoice map(ResultSet rs) throws SQLException {
         return new Invoice(
@@ -36,69 +29,45 @@ public class InvoiceRepository {
     }
 
     public List<Invoice> search(InvoiceStatus status, Long clientId) {
-        List<String> conditions = new ArrayList<>();
-        List<Object> params = new ArrayList<>();
-        if (status != null) {
-            conditions.add("i.status = ?");
-            params.add(status.dbValue());
-        }
-        if (clientId != null) {
-            conditions.add("i.client_id = ?");
-            params.add(clientId);
-        }
-        String sql = BASE + (conditions.isEmpty() ? "" : " WHERE " + String.join(" AND ", conditions))
-                + " ORDER BY i.issue_date DESC";
-        return Database.queryList(sql, this::map, params.toArray());
+        return Database.callList("{call sp_invoices_search(?,?)}",
+                this::map, status == null ? null : status.dbValue(), clientId);
     }
 
     public Optional<Invoice> findById(long id) {
-        return Database.queryOne(BASE + " WHERE i.id = ?", this::map, id);
+        return Database.callOne("{call sp_invoice_by_id(?)}", this::map, id);
     }
 
     public Optional<Invoice> findByRequest(long serviceRequestId) {
-        return Database.queryOne(BASE + " WHERE i.service_request_id = ?", this::map, serviceRequestId);
+        return Database.callOne("{call sp_invoice_by_request(?)}", this::map, serviceRequestId);
     }
 
-    public long nextSequence(int year) {
-        return Database.queryOne("""
-                SELECT COALESCE(MAX(CAST(SUBSTRING(invoice_number, 10) AS UNSIGNED)), 0) + 1 AS next_seq
-                FROM invoices WHERE invoice_number LIKE ?
-                """, rs -> rs.getLong("next_seq"), "INV-" + year + "-%").orElse(1L);
+    /** BR-20: one invoice per delivered/closed request; due date from payment terms. */
+    public Result<Long> createFromRequest(long requestId, LocalDate issueDate, BigDecimal amount,
+            long userId) {
+        return Database.callForProblemsAndId("{call sp_create_invoice_from_request(?,?,?,?,?,?)}",
+                requestId, issueDate, amount, userId);
     }
 
-    public long insert(Connection connection, Invoice invoice, long userId) throws SQLException {
-        long id = mx.marjan.shared.Sequences.next(connection, "invoices");
-        Database.update(connection, """
-                INSERT INTO invoices
-                  (id, client_id, service_request_id, invoice_number, amount, issue_date, due_date,
-                   status, created_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, id, invoice.clientId(), invoice.serviceRequestId(), invoice.invoiceNumber(),
-                invoice.amount(), invoice.issueDate(), invoice.dueDate(),
-                invoice.status().dbValue(), userId);
-        return id;
+    public Result<Void> delete(long id) {
+        return Database.callVoid("{call sp_invoice_delete(?,?)}", id);
     }
 
-    /** Careful cascade: removes the invoice and its payments. */
-    public void deleteCascade(Connection connection, long id) throws SQLException {
-        Database.update(connection, "DELETE FROM payments WHERE invoice_id = ?", id);
-        Database.update(connection, "DELETE FROM invoices WHERE id = ?", id);
+    /** BR-19: cancel a pending/overdue invoice that has no payments yet. */
+    public Result<Void> cancel(long id) {
+        return Database.callVoid("{call sp_cancel_invoice(?,?)}", id);
     }
 
-    /** Careful cascade: removes the request's invoices and their payments. */
-    public void deleteByRequest(Connection connection, long serviceRequestId) throws SQLException {
-        Database.update(connection, """
-                DELETE FROM payments WHERE invoice_id IN
-                  (SELECT id FROM invoices WHERE service_request_id = ?)
-                """, serviceRequestId);
-        Database.update(connection, "DELETE FROM invoices WHERE service_request_id = ?", serviceRequestId);
+    /** BR-19 / FR-INV-3: recompute paid/overdue for every open invoice. Returns how many changed. */
+    public int refreshStatuses(LocalDate today) {
+        Object[] out = Database.call("{call sp_refresh_invoice_statuses(?,?)}",
+                new int[] { Types.INTEGER }, today);
+        return out[0] == null ? 0 : ((Number) out[0]).intValue();
     }
 
-    public void updateStatus(long id, InvoiceStatus status) {
-        Database.update("UPDATE invoices SET status = ? WHERE id = ?", status.dbValue(), id);
-    }
-
-    public void updateStatus(Connection connection, long id, InvoiceStatus status) throws SQLException {
-        Database.update(connection, "UPDATE invoices SET status = ? WHERE id = ?", status.dbValue(), id);
+    /** BR-19: register a payment and re-derive the invoice status, in one transaction. */
+    public Result<Void> registerPayment(long invoiceId, BigDecimal amount, LocalDate date,
+            String method, long userId) {
+        return Database.callVoid("{call sp_register_payment(?,?,?,?,?,?)}",
+                invoiceId, amount, date, method, userId);
     }
 }
