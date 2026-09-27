@@ -533,22 +533,27 @@ END$$
 
 -- Allocates the next id for a table from the sequences row (same policy as
 -- SequenceRepository: no AUTO_INCREMENT, primed from max(id) when missing).
+-- Allocates the next id for a table. The common path is a single atomic
+-- UPDATE whose value is read back through LAST_INSERT_ID(), so two sessions
+-- can never receive the same id (the old UPDATE-then-SELECT could).
 CREATE PROCEDURE sp_next_id(IN p_name VARCHAR(50), OUT p_id BIGINT)
 p: BEGIN
-  DECLARE v_updated INT DEFAULT 0;
-  UPDATE sequences SET next_value = next_value + 1 WHERE name = p_name;
-  SET v_updated = ROW_COUNT();
-  IF v_updated = 0 THEN
+  DECLARE v_exists INT DEFAULT 0;
+  SELECT COUNT(*) INTO v_exists FROM sequences WHERE name = p_name;
+  IF v_exists = 0 THEN
+    -- First use of an unprimed sequence: continue after the table's max id.
     SET @seq_table := p_name;
     SET @seq_max := 0;
     SET @seq_sql := CONCAT('SELECT COALESCE(MAX(id),0) INTO @seq_max FROM `', @seq_table, '`');
     PREPARE seq_stmt FROM @seq_sql;
     EXECUTE seq_stmt;
     DEALLOCATE PREPARE seq_stmt;
-    INSERT INTO sequences(name, next_value) VALUES (p_name, @seq_max);
-    UPDATE sequences SET next_value = next_value + 1 WHERE name = p_name;
+    INSERT INTO sequences(name, next_value) VALUES (p_name, @seq_max + 1);
+    SET p_id = @seq_max + 1;
+  ELSE
+    UPDATE sequences SET next_value = LAST_INSERT_ID(next_value + 1) WHERE name = p_name;
+    SET p_id = LAST_INSERT_ID();
   END IF;
-  SELECT next_value INTO p_id FROM sequences WHERE name = p_name;
 END$$
 
 -- ------------------------------------------------- rules: validate a trip assignment
@@ -861,7 +866,7 @@ p: BEGIN
 
   SELECT status, pickup_date_scheduled, delivery_date_scheduled
     INTO v_req_status, v_start, v_end
-    FROM service_requests WHERE id = p_request_id;
+    FROM service_requests WHERE id = p_request_id FOR UPDATE;
   IF v_req_status IS NULL THEN
     ROLLBACK; SET p_problems = 'Solicitud no encontrada'; LEAVE p;
   END IF;
@@ -1098,6 +1103,7 @@ p: BEGIN
   DECLARE v_issue DATE;
   DECLARE v_due DATE;
   DECLARE v_amount DECIMAL(12,2);
+  DECLARE v_number VARCHAR(30);
   DECLARE EXIT HANDLER FOR SQLEXCEPTION
   BEGIN
     ROLLBACK; SET p_problems = 'Error inesperado al crear la factura';
@@ -1128,10 +1134,13 @@ p: BEGIN
   END IF;
   SET v_issue = COALESCE(p_issue, CURDATE());
   SET v_due = fn_invoice_due_date(v_issue, v_terms, v_credit_days);
+  -- Allocate the id first (locks the invoices sequence row through commit) so
+  -- the MAX()+1 invoice number cannot race a concurrent creation.
   CALL sp_next_id('invoices', p_invoice_id);
+  SET v_number = fn_next_invoice_number(YEAR(v_issue));
   INSERT INTO invoices (id, client_id, service_request_id, invoice_number, amount,
                         issue_date, due_date, status, created_by)
-    VALUES (p_invoice_id, v_client, p_request_id, fn_next_invoice_number(YEAR(v_issue)),
+    VALUES (p_invoice_id, v_client, p_request_id, v_number,
             v_amount, v_issue, v_due, 'pending', p_user_id);
   COMMIT;
 END$$
@@ -2114,6 +2123,10 @@ CREATE PROCEDURE sp_request_create(IN p_client_id BIGINT, IN p_route_id BIGINT,
 p: BEGIN
   DECLARE v_year INT;
   DECLARE v_folio VARCHAR(20);
+  DECLARE EXIT HANDLER FOR SQLEXCEPTION
+  BEGIN
+    ROLLBACK; SET p_problems = 'Error inesperado al crear la solicitud';
+  END;
   SET p_problems = NULL;
   IF p_client_id IS NULL OR p_client_id = 0 THEN
     SET p_problems = CONCAT_WS('; ', p_problems, 'Debe seleccionar un cliente');
@@ -2134,15 +2147,19 @@ p: BEGIN
   END IF;
   IF p_problems IS NOT NULL THEN LEAVE p; END IF;
 
+  START TRANSACTION;
+  -- Allocate the id first: holding the service_requests sequence row until
+  -- commit serialises folio generation, so fn_next_folio's MAX()+1 is safe.
+  CALL sp_next_id('service_requests', p_id);
   SET v_year = YEAR(COALESCE(p_pickup, CURDATE()));
   SET v_folio = fn_next_folio(v_year);
-  CALL sp_next_id('service_requests', p_id);
   INSERT INTO service_requests
     (id, folio, client_id, route_id, cargo_description, estimated_weight,
      pickup_date_scheduled, delivery_date_scheduled, agreed_rate,
      requires_documents, status, notes, created_by, updated_by)
   VALUES (p_id, v_folio, p_client_id, p_route_id, p_cargo, p_weight, p_pickup, p_delivery,
           p_rate, COALESCE(p_requires_documents, TRUE), 'requested', p_notes, p_user_id, p_user_id);
+  COMMIT;
 END$$
 
 -- Edits the request data only. Status is owned by the action procedures
