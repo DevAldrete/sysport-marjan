@@ -1570,9 +1570,17 @@ p: BEGIN
   DELETE FROM clients WHERE id = p_id;
 END$$
 
-CREATE PROCEDURE sp_client_set_status(IN p_id BIGINT, IN p_status VARCHAR(20))
+-- Only the manual lifecycle states can be set by hand; 'active'/'inactive'.
+CREATE PROCEDURE sp_client_set_status(IN p_id BIGINT, IN p_status VARCHAR(20), OUT p_problems TEXT)
 p: BEGIN
+  SET p_problems = NULL;
+  IF p_status NOT IN ('active','inactive') THEN
+    SET p_problems = 'Estado de cliente no valido'; LEAVE p;
+  END IF;
   UPDATE clients SET status = p_status WHERE id = p_id;
+  IF ROW_COUNT() = 0 THEN
+    SET p_problems = 'Cliente no encontrado';
+  END IF;
 END$$
 
 CREATE PROCEDURE sp_client_rates_by_client(IN p_client_id BIGINT)
@@ -1692,10 +1700,12 @@ p: BEGIN
   FROM vehicles WHERE id = p_id;
 END$$
 
+-- Status is not editable here: new vehicles start 'available' and later changes
+-- go through sp_vehicle_set_status or the trip lifecycle.
 CREATE PROCEDURE sp_vehicle_save(IN p_id BIGINT, IN p_code VARCHAR(30), IN p_plates VARCHAR(20),
     IN p_brand VARCHAR(50), IN p_model VARCHAR(50), IN p_year INT, IN p_serial VARCHAR(60),
     IN p_type VARCHAR(50), IN p_capacity DECIMAL(10,1), IN p_mileage DECIMAL(10,1),
-    IN p_status VARCHAR(20), OUT p_new_id BIGINT, OUT p_problems TEXT)
+    OUT p_new_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
   SET p_problems = NULL;
   IF p_code IS NULL OR p_code = '' THEN
@@ -1723,20 +1733,32 @@ p: BEGIN
     INSERT INTO vehicles (id, internal_code, plates, brand, model, year, serial_number,
                           vehicle_type, load_capacity, mileage, status)
     VALUES (p_new_id, p_code, p_plates, p_brand, p_model, p_year, p_serial, p_type,
-            p_capacity, COALESCE(p_mileage, 0), COALESCE(p_status, 'available'));
+            p_capacity, COALESCE(p_mileage, 0), 'available');
   ELSE
     SET p_new_id = p_id;
     UPDATE vehicles SET internal_code = p_code, plates = p_plates, brand = p_brand,
                         model = p_model, year = p_year, serial_number = p_serial,
                         vehicle_type = p_type, load_capacity = p_capacity,
-                        mileage = COALESCE(p_mileage, 0), status = COALESCE(p_status, 'available')
+                        mileage = COALESCE(p_mileage, 0)
     WHERE id = p_id;
   END IF;
 END$$
 
-CREATE PROCEDURE sp_vehicle_set_status(IN p_id BIGINT, IN p_status VARCHAR(20))
+-- Manual conditions only: 'assigned'/'on_trip' are owned by the trip lifecycle
+-- (assignment/departure/arrival), and a vehicle with an active trip is locked.
+CREATE PROCEDURE sp_vehicle_set_status(IN p_id BIGINT, IN p_status VARCHAR(20), OUT p_problems TEXT)
 p: BEGIN
+  SET p_problems = NULL;
+  IF p_status NOT IN ('available','maintenance','out_of_service','decommissioned') THEN
+    SET p_problems = 'Estado de unidad no valido para cambio manual'; LEAVE p;
+  END IF;
+  IF (SELECT COUNT(*) FROM trips WHERE vehicle_id = p_id AND status IN ('scheduled','in_transit')) > 0 THEN
+    SET p_problems = 'La unidad tiene un viaje activo; no se puede cambiar el estado'; LEAVE p;
+  END IF;
   UPDATE vehicles SET status = p_status WHERE id = p_id;
+  IF ROW_COUNT() = 0 THEN
+    SET p_problems = 'Unidad no encontrada';
+  END IF;
 END$$
 
 CREATE PROCEDURE sp_vehicle_raise_mileage(IN p_id BIGINT, IN p_reading DECIMAL(10,1))
@@ -1813,11 +1835,13 @@ p: BEGIN
   ORDER BY e.name;
 END$$
 
+-- Status is not editable here: new employees start 'available' and later changes
+-- go through sp_employee_set_status or the trip lifecycle.
 CREATE PROCEDURE sp_employee_save(IN p_id BIGINT, IN p_name VARCHAR(150), IN p_address VARCHAR(255),
     IN p_phone VARCHAR(30), IN p_email VARCHAR(150), IN p_rfc VARCHAR(13), IN p_curp VARCHAR(18),
     IN p_ec_name VARCHAR(150), IN p_ec_phone VARCHAR(30), IN p_license_id BIGINT,
     IN p_license_number VARCHAR(50), IN p_license_type VARCHAR(50), IN p_license_issue DATE,
-    IN p_license_expiry DATE, IN p_status VARCHAR(20),
+    IN p_license_expiry DATE,
     OUT p_new_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
   DECLARE v_license_id BIGINT DEFAULT NULL;
@@ -1875,13 +1899,12 @@ p: BEGIN
     INSERT INTO employees (id, name, address, phone, email, rfc, curp,
                            emergency_contact_name, emergency_contact_phone, license_id, status)
     VALUES (p_new_id, p_name, p_address, p_phone, p_email, p_rfc, p_curp,
-            p_ec_name, p_ec_phone, v_license_id, COALESCE(p_status, 'available'));
+            p_ec_name, p_ec_phone, v_license_id, 'available');
   ELSE
     SET p_new_id = p_id;
     UPDATE employees SET name = p_name, address = p_address, phone = p_phone, email = p_email,
                          rfc = p_rfc, curp = p_curp, emergency_contact_name = p_ec_name,
-                         emergency_contact_phone = p_ec_phone, license_id = v_license_id,
-                         status = COALESCE(p_status, 'available')
+                         emergency_contact_phone = p_ec_phone, license_id = v_license_id
     WHERE id = p_id;
   END IF;
 END$$
@@ -1897,9 +1920,21 @@ p: BEGIN
   END IF;
 END$$
 
-CREATE PROCEDURE sp_employee_set_status(IN p_id BIGINT, IN p_status VARCHAR(20))
+-- Manual conditions only: 'on_trip' is owned by the trip lifecycle, and an
+-- employee with an active trip cannot be moved by hand.
+CREATE PROCEDURE sp_employee_set_status(IN p_id BIGINT, IN p_status VARCHAR(20), OUT p_problems TEXT)
 p: BEGIN
+  SET p_problems = NULL;
+  IF p_status NOT IN ('available','resting','vacation','incapacitated','terminated') THEN
+    SET p_problems = 'Estado de operador no valido para cambio manual'; LEAVE p;
+  END IF;
+  IF (SELECT COUNT(*) FROM trips WHERE employee_id = p_id AND status IN ('scheduled','in_transit')) > 0 THEN
+    SET p_problems = 'El operador tiene un viaje activo; no se puede cambiar el estado'; LEAVE p;
+  END IF;
   UPDATE employees SET status = p_status WHERE id = p_id;
+  IF ROW_COUNT() = 0 THEN
+    SET p_problems = 'Operador no encontrado';
+  END IF;
 END$$
 
 -- ---------------------------------------------------------------- requests
@@ -2233,11 +2268,6 @@ p: BEGIN
   DELETE FROM trips WHERE id = p_trip_id;
   UPDATE service_requests SET status = 'scheduled', updated_by = p_user_id
   WHERE id = v_request AND status IN ('assigned', 'in_transit');
-END$$
-
-CREATE PROCEDURE sp_trip_set_status(IN p_id BIGINT, IN p_status VARCHAR(20), IN p_user_id BIGINT)
-p: BEGIN
-  UPDATE trips SET status = p_status, updated_by = p_user_id WHERE id = p_id;
 END$$
 
 CREATE PROCEDURE sp_sweep_lifecycle(IN p_user_id BIGINT, OUT p_changes INT)
@@ -2643,11 +2673,6 @@ p: BEGIN
   SET p_problems = NULL;
   DELETE FROM payments WHERE invoice_id = p_id;
   DELETE FROM invoices WHERE id = p_id;
-END$$
-
-CREATE PROCEDURE sp_invoice_set_status(IN p_id BIGINT, IN p_status VARCHAR(20))
-p: BEGIN
-  UPDATE invoices SET status = p_status WHERE id = p_id;
 END$$
 
 -- ---------------------------------------------------------------- payments

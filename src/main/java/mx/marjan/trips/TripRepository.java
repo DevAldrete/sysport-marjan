@@ -84,10 +84,6 @@ public class TripRepository {
         return Database.callVoid("{call sp_trip_delete(?,?,?)}", tripId, userId);
     }
 
-    public void setStatus(long id, TripStatus status, long userId) {
-        Database.callNoOut("{call sp_trip_set_status(?,?,?)}", id, status.dbValue(), userId);
-    }
-
     /** Time-driven reconciliation: confirms dates and departs due trips. Returns rows changed. */
     public int sweepLifecycle(long userId) {
         Object[] out = Database.call("{call sp_sweep_lifecycle(?,?)}",

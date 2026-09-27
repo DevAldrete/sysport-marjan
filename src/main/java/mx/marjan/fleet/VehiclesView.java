@@ -84,8 +84,7 @@ public class VehiclesView extends BaseView {
                 .addText("serial", "No. de serie", vehicle.serialNumber())
                 .addText("type", "Tipo de unidad", vehicle.vehicleType())
                 .addText("capacity", "Capacidad de carga (kg)", plain(vehicle.loadCapacity()))
-                .addText("mileage", "Kilometraje", plain(vehicle.mileage()))
-                .addCombo("status", "Estado", VehicleStatus.values(), vehicle.status());
+                .addText("mileage", "Kilometraje", plain(vehicle.mileage()));
         ModalForm.show(this, isNew ? "Nueva unidad" : "Editar unidad", form, () -> {
             Integer year = null;
             if (!form.text("year").isBlank()) {
@@ -102,7 +101,7 @@ public class VehiclesView extends BaseView {
             }
             Vehicle built = new Vehicle(vehicle.id(), form.text("code"), form.text("plates"),
                     form.text("brand"), form.text("model"), year, form.text("serial"),
-                    form.text("type"), capacity, mileage, (VehicleStatus) form.selected("status"));
+                    form.text("type"), capacity, mileage, vehicle.status());
             return service.save(built);
         }, this::reload);
     }

@@ -54,10 +54,6 @@ public class InvoiceRepository {
         return Database.callVoid("{call sp_invoice_delete(?,?)}", id);
     }
 
-    public void setStatus(long id, InvoiceStatus status) {
-        Database.callNoOut("{call sp_invoice_set_status(?,?)}", id, status.dbValue());
-    }
-
     /** BR-19 / FR-INV-3: recompute paid/overdue for every open invoice. Returns how many changed. */
     public int refreshStatuses(LocalDate today) {
         Object[] out = Database.call("{call sp_refresh_invoice_statuses(?,?)}",

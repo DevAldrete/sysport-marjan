@@ -53,7 +53,7 @@ public class EmployeeRepository {
 
     public Result<Long> save(Employee employee) {
         License license = employee.license();
-        return Database.callForId("{call sp_employee_save(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)}",
+        return Database.callForId("{call sp_employee_save(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)}",
                 employee.id(), employee.name(), employee.address(), employee.phone(),
                 employee.email(), employee.rfc(), employee.curp(), employee.emergencyContactName(),
                 employee.emergencyContactPhone(),
@@ -61,8 +61,7 @@ public class EmployeeRepository {
                 license == null ? null : license.licenseNumber(),
                 license == null ? null : license.licenseType(),
                 license == null ? null : license.issueDate(),
-                license == null ? null : license.expirationDate(),
-                employee.status().dbValue());
+                license == null ? null : license.expirationDate());
     }
 
     public Result<Void> delete(long id) {
@@ -70,7 +69,6 @@ public class EmployeeRepository {
     }
 
     public Result<Void> setStatus(long id, EmployeeStatus status) {
-        Database.callNoOut("{call sp_employee_set_status(?,?)}", id, status.dbValue());
-        return Result.ok(null);
+        return Database.callVoid("{call sp_employee_set_status(?,?,?)}", id, status.dbValue());
     }
 }

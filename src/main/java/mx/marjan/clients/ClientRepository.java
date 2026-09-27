@@ -48,8 +48,7 @@ public class ClientRepository {
     }
 
     public Result<Void> setStatus(long id, ClientStatus status) {
-        Database.callNoOut("{call sp_client_set_status(?,?)}", id, status.dbValue());
-        return Result.ok(null);
+        return Database.callVoid("{call sp_client_set_status(?,?,?)}", id, status.dbValue());
     }
 
     public Result<Void> delete(long id) {

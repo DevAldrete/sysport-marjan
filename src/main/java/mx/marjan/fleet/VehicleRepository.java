@@ -39,15 +39,14 @@ public class VehicleRepository {
     }
 
     public Result<Long> save(Vehicle vehicle) {
-        return Database.callForId("{call sp_vehicle_save(?,?,?,?,?,?,?,?,?,?,?,?,?)}",
+        return Database.callForId("{call sp_vehicle_save(?,?,?,?,?,?,?,?,?,?,?,?)}",
                 vehicle.id(), vehicle.internalCode(), vehicle.plates(), vehicle.brand(),
                 vehicle.model(), vehicle.year(), vehicle.serialNumber(), vehicle.vehicleType(),
-                vehicle.loadCapacity(), vehicle.mileage(), vehicle.status().dbValue());
+                vehicle.loadCapacity(), vehicle.mileage());
     }
 
     public Result<Void> setStatus(long id, VehicleStatus status) {
-        Database.callNoOut("{call sp_vehicle_set_status(?,?)}", id, status.dbValue());
-        return Result.ok(null);
+        return Database.callVoid("{call sp_vehicle_set_status(?,?,?)}", id, status.dbValue());
     }
 
     public Result<Void> delete(long id) {
