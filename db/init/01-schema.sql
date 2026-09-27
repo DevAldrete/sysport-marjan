@@ -875,6 +875,7 @@ END$$
 CREATE PROCEDURE sp_depart_trip(IN p_trip_id BIGINT, IN p_user_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
   DECLARE v_status VARCHAR(20) DEFAULT NULL;
+  DECLARE v_req_status VARCHAR(20) DEFAULT NULL;
   DECLARE v_vehicle BIGINT;
   DECLARE v_employee BIGINT;
   DECLARE v_request BIGINT;
@@ -893,6 +894,10 @@ p: BEGIN
   END IF;
   IF v_status <> 'scheduled' THEN
     ROLLBACK; SET p_problems = 'El viaje no esta programado'; LEAVE p;
+  END IF;
+  SELECT status INTO v_req_status FROM service_requests WHERE id = v_request FOR UPDATE;
+  IF NOT fn_request_can_transition(v_req_status, 'in_transit') THEN
+    ROLLBACK; SET p_problems = CONCAT('La solicitud no puede iniciar transito desde ', COALESCE(v_req_status, 'desconocido')); LEAVE p;
   END IF;
   UPDATE trips SET departure_datetime = NOW(), status = 'in_transit', updated_by = p_user_id
     WHERE id = p_trip_id;
@@ -2012,10 +2017,12 @@ p: BEGIN
           p_rate, COALESCE(p_requires_documents, TRUE), 'requested', p_notes, p_user_id, p_user_id);
 END$$
 
+-- Edits the request data only. Status is owned by the action procedures
+-- (authorize/schedule/cancel/...) and is never written from here.
 CREATE PROCEDURE sp_request_update(IN p_id BIGINT, IN p_client_id BIGINT, IN p_route_id BIGINT,
     IN p_cargo VARCHAR(255), IN p_weight DECIMAL(10,1), IN p_pickup DATETIME,
     IN p_delivery DATETIME, IN p_rate DECIMAL(12,2), IN p_requires_documents BOOLEAN,
-    IN p_status VARCHAR(20), IN p_notes VARCHAR(500), IN p_user_id BIGINT, OUT p_problems TEXT)
+    IN p_notes VARCHAR(500), IN p_user_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
   SET p_problems = NULL;
   IF NOT fn_measure_valid(p_weight) THEN
@@ -2026,7 +2033,7 @@ p: BEGIN
                               cargo_description = p_cargo, estimated_weight = p_weight,
                               pickup_date_scheduled = p_pickup, delivery_date_scheduled = p_delivery,
                               agreed_rate = p_rate, requires_documents = p_requires_documents,
-                              status = p_status, notes = p_notes, updated_by = p_user_id
+                              notes = p_notes, updated_by = p_user_id
   WHERE id = p_id;
 END$$
 

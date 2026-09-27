@@ -66,10 +66,10 @@ public class ServiceRequestRepository {
     }
 
     public Result<Void> update(ServiceRequest request, long userId) {
-        return Database.callVoid("{call sp_request_update(?,?,?,?,?,?,?,?,?,?,?,?,?)}",
+        return Database.callVoid("{call sp_request_update(?,?,?,?,?,?,?,?,?,?,?,?)}",
                 request.id(), request.clientId(), request.routeId(), request.cargoDescription(),
                 request.estimatedWeight(), request.pickupScheduled(), request.deliveryScheduled(),
-                request.agreedRate(), request.requiresDocuments(), request.status().dbValue(),
+                request.agreedRate(), request.requiresDocuments(),
                 request.notes(), userId);
     }
 
