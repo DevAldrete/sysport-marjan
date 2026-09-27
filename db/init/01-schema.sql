@@ -933,6 +933,8 @@ p: BEGIN
   DECLARE v_status VARCHAR(20) DEFAULT NULL;
   DECLARE v_vehicle BIGINT;
   DECLARE v_employee BIGINT;
+  DECLARE v_request BIGINT;
+  DECLARE v_requires TINYINT DEFAULT 1;
   DECLARE EXIT HANDLER FOR SQLEXCEPTION
   BEGIN
     ROLLBACK; SET p_problems = 'Error inesperado al registrar la llegada';
@@ -940,7 +942,8 @@ p: BEGIN
 
   SET p_problems = NULL;
   START TRANSACTION;
-  SELECT status, vehicle_id, employee_id INTO v_status, v_vehicle, v_employee
+  SELECT status, vehicle_id, employee_id, service_request_id
+    INTO v_status, v_vehicle, v_employee, v_request
     FROM trips WHERE id = p_trip_id FOR UPDATE;
   IF v_status IS NULL THEN
     ROLLBACK; SET p_problems = 'Viaje no encontrado'; LEAVE p;
@@ -956,6 +959,13 @@ p: BEGIN
                       mileage = mileage + COALESCE(p_actual_km, 0)
     WHERE id = v_vehicle;
   UPDATE employees SET status = 'available' WHERE id = v_employee;
+  -- A request that does not require documents has nothing left to prove, so
+  -- arrival delivers it (otherwise it could never reach 'delivered'/close).
+  SELECT requires_documents INTO v_requires FROM service_requests WHERE id = v_request;
+  IF NOT v_requires THEN
+    UPDATE service_requests SET status = 'delivered', updated_by = p_user_id
+      WHERE id = v_request AND status = 'in_transit';
+  END IF;
   COMMIT;
 END$$
 
@@ -2442,7 +2452,12 @@ CREATE PROCEDURE sp_delivery_save(IN p_trip_id BIGINT, IN p_actual DATETIME,
 p: BEGIN
   DECLARE v_request BIGINT;
   DECLARE v_req_status VARCHAR(20);
+  DECLARE v_trip_status VARCHAR(20);
   DECLARE v_existing BIGINT;
+  DECLARE EXIT HANDLER FOR SQLEXCEPTION
+  BEGIN
+    ROLLBACK; SET p_problems = 'Error inesperado al registrar la entrega';
+  END;
   SET p_problems = NULL;
   IF p_trip_id IS NULL OR p_trip_id = 0 THEN
     SET p_problems = CONCAT_WS('; ', p_problems, 'Debe seleccionar un viaje');
@@ -2456,26 +2471,40 @@ p: BEGIN
   IF p_evidence IS NULL OR p_evidence = '' THEN
     SET p_problems = CONCAT_WS('; ', p_problems, 'La referencia de evidencia es obligatoria');
   END IF;
+  IF p_status IS NOT NULL AND p_status NOT IN ('pending_documents','complete') THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'Estado de entrega no valido');
+  END IF;
   IF p_problems IS NOT NULL THEN LEAVE p; END IF;
+
+  START TRANSACTION;
+  SELECT t.status, sr.id, sr.status INTO v_trip_status, v_request, v_req_status
+    FROM trips t JOIN service_requests sr ON sr.id = t.service_request_id
+    WHERE t.id = p_trip_id FOR UPDATE;
+  IF v_request IS NULL THEN
+    ROLLBACK; SET p_problems = 'Viaje no encontrado'; LEAVE p;
+  END IF;
+  -- BR-13: the trip must be finished before its delivery is recorded.
+  IF v_trip_status <> 'completed' THEN
+    ROLLBACK; SET p_problems = 'Debe registrar la llegada del viaje antes de la entrega'; LEAVE p;
+  END IF;
 
   SELECT id INTO v_existing FROM deliveries WHERE trip_id = p_trip_id;
   IF v_existing IS NULL THEN
     CALL sp_next_id('deliveries', p_id);
     INSERT INTO deliveries (id, trip_id, actual_datetime, received_by, evidence_reference, status, created_by)
-    VALUES (p_id, p_trip_id, p_actual, p_received_by, p_evidence, COALESCE(p_status, 'complete'), p_user_id);
+    VALUES (p_id, p_trip_id, p_actual, p_received_by, p_evidence,
+            COALESCE(p_status, 'pending_documents'), p_user_id);
   ELSE
     SET p_id = v_existing;
     UPDATE deliveries SET actual_datetime = p_actual, received_by = p_received_by,
-                          evidence_reference = p_evidence, status = COALESCE(p_status, 'complete')
+                          evidence_reference = p_evidence, status = COALESCE(p_status, status)
     WHERE trip_id = p_trip_id;
   END IF;
 
-  SELECT sr.id, sr.status INTO v_request, v_req_status
-    FROM trips t JOIN service_requests sr ON sr.id = t.service_request_id
-    WHERE t.id = p_trip_id;
   IF v_req_status = 'in_transit' THEN
     UPDATE service_requests SET status = 'delivered', updated_by = p_user_id WHERE id = v_request;
   END IF;
+  COMMIT;
 END$$
 
 CREATE PROCEDURE sp_delivery_delete(IN p_id BIGINT)
@@ -2662,8 +2691,13 @@ CREATE PROCEDURE sp_fuel_save(IN p_vehicle_id BIGINT, IN p_trip_id BIGINT, IN p_
     IN p_amount DECIMAL(12,2), IN p_odometer DECIMAL(10,1), IN p_user_id BIGINT,
     OUT p_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
+  DECLARE EXIT HANDLER FOR SQLEXCEPTION
+  BEGIN
+    ROLLBACK; SET p_problems = 'Error inesperado al registrar la carga de combustible';
+  END;
   CALL sp_validate_fuel_load(p_vehicle_id, p_trip_id, p_load_date, p_liters, p_price, p_amount, p_odometer, p_problems);
   IF p_problems IS NOT NULL THEN LEAVE p; END IF;
+  START TRANSACTION;
   CALL sp_next_id('fuel_loads', p_id);
   INSERT INTO fuel_loads (id, vehicle_id, trip_id, fuel_station, load_date, liters,
                           price_per_liter, amount, odometer_reading, created_by)
@@ -2672,6 +2706,7 @@ p: BEGIN
   IF p_odometer IS NOT NULL THEN
     UPDATE vehicles SET mileage = p_odometer WHERE id = p_vehicle_id AND mileage < p_odometer;
   END IF;
+  COMMIT;
 END$$
 
 CREATE PROCEDURE sp_fuel_delete(IN p_id BIGINT)
@@ -2696,6 +2731,10 @@ CREATE PROCEDURE sp_maintenance_save(IN p_vehicle_id BIGINT, IN p_date DATE,
     IN p_provider VARCHAR(150), IN p_cost DECIMAL(12,2), IN p_next_date DATE,
     IN p_next_km DECIMAL(10,1), IN p_user_id BIGINT, OUT p_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
+  DECLARE EXIT HANDLER FOR SQLEXCEPTION
+  BEGIN
+    ROLLBACK; SET p_problems = 'Error inesperado al registrar el mantenimiento';
+  END;
   SET p_problems = NULL;
   IF p_vehicle_id IS NULL OR p_vehicle_id = 0 THEN
     SET p_problems = CONCAT_WS('; ', p_problems, 'Debe seleccionar una unidad');
@@ -2722,6 +2761,7 @@ p: BEGIN
   END IF;
   IF p_problems IS NOT NULL THEN LEAVE p; END IF;
 
+  START TRANSACTION;
   CALL sp_next_id('maintenance', p_id);
   INSERT INTO maintenance (id, vehicle_id, maintenance_date, odometer_reading, maintenance_type,
                            work_performed, provider, cost, next_service_date, next_service_km, created_by)
@@ -2730,6 +2770,7 @@ p: BEGIN
   IF p_odometer IS NOT NULL THEN
     UPDATE vehicles SET mileage = p_odometer WHERE id = p_vehicle_id AND mileage < p_odometer;
   END IF;
+  COMMIT;
 END$$
 
 CREATE PROCEDURE sp_maintenance_delete(IN p_id BIGINT)
