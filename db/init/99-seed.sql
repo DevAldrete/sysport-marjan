@@ -4,6 +4,8 @@
 -- No AUTO_INCREMENT: ids are explicit here and the sequences table is primed at
 -- the end so the application continues from the right numbers.
 
+USE sysportdb;
+
 -- ---------------------------------------------------------------- security
 
 INSERT INTO roles (id, name) VALUES

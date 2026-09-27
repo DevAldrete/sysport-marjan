@@ -94,9 +94,20 @@ marjan/
 ├── .env.example
 ├── pom.xml
 ├── db/
-│   └── init/
-│       ├── 01-schema.sql        # tables, constraints, stored procedures/functions
-│       └── 02-seed.sql          # roles, permissions, admin user, ~10 sample rows per table
+│   ├── build-bootstrap.sh      # concatenates db/init/*.sql into SYSPORT_MARJAN.sql
+│   └── init/                   # loaded by Docker in filename order
+│       ├── 01-tables.sql       # database and tables
+│       ├── 02-functions.sql    # rule functions + id/folio allocators
+│       ├── 10-security.sql     # users, roles, permissions, audit
+│       ├── 20-clients.sql      # clients, rates, routes
+│       ├── 30-fleet.sql        # vehicles, fuel, maintenance
+│       ├── 40-operators.sql    # employees, licences
+│       ├── 50-requests.sql     # service requests + lifecycle actions
+│       ├── 60-trips.sql        # assignment, trips, deliveries, incidents
+│       ├── 70-costs.sql        # expenses, advances
+│       ├── 80-finance.sql      # invoices, payments
+│       ├── 90-reports.sql      # report and dashboard queries
+│       └── 99-seed.sql         # roles, permissions, admin user, demo rows
 ├── PRD.md                      # requirements, architecture, plan
 └── src/
     ├── main/java/mx/marjan/
