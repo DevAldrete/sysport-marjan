@@ -55,17 +55,90 @@ public final class Database {
     }
   }
 
-  /** Turns raw JDBC codes into user-facing messages (Spanish). */
+  /** Friendly, plain-language text for the unique index that was duplicated. */
+  private static final java.util.Map<String, String> UNIQUE_MESSAGES = java.util.Map.ofEntries(
+      java.util.Map.entry("username", "Ese nombre de usuario ya esta en uso"),
+      java.util.Map.entry("name", "Ya existe un registro con ese nombre"),
+      java.util.Map.entry("role_id", "Ese rol ya existe"),
+      java.util.Map.entry("rfc", "Ya existe un cliente con ese RFC"),
+      java.util.Map.entry("curp", "Ya existe un operador con esa CURP"),
+      java.util.Map.entry("phone", "Ese telefono ya esta registrado"),
+      java.util.Map.entry("email", "Ese correo ya esta registrado"),
+      java.util.Map.entry("license_number", "Ya existe un operador con ese numero de licencia"),
+      java.util.Map.entry("license_id", "Ese operador ya tiene una licencia asignada"),
+      java.util.Map.entry("employee_id", "Ese empleado ya tiene un usuario asignado"),
+      java.util.Map.entry("internal_code", "Ya existe una unidad con ese numero economico"),
+      java.util.Map.entry("plates", "Ya existe una unidad con esas placas"),
+      java.util.Map.entry("serial_number", "Ya existe una unidad con ese numero de serie"),
+      java.util.Map.entry("folio", "Ese folio ya existe"),
+      java.util.Map.entry("invoice_number", "Ese numero de factura ya existe"),
+      java.util.Map.entry("service_request_id", "Esa solicitud ya tiene un viaje o una factura asociada"),
+      java.util.Map.entry("trip_id", "Ese viaje ya tiene una entrega registrada"),
+      java.util.Map.entry("uq_routes_pair", "Ya existe una ruta con ese origen y destino"));
+
+  /** Friendly text for the foreign key that could not be satisfied. */
+  private static final java.util.Map<String, String> FOREIGN_KEY_MESSAGES = java.util.Map.ofEntries(
+      java.util.Map.entry("fk_invoice_request", "No se puede facturar: la solicitud no existe"),
+      java.util.Map.entry("fk_rates_client", "No se puede guardar la tarifa: el cliente no existe"),
+      java.util.Map.entry("fk_trip_employee", "No se puede asignar: el operador no existe"),
+      java.util.Map.entry("fk_fuel_vehicle", "No se puede guardar la carga: la unidad no existe"),
+      java.util.Map.entry("fk_maint_vehicle", "No se puede guardar el mantenimiento: la unidad no existe"),
+      java.util.Map.entry("fk_payment_invoice", "No se puede guardar el pago: la factura no existe"),
+      java.util.Map.entry("fk_users_employee", "No se puede guardar el usuario: el empleado no existe"));
+
+  /** Turns raw JDBC codes into clear, user-facing messages (Spanish). */
   public static String translate(SQLException failure) {
+    String state = failure.getSQLState();
+    if (state != null && state.startsWith("08")) {
+      return "No se pudo conectar con la base de datos. "
+          + "Verifique que el servidor este disponible e intente de nuevo.";
+    }
+    String message = failure.getMessage();
     return switch (failure.getErrorCode()) {
-      case 1062 -> "Ya existe un registro con ese valor unico.";
-      case 1264, 1265 -> "Uno de los valores esta fuera del rango permitido.";
+      case 1062 -> duplicateMessage(message);
+      case 1264, 1265, 3819, 4025 -> "Uno de los valores no cumple las reglas permitidas.";
+      case 1366 -> "El valor capturado no es valido para uno de los campos.";
       case 1406 -> "Uno de los textos es demasiado largo.";
       case 1048, 1364 -> "Falta un dato obligatorio.";
-      case 1451 -> "No se puede eliminar: hay registros relacionados.";
-      case 1452 -> "No se puede guardar: la referencia relacionada no existe.";
-      default -> "Ocurrio un error inesperado al acceder a los datos.";
+      case 1451 -> "No se puede eliminar: hay otros registros que dependen de este.";
+      case 1452 -> foreignKeyMessage(message);
+      default -> "Ocurrio un error inesperado al acceder a los datos (codigo "
+          + failure.getErrorCode() + ").";
     };
+  }
+
+  /** "Duplicate entry 'X' for key 'table.index'" -> a message naming the field and value. */
+  private static String duplicateMessage(String message) {
+    String value = between(message, "Duplicate entry '", "'");
+    String key = between(message, "for key '", "'");
+    String index = key == null ? null : key.substring(key.lastIndexOf('.') + 1).toLowerCase();
+    String friendly = index == null ? null : UNIQUE_MESSAGES.get(index);
+    if (friendly == null) {
+      friendly = "Ya existe un registro con ese valor unico";
+    }
+    return value == null || value.isBlank() ? friendly + "." : friendly + " (\"" + value + "\").";
+  }
+
+  /** "foreign key constraint fails (..., CONSTRAINT `fk_x` ...)" -> a message naming the link. */
+  private static String foreignKeyMessage(String message) {
+    String constraint = between(message, "CONSTRAINT `", "`");
+    String friendly = constraint == null ? null : FOREIGN_KEY_MESSAGES.get(constraint.toLowerCase());
+    return friendly == null
+        ? "No se puede guardar: falta o no existe el registro relacionado."
+        : friendly + ".";
+  }
+
+  private static String between(String text, String prefix, String suffix) {
+    if (text == null) {
+      return null;
+    }
+    int start = text.indexOf(prefix);
+    if (start < 0) {
+      return null;
+    }
+    start += prefix.length();
+    int end = text.indexOf(suffix, start);
+    return end < 0 ? null : text.substring(start, end);
   }
 
   public static void bind(PreparedStatement statement, Object... params) throws SQLException {

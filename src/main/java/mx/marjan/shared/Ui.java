@@ -20,7 +20,10 @@ public final class Ui {
     private Ui() {}
 
     public static void error(Component parent, String title, List<String> problems) {
-        JOptionPane.showMessageDialog(parent, String.join("\n", problems), title, JOptionPane.ERROR_MESSAGE);
+        String text = problems.size() <= 1
+                ? String.join("\n", problems)
+                : "\u2022 " + String.join("\n\u2022 ", problems);
+        JOptionPane.showMessageDialog(parent, text, title, JOptionPane.ERROR_MESSAGE);
     }
 
     public static void error(Component parent, String message) {
@@ -38,7 +41,8 @@ public final class Ui {
 
     public static void failure(Component parent, Throwable failure) {
         String message = failure.getMessage() == null ? failure.toString() : failure.getMessage();
-        error(parent, "Error inesperado", List.of(message));
+        String title = failure instanceof DataException ? "No se pudo completar la operacion" : "Error inesperado";
+        error(parent, title, List.of(message));
     }
 
     /** Confirms a hard delete, runs it off the EDT, and reports success or problems uniformly. */
