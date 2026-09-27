@@ -1,16 +1,22 @@
 package mx.marjan.trips;
 
-import java.awt.BorderLayout;
-import java.awt.Component;
-import java.awt.Dialog;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
-import javax.swing.JDialog;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
-import javax.swing.JTabbedPane;
-import javax.swing.SwingUtilities;
+import javafx.geometry.Insets;
+import javafx.scene.Node;
+import javafx.scene.Scene;
+import javafx.scene.control.Label;
+import javafx.scene.control.Tab;
+import javafx.scene.control.TabPane;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.VBox;
+import javafx.stage.Modality;
+import javafx.stage.Stage;
+import javafx.stage.Window;
 import mx.marjan.finance.Advance;
 import mx.marjan.finance.AdvanceBalance;
 import mx.marjan.finance.AdvanceService;
@@ -20,95 +26,135 @@ import mx.marjan.finance.ExpenseService;
 import mx.marjan.finance.ExpenseType;
 import mx.marjan.fleet.FuelLoad;
 import mx.marjan.fleet.FuelService;
-import mx.marjan.shared.Async;
+import mx.marjan.ui.Async;
 import mx.marjan.shared.Dates;
-import mx.marjan.shared.FormPanel;
-import mx.marjan.shared.ModalForm;
 import mx.marjan.shared.Money;
-import mx.marjan.shared.RecordTableModel;
-import mx.marjan.shared.RecordTablePanel;
 import mx.marjan.shared.Result;
-import mx.marjan.shared.Ui;
+import mx.marjan.ui.FormPanel;
+import mx.marjan.ui.ModalForm;
+import mx.marjan.ui.RecordTable;
+import mx.marjan.ui.RecordTablePanel;
+import mx.marjan.ui.StatusBadge;
+import mx.marjan.ui.StatusTones;
+import mx.marjan.ui.ThemeManager;
+import mx.marjan.ui.Ui;
 
 /** Trip detail with tabs for costs, fuel, advances, incidents and delivery. */
-public class TripDetailDialog extends JDialog {
+final class TripDetailDialog {
 
     private final Trip trip;
+    private final Stage stage = new Stage();
     private final ExpenseService expenseService = new ExpenseService();
     private final FuelService fuelService = new FuelService();
     private final AdvanceService advanceService = new AdvanceService();
     private final IncidentService incidentService = new IncidentService();
     private final DeliveryService deliveryService = new DeliveryService();
 
-    public static void show(Component parent, Trip trip) {
-        new TripDetailDialog(parent, trip).setVisible(true);
+    static void show(Window parent, Trip trip) {
+        new TripDetailDialog(trip).open(parent);
     }
 
-    private TripDetailDialog(Component parent, Trip trip) {
-        super(SwingUtilities.getWindowAncestor(parent), "Viaje " + trip.folio(),
-                Dialog.ModalityType.APPLICATION_MODAL);
+    private TripDetailDialog(Trip trip) {
         this.trip = trip;
-        JTabbedPane tabs = new JTabbedPane();
-        tabs.addTab("Resumen", summaryPanel());
-        tabs.addTab("Gastos", expensesPanel());
-        tabs.addTab("Combustible", fuelPanel());
-        tabs.addTab("Anticipos", advancesPanel());
-        tabs.addTab("Incidencias", incidentsPanel());
-        tabs.addTab("Entrega", deliveryPanel());
-        setLayout(new BorderLayout(8, 8));
-        add(tabs, BorderLayout.CENTER);
-        add(Ui.row(Ui.button("Cerrar", this::dispose)), BorderLayout.SOUTH);
-        setSize(880, 560);
-        setLocationRelativeTo(parent);
+    }
+
+    private void open(Window parent) {
+        TabPane tabs = new TabPane();
+        tabs.setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE);
+        tabs.getTabs().addAll(
+                tab("Resumen", summaryPanel()),
+                tab("Gastos", expensesPanel()),
+                tab("Combustible", fuelPanel()),
+                tab("Anticipos", advancesPanel()),
+                tab("Incidencias", incidentsPanel()),
+                tab("Entrega", deliveryPanel()));
+
+        BorderPane root = new BorderPane(tabs);
+        root.setBottom(Ui.toolbar(Ui.button("Cerrar", stage::close)));
+        BorderPane.setMargin(root.getBottom(), new Insets(0, 16, 12, 16));
+
+        stage.initOwner(parent);
+        stage.initModality(Modality.WINDOW_MODAL);
+        stage.setTitle("Viaje " + trip.folio());
+        Scene scene = new Scene(root, 940, 620);
+        ThemeManager.apply(scene);
+        stage.setScene(scene);
+        stage.show();
+    }
+
+    private Tab tab(String title, Node content) {
+        return new Tab(title, content);
     }
 
     private record Summary(BigDecimal expenses, BigDecimal fuel, AdvanceBalance advance) {}
 
-    private JPanel summaryPanel() {
-        JLabel tripInfo = new JLabel();
-        JLabel costs = new JLabel();
-        JPanel panel = new JPanel(new BorderLayout(8, 8));
-        panel.add(Ui.titled("Viaje", tripInfo), BorderLayout.NORTH);
-        panel.add(Ui.titled("Costos", costs), BorderLayout.CENTER);
+    private Node summaryPanel() {
+        VBox tripInfo = new VBox(6);
+        Label tripTitle = new Label("Datos del viaje");
+        tripTitle.getStyleClass().add("section-title");
+        tripInfo.getChildren().addAll(tripTitle,
+                kvNode("Estado", StatusBadge.of(trip.status().label(), StatusTones.trip(trip.status()))),
+                kv("Unidad", trip.vehicleLabel()),
+                kv("Operador", trip.employeeName()),
+                kv("Ruta", trip.routeLabel()),
+                kv("Cliente", trip.clientName()),
+                kv("Periodo", Dates.format(trip.plannedStart()) + " a " + Dates.format(trip.plannedEnd())),
+                kv("Salida", Dates.format(trip.departure())),
+                kv("Llegada", Dates.format(trip.arrival())));
+
+        VBox costs = new VBox(6);
+        Label costsTitle = new Label("Costos");
+        costsTitle.getStyleClass().add("section-title");
+        Label expensesLabel = new Label("...");
+        Label fuelLabel = new Label("...");
+        Label totalLabel = new Label("...");
+        Label advanceLabel = new Label("...");
+        costs.getChildren().addAll(costsTitle,
+                kvNode("Gastos", expensesLabel),
+                kvNode("Combustible", fuelLabel),
+                kvNode("Total", totalLabel),
+                kvNode("Anticipo", advanceLabel));
+
         Async.run(() -> new Summary(
                 expenseService.listByTrip(trip.id()).stream().map(Expense::amount)
                         .reduce(BigDecimal.ZERO, BigDecimal::add),
                 fuelService.listByTrip(trip.id()).stream().map(FuelLoad::amount)
                         .reduce(BigDecimal.ZERO, BigDecimal::add),
-                advanceService.balanceForTrip(trip.id())), summary -> {
-            tripInfo.setText("<html>Unidad: " + trip.vehicleLabel() + "<br>Operador: " + trip.employeeName()
-                    + "<br>Ruta: " + trip.routeLabel() + "<br>Estado: " + trip.status().label()
-                    + "<br>Salida: " + Dates.format(trip.departure())
-                    + "<br>Llegada: " + Dates.format(trip.arrival()) + "</html>");
-            costs.setText("<html>Gastos: " + Money.format(summary.expenses())
-                    + "<br>Combustible: " + Money.format(summary.fuel())
-                    + "<br>Total: " + Money.format(summary.expenses().add(summary.fuel()))
-                    + "<br>Anticipo: " + summary.advance().label()
-                    + "</html>");
-        }, failure -> Ui.failure(this, failure));
-        return panel;
+                advanceService.balanceForTrip(trip.id())),
+                summary -> {
+                    expensesLabel.setText(Money.format(summary.expenses()));
+                    fuelLabel.setText(Money.format(summary.fuel()));
+                    totalLabel.setText(Money.format(summary.expenses().add(summary.fuel())));
+                    advanceLabel.setText(summary.advance().label());
+                },
+                failure -> expensesLabel.setText("No se pudo cargar"));
+
+        VBox box = new VBox(18, card(tripInfo), card(costs));
+        box.setPadding(new Insets(16));
+        return box;
     }
 
-    private JPanel expensesPanel() {
-        RecordTableModel<Expense> model = new RecordTableModel<>(List.of(
-                RecordTableModel.Column.of("Fecha", expense -> Dates.format(expense.expenseDate())),
-                RecordTableModel.Column.of("Tipo", expense -> expense.type().label()),
-                RecordTableModel.Column.of("Importe", expense -> Money.format(expense.amount())),
-                RecordTableModel.Column.text("Descripcion", Expense::description, 50)));
-        RecordTablePanel<Expense> panel = new RecordTablePanel<>(model);
+    private Node expensesPanel() {
+        RecordTable<Expense> table = new RecordTable<>(List.of(
+                RecordTable.Column.of("Fecha", expense -> Dates.format(expense.expenseDate())),
+                RecordTable.Column.of("Tipo", expense -> expense.type().label()),
+                RecordTable.Column.money("Importe", Expense::amount),
+                RecordTable.Column.text("Descripcion", Expense::description, 50)));
+        RecordTablePanel<Expense> panel = new RecordTablePanel<>(table);
         Runnable reload = () -> Async.run(() -> expenseService.listByTrip(trip.id()),
-                panel::setRows, failure -> Ui.failure(this, failure));
+                panel::setRows, failure -> Ui.failure(stage, failure));
         panel.withActions(
                 Ui.button("Nuevo gasto", () -> openExpenseForm(reload)),
                 Ui.button("Eliminar", () -> {
                     if (panel.selected() == null) {
-                        Ui.info(this, "Seleccione un gasto");
+                        Ui.info(stage, "Seleccione un gasto");
                         return;
                     }
-                    Ui.delete(this, "el gasto seleccionado",
+                    Ui.delete(stage, "el gasto seleccionado",
                             () -> expenseService.delete(panel.selected().id()), reload);
                 }),
                 Ui.button("Recargar", reload));
+        panel.setPadding(new Insets(16));
         reload.run();
         return panel;
     }
@@ -119,7 +165,9 @@ public class TripDetailDialog extends JDialog {
                 .addText("amount", "Importe", "0")
                 .addText("date", "Fecha (yyyy-MM-dd)", Dates.format(Dates.today()))
                 .addText("description", "Descripcion", "");
-        ModalForm.show(this, "Gasto del viaje " + trip.folio(), form, () -> {
+        form.validate("amount", mx.marjan.shared.Validators.money());
+        form.validate("date", mx.marjan.shared.Validators.date());
+        ModalForm.show(stage, "Gasto del viaje " + trip.folio(), form, () -> {
             Result<BigDecimal> amountResult = Money.require(form.text("amount"), "importe");
             if (amountResult.isErr()) {
                 return amountResult;
@@ -131,69 +179,73 @@ public class TripDetailDialog extends JDialog {
         }, onSaved);
     }
 
-    private JPanel fuelPanel() {
-        RecordTableModel<FuelLoad> model = new RecordTableModel<>(List.of(
-                RecordTableModel.Column.of("Fecha", load -> Dates.format(load.loadDate())),
-                RecordTableModel.Column.of("Estacion", FuelLoad::fuelStation),
-                RecordTableModel.Column.of("Litros", FuelLoad::liters),
-                RecordTableModel.Column.of("Precio/L", FuelLoad::pricePerLiter),
-                RecordTableModel.Column.of("Importe", load -> Money.format(load.amount())),
-                RecordTableModel.Column.of("Odometro", FuelLoad::odometerReading)));
-        RecordTablePanel<FuelLoad> panel = new RecordTablePanel<>(model);
+    private Node fuelPanel() {
+        RecordTable<FuelLoad> table = new RecordTable<>(List.of(
+                RecordTable.Column.of("Fecha", load -> Dates.format(load.loadDate())),
+                RecordTable.Column.of("Estacion", FuelLoad::fuelStation),
+                RecordTable.Column.number("Litros", FuelLoad::liters),
+                RecordTable.Column.number("Precio/L", FuelLoad::pricePerLiter),
+                RecordTable.Column.money("Importe", FuelLoad::amount),
+                RecordTable.Column.number("Odometro", FuelLoad::odometerReading)));
+        RecordTablePanel<FuelLoad> panel = new RecordTablePanel<>(table);
         Runnable reload = () -> Async.run(() -> fuelService.listByTrip(trip.id()),
-                panel::setRows, failure -> Ui.failure(this, failure));
+                panel::setRows, failure -> Ui.failure(stage, failure));
         panel.withActions(Ui.button("Recargar", reload));
+        panel.setPadding(new Insets(16));
         reload.run();
         return panel;
     }
 
-    private JPanel advancesPanel() {
-        RecordTableModel<Advance> model = new RecordTableModel<>(List.of(
-                RecordTableModel.Column.of("Operador", Advance::employeeName),
-                RecordTableModel.Column.of("Monto", advance -> Money.format(advance.amountGiven())),
-                RecordTableModel.Column.of("Fecha", advance -> Dates.format(advance.deliveredDate())),
-                RecordTableModel.Column.of("Estado", advance -> advance.status().label())));
-        RecordTablePanel<Advance> panel = new RecordTablePanel<>(model);
+    private Node advancesPanel() {
+        RecordTable<Advance> table = new RecordTable<>(List.of(
+                RecordTable.Column.of("Operador", Advance::employeeName),
+                RecordTable.Column.money("Monto", Advance::amountGiven),
+                RecordTable.Column.of("Fecha", advance -> Dates.format(advance.deliveredDate())),
+                RecordTable.Column.of("Estado", advance -> advance.status().label())));
+        RecordTablePanel<Advance> panel = new RecordTablePanel<>(table);
         Runnable reload = () -> Async.run(() -> advanceService.listByTrip(trip.id()),
-                panel::setRows, failure -> Ui.failure(this, failure));
+                panel::setRows, failure -> Ui.failure(stage, failure));
         panel.withActions(
                 Ui.button("Registrar anticipo", () -> openAdvanceForm(reload)),
                 Ui.button("Comprobar", () -> settleAdvance(panel, reload)),
                 Ui.button("Eliminar", () -> {
                     if (panel.selected() == null) {
-                        Ui.info(this, "Seleccione un anticipo");
+                        Ui.info(stage, "Seleccione un anticipo");
                         return;
                     }
-                    Ui.delete(this, "el anticipo seleccionado",
+                    Ui.delete(stage, "el anticipo seleccionado",
                             () -> advanceService.delete(panel.selected().id()), reload);
                 }),
                 Ui.button("Recargar", reload));
+        panel.setPadding(new Insets(16));
         reload.run();
         return panel;
     }
 
     private void settleAdvance(RecordTablePanel<Advance> panel, Runnable reload) {
         if (panel.selected() == null) {
-            Ui.info(this, "Seleccione un anticipo");
+            Ui.info(stage, "Seleccione un anticipo");
             return;
         }
-        if (!Ui.confirm(this, "Marcar el anticipo como comprobado?")) {
+        if (!Ui.confirm(stage, "\u00bfMarcar el anticipo como comprobado?")) {
             return;
         }
         Async.run(() -> advanceService.settle(panel.selected().id()), result -> {
             if (result.isErr()) {
-                Ui.error(this, "Error", result.problems());
+                Ui.error(stage, "Error", result.problems());
             } else {
                 reload.run();
             }
-        }, failure -> Ui.failure(this, failure));
+        }, failure -> Ui.failure(stage, failure));
     }
 
     private void openAdvanceForm(Runnable onSaved) {
         FormPanel form = new FormPanel()
                 .addText("amount", "Monto entregado", "0")
                 .addText("date", "Fecha de entrega (yyyy-MM-dd)", Dates.format(Dates.today()));
-        ModalForm.show(this, "Anticipo del viaje " + trip.folio(), form, () -> {
+        form.validate("amount", mx.marjan.shared.Validators.money());
+        form.validate("date", mx.marjan.shared.Validators.date());
+        ModalForm.show(stage, "Anticipo del viaje " + trip.folio(), form, () -> {
             Result<BigDecimal> amountResult = Money.require(form.text("amount"), "monto entregado");
             if (amountResult.isErr()) {
                 return amountResult;
@@ -205,27 +257,28 @@ public class TripDetailDialog extends JDialog {
         }, onSaved);
     }
 
-    private JPanel incidentsPanel() {
-        RecordTableModel<Incident> model = new RecordTableModel<>(List.of(
-                RecordTableModel.Column.of("Fecha", incident -> Dates.format(incident.incidentDate())),
-                RecordTableModel.Column.of("Tipo", incident -> incident.type().label()),
-                RecordTableModel.Column.text("Ubicacion", Incident::location, 30),
-                RecordTableModel.Column.text("Descripcion", Incident::description, 50),
-                RecordTableModel.Column.text("Acciones", Incident::actionsTaken, 50)));
-        RecordTablePanel<Incident> panel = new RecordTablePanel<>(model);
+    private Node incidentsPanel() {
+        RecordTable<Incident> table = new RecordTable<>(List.of(
+                RecordTable.Column.of("Fecha", incident -> Dates.format(incident.incidentDate())),
+                RecordTable.Column.of("Tipo", incident -> incident.type().label()),
+                RecordTable.Column.text("Ubicacion", Incident::location, 30),
+                RecordTable.Column.text("Descripcion", Incident::description, 50),
+                RecordTable.Column.text("Acciones", Incident::actionsTaken, 50)));
+        RecordTablePanel<Incident> panel = new RecordTablePanel<>(table);
         Runnable reload = () -> Async.run(() -> incidentService.listByTrip(trip.id()),
-                panel::setRows, failure -> Ui.failure(this, failure));
+                panel::setRows, failure -> Ui.failure(stage, failure));
         panel.withActions(
                 Ui.button("Nueva incidencia", () -> openIncidentForm(reload)),
                 Ui.button("Eliminar", () -> {
                     if (panel.selected() == null) {
-                        Ui.info(this, "Seleccione una incidencia");
+                        Ui.info(stage, "Seleccione una incidencia");
                         return;
                     }
-                    Ui.delete(this, "la incidencia seleccionada",
+                    Ui.delete(stage, "la incidencia seleccionada",
                             () -> incidentService.delete(panel.selected().id()), reload);
                 }),
                 Ui.button("Recargar", reload));
+        panel.setPadding(new Insets(16));
         reload.run();
         return panel;
     }
@@ -238,7 +291,8 @@ public class TripDetailDialog extends JDialog {
                 .addText("location", "Ubicacion", "")
                 .addArea("description", "Descripcion", "")
                 .addArea("actions", "Acciones realizadas", "");
-        ModalForm.show(this, "Incidencia del viaje " + trip.folio(), form, () -> {
+        form.validate("date", mx.marjan.shared.Validators.date());
+        ModalForm.show(stage, "Incidencia del viaje " + trip.folio(), form, () -> {
             LocalDate date = Dates.parseDate(form.text("date")).orElse(null);
             java.time.LocalTime time = null;
             if (!form.text("time").isBlank()) {
@@ -255,26 +309,27 @@ public class TripDetailDialog extends JDialog {
         }, onSaved);
     }
 
-    private JPanel deliveryPanel() {
-        JLabel status = new JLabel("Cargando...");
-        JPanel panel = new JPanel(new BorderLayout(8, 8));
-        panel.add(Ui.titled("Entrega registrada", status), BorderLayout.CENTER);
-        panel.add(Ui.row(Ui.button("Registrar / actualizar entrega", () -> openDeliveryForm()),
-                Ui.button("Recargar", () -> loadDelivery(status))), BorderLayout.SOUTH);
-        loadDelivery(status);
-        return panel;
+    private Node deliveryPanel() {
+        Label status = new Label("Cargando...");
+        Runnable reload = () -> loadDelivery(status);
+        VBox box = new VBox(8, card(new VBox(6, sectionTitle("Entrega registrada"), status)),
+                Ui.toolbar(Ui.button("Registrar / actualizar entrega", this::openDeliveryForm),
+                        Ui.button("Recargar", reload)));
+        box.setPadding(new Insets(16));
+        reload.run();
+        return box;
     }
 
-    private void loadDelivery(JLabel status) {
+    private void loadDelivery(Label status) {
         Async.run(() -> deliveryService.findByTrip(trip.id()), delivery -> {
             if (delivery.isEmpty()) {
                 status.setText("Sin entrega registrada");
             } else {
                 Delivery record = delivery.get();
-                status.setText("<html>Fecha: " + Dates.format(record.actualDatetime())
-                        + "<br>Recibio: " + record.receivedBy()
-                        + "<br>Evidencia: " + record.evidenceReference()
-                        + "<br>Estado: " + record.status().label() + "</html>");
+                status.setText("Fecha: " + Dates.format(record.actualDatetime())
+                        + "\nRecibio: " + record.receivedBy()
+                        + "\nEvidencia: " + record.evidenceReference()
+                        + "\nEstado: " + record.status().label());
             }
         }, failure -> status.setText("Error al cargar"));
     }
@@ -284,7 +339,8 @@ public class TripDetailDialog extends JDialog {
                 .addText("datetime", "Fecha y hora (yyyy-MM-dd HH:mm)", Dates.format(Dates.now()))
                 .addText("receivedBy", "Recibio", "")
                 .addText("evidence", "Referencia de evidencia", "");
-        ModalForm.show(this, "Entrega del viaje " + trip.folio(), form, () -> {
+        form.validate("datetime", mx.marjan.shared.Validators.dateTime());
+        ModalForm.show(stage, "Entrega del viaje " + trip.folio(), form, () -> {
             java.time.LocalDateTime dateTime = Dates.parseDateTime(form.text("datetime")).orElse(null);
             if (dateTime == null) {
                 return Result.err("La fecha y hora son obligatorias (yyyy-MM-dd HH:mm)");
@@ -293,5 +349,33 @@ public class TripDetailDialog extends JDialog {
                     form.text("receivedBy"), form.text("evidence"), DeliveryStatus.COMPLETE);
             return deliveryService.register(delivery);
         });
+    }
+
+    private Node card(Node content) {
+        VBox box = new VBox(content);
+        box.getStyleClass().add("card");
+        return box;
+    }
+
+    private Label sectionTitle(String text) {
+        Label label = new Label(text);
+        label.getStyleClass().add("section-title");
+        return label;
+    }
+
+    private Node kv(String key, String value) {
+        return kvNode(key, new Label(value == null || value.isBlank() ? "-" : value));
+    }
+
+    private Node kvNode(String key, Node value) {
+        Label keyLabel = new Label(key);
+        keyLabel.getStyleClass().add("kpi-label");
+        keyLabel.setMinWidth(110);
+        keyLabel.setPrefWidth(110);
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        HBox row = new HBox(8, keyLabel, spacer, value);
+        row.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        return row;
     }
 }

@@ -146,7 +146,7 @@ public final class AppShell {
                 item("Operacion", "Solicitudes", Feather.CLIPBOARD, Permissions.REQUESTS_READ,
                         mx.marjan.requests.ServiceRequestsView::new),
                 item("Operacion", "Viajes", Feather.TRUCK, Permissions.TRIPS_READ,
-                        () -> new PlaceholderScreen("Viajes")),
+                        mx.marjan.trips.TripsView::new),
                 item("Catalogos", "Clientes", Feather.USERS, Permissions.CLIENTS_READ,
                         mx.marjan.clients.ClientsView::new),
                 item("Catalogos", "Rutas", Feather.MAP, Permissions.ROUTES_READ,
