@@ -139,6 +139,13 @@ public final class Database {
     return problems == null ? Result.ok(id) : Result.err(problems);
   }
 
+  /** Calls a procedure shaped as {@code OUT p_problems TEXT, OUT p_id BIGINT}. */
+  public static Result<Long> callForProblemsAndId(String callSql, Object... inParams) {
+    Object[] out = call(callSql, new int[] { Types.VARCHAR, Types.BIGINT }, inParams);
+    String problems = asProblems(out[0]);
+    return problems == null ? Result.ok(asLong(out[1])) : Result.err(problems);
+  }
+
   public static Long asLong(Object value) {
     return value == null ? null : ((Number) value).longValue();
   }

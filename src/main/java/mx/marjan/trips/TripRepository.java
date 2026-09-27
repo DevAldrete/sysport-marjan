@@ -48,10 +48,8 @@ public class TripRepository {
     }
 
     public Result<Long> assign(long requestId, long vehicleId, long operatorId, long userId) {
-        Object[] out = Database.call("{call sp_assign_trip(?,?,?,?,?,?)}",
-                new int[] { Types.VARCHAR, Types.BIGINT }, requestId, vehicleId, operatorId, userId);
-        String problems = Database.asProblems(out[0]);
-        return problems == null ? Result.ok(Database.asLong(out[1])) : Result.err(problems);
+        return Database.callForProblemsAndId("{call sp_assign_trip(?,?,?,?,?,?)}",
+                requestId, vehicleId, operatorId, userId);
     }
 
     public Result<Void> reassign(long tripId, long vehicleId, long operatorId, long userId) {

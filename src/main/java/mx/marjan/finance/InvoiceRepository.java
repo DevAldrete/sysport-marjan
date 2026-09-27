@@ -44,10 +44,8 @@ public class InvoiceRepository {
     /** BR-20: one invoice per delivered/closed request; due date from payment terms. */
     public Result<Long> createFromRequest(long requestId, LocalDate issueDate, BigDecimal amount,
             long userId) {
-        Object[] out = Database.call("{call sp_create_invoice_from_request(?,?,?,?,?,?)}",
-                new int[] { Types.VARCHAR, Types.BIGINT }, requestId, issueDate, amount, userId);
-        String problems = Database.asProblems(out[0]);
-        return problems == null ? Result.ok(Database.asLong(out[1])) : Result.err(problems);
+        return Database.callForProblemsAndId("{call sp_create_invoice_from_request(?,?,?,?,?,?)}",
+                requestId, issueDate, amount, userId);
     }
 
     public Result<Void> delete(long id) {
