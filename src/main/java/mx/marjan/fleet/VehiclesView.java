@@ -11,7 +11,7 @@ import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
-import mx.marjan.shared.Async;
+import mx.marjan.ui.Async;
 import mx.marjan.shared.Dates;
 import mx.marjan.shared.Money;
 import mx.marjan.shared.Numbers;

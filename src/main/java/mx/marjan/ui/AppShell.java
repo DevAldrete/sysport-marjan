@@ -144,7 +144,7 @@ public final class AppShell {
                 item("Operacion", "Inicio", Feather.HOME, null,
                         () -> new PlaceholderScreen("Inicio")),
                 item("Operacion", "Solicitudes", Feather.CLIPBOARD, Permissions.REQUESTS_READ,
-                        () -> new PlaceholderScreen("Solicitudes")),
+                        mx.marjan.requests.ServiceRequestsView::new),
                 item("Operacion", "Viajes", Feather.TRUCK, Permissions.TRIPS_READ,
                         () -> new PlaceholderScreen("Viajes")),
                 item("Catalogos", "Clientes", Feather.USERS, Permissions.CLIENTS_READ,

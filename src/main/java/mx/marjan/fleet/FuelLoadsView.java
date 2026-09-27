@@ -6,7 +6,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import javafx.scene.layout.VBox;
-import mx.marjan.shared.Async;
+import mx.marjan.ui.Async;
 import mx.marjan.shared.Dates;
 import mx.marjan.shared.Money;
 import mx.marjan.shared.Numbers;

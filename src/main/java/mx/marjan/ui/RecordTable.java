@@ -36,8 +36,10 @@ public class RecordTable<T> extends TableView<T> {
         }
 
         public static <T> Column<T> money(String title, Function<T, Object> getter) {
-            return new Column<>(title, getter, Pos.CENTER_RIGHT, 120,
-                    row -> new Label(Money.format(toBigDecimal(getter.apply(row)))));
+            return new Column<>(title, getter, Pos.CENTER_RIGHT, 120, row -> {
+                java.math.BigDecimal value = toBigDecimal(getter.apply(row));
+                return new Label(value == null ? "" : Money.format(value));
+            });
         }
 
         public static <T> Column<T> number(String title, Function<T, Object> getter) {
