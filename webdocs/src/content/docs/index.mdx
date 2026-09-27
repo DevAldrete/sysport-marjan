@@ -1,0 +1,65 @@
+---
+title: SysPort MARJAN — Developer Wiki
+description: Internal knowledge base for the SysPort-MARJAN transport management system.
+template: splash
+hero:
+  tagline: Everything you need to understand, run and change the SysPort-MARJAN codebase.
+  image:
+    file: ../../assets/houston.webp
+  actions:
+    - text: Local setup
+      link: /start/setup/
+      icon: rocket
+    - text: Architecture
+      link: /architecture/overview/
+      icon: right-arrow
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+SysPort-MARJAN is a desktop application (Java 21 Swing + MySQL 8.4, plain JDBC) that runs the
+full lifecycle of a trucking operation: client request → trip assignment → costs → delivery →
+invoice → payment → reports. This wiki is written for a developer who has just cloned the repo.
+
+## New here? Read in this order
+
+<CardGrid stagger>
+	<Card title="1. Overview" icon="information">
+		What the product does, the domain vocabulary and the mental model. Start with
+		[the overview](/start/overview/).
+	</Card>
+	<Card title="2. Local setup" icon="rocket">
+		Get the database and app running in five minutes with Docker and Maven.
+		[Setup guide](/start/setup/).
+	</Card>
+	<Card title="3. Architecture" icon="puzzle">
+		The four layers, why the rules live in the database, and where to put new code.
+		[Architecture](/architecture/overview/).
+	</Card>
+	<Card title="4. First change" icon="pencil">
+		Walk a real change end to end: schema → record → repository → service → view → test.
+		[Your first change](/start/first-change/).
+	</Card>
+</CardGrid>
+
+## The five things to remember
+
+1. **Business rules live in the database**, not in Java. Stored procedures and functions are the
+   single source of truth. Java keeps records, enums and thin JDBC wrappers.
+2. **The layer direction is one-way:** `view → service → repository → MySQL`. A view never runs
+   SQL; a repository never makes business decisions.
+3. **Nothing runs on the EDT.** All database work goes through `Async.run(...)`.
+4. **No `AUTO_INCREMENT`.** Primary keys come from the `sequences` table via `sp_next_id`.
+5. **Every rule has an ID** (`BR-01` … `BR-24`). Search the codebase for `BR-xx` to find both the
+   rule and the code that enforces it.
+
+## Quick links
+
+<CardGrid>
+	<LinkCard title="Business rules (BR-01…BR-24)" href="/domain/business-rules/" />
+	<LinkCard title="Database schema & routines" href="/database/schema/" />
+	<LinkCard title="Java class map" href="/reference/java-map/" />
+	<LinkCard title="Glossary" href="/reference/glossary/" />
+	<LinkCard title="Troubleshooting" href="/reference/troubleshooting/" />
+	<LinkCard title="Run the tests" href="/start/testing/" />
+</CardGrid>

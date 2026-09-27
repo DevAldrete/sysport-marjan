@@ -5,6 +5,10 @@ A desktop application to run the full lifecycle of a trucking operation: from a 
 Built for the fictional (personal-project) company **Transportes MARJAN**, based on a real requirements-gathering interview.
 
 > Status: in development. See [`PRD.md`](PRD.md) for the full plan and milestones.
+>
+> 📚 **New to the codebase?** Read the local developer wiki in [`webdocs/`](webdocs/):
+> `cd webdocs && npm install && npm run dev` → <http://localhost:4321>. It covers architecture,
+> the database, the business rules and a per-package guide.
 
 ---
 
