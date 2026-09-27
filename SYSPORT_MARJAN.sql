@@ -15,14 +15,8 @@
 -- parent id; foreign keys are declared inline so creation order is
 -- self-documenting. Business rules live in the 02..90 files.
 
--- SysPort - MARJAN :: schema
--- MySQL 8.4. English status codes, DECIMAL money, ids allocated from the
--- `sequences` table (no AUTO_INCREMENT). Stored procedures/functions hold the
--- application's business rules and are called by the repositories.
--- Design notes: the child column always references the parent id (PRD 4.1 F1).
--- Foreign keys are declared inline so table creation order is self-documenting.
-
-CREATE DATABASE IF NOT EXISTS sysportdb;
+CREATE DATABASE IF NOT EXISTS sysportdb
+  CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 USE sysportdb;
 
 SET NAMES utf8mb4;
@@ -32,12 +26,12 @@ SET NAMES utf8mb4;
 CREATE TABLE roles (
   id   BIGINT PRIMARY KEY,
   name VARCHAR(50) NOT NULL UNIQUE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE permissions (
   id   BIGINT PRIMARY KEY,
   name VARCHAR(100) NOT NULL UNIQUE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE role_permissions (
   role_id       BIGINT NOT NULL,
@@ -45,7 +39,7 @@ CREATE TABLE role_permissions (
   PRIMARY KEY (role_id, permission_id),
   CONSTRAINT fk_rp_role       FOREIGN KEY (role_id)       REFERENCES roles (id),
   CONSTRAINT fk_rp_permission FOREIGN KEY (permission_id) REFERENCES permissions (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- ---------------------------------------------------------------- people
 
@@ -58,7 +52,7 @@ CREATE TABLE licenses (
   created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_licenses_expiration (expiration_date)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE employees (
   id                     BIGINT PRIMARY KEY,
@@ -77,7 +71,7 @@ CREATE TABLE employees (
   updated_at             TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_employees_license FOREIGN KEY (license_id) REFERENCES licenses (id),
   INDEX idx_employees_status (status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- users reference the person they belong to (employee_id -> employees.id)
 CREATE TABLE users (
@@ -91,7 +85,7 @@ CREATE TABLE users (
   created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_users_employee FOREIGN KEY (employee_id) REFERENCES employees (id),
   CONSTRAINT fk_users_role     FOREIGN KEY (role_id)     REFERENCES roles (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- ---------------------------------------------------------------- fleet
 
@@ -101,17 +95,17 @@ CREATE TABLE vehicles (
   plates        VARCHAR(20)  NOT NULL UNIQUE,
   brand         VARCHAR(50),
   model         VARCHAR(50),
-  year          INT,
+  year          INT CHECK (year IS NULL OR year BETWEEN 1950 AND 2100),
   serial_number VARCHAR(60)  UNIQUE,
   vehicle_type  VARCHAR(50),
-  load_capacity DECIMAL(10,1),
-  mileage       DECIMAL(10,1) NOT NULL DEFAULT 0,
+  load_capacity DECIMAL(10,1) CHECK (load_capacity IS NULL OR load_capacity >= 0),
+  mileage       DECIMAL(10,1) NOT NULL DEFAULT 0 CHECK (mileage >= 0),
   status        VARCHAR(20)  NOT NULL DEFAULT 'available'
                 CHECK (status IN ('available','assigned','on_trip','maintenance','out_of_service','decommissioned')),
   created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_vehicles_status (status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- ---------------------------------------------------------------- clients
 
@@ -127,36 +121,37 @@ CREATE TABLE clients (
                CHECK (client_type IN ('occasional','frequent')),
   payment_terms VARCHAR(20) NOT NULL DEFAULT 'cash'
                CHECK (payment_terms IN ('cash','credit')),
-  credit_limit DECIMAL(12,2) NOT NULL DEFAULT 0,
-  credit_days  INT           NOT NULL DEFAULT 0,
+  credit_limit DECIMAL(12,2) NOT NULL DEFAULT 0 CHECK (credit_limit >= 0),
+  credit_days  INT           NOT NULL DEFAULT 0 CHECK (credit_days >= 0),
   status       VARCHAR(20)  NOT NULL DEFAULT 'active'
                CHECK (status IN ('active','inactive')),
   created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_clients_name (name)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE routes (
   id           BIGINT PRIMARY KEY,
   origin       VARCHAR(150) NOT NULL,
   destination  VARCHAR(150) NOT NULL,
-  estimated_km DECIMAL(10,1),
+  estimated_km DECIMAL(10,1) CHECK (estimated_km IS NULL OR estimated_km >= 0),
   description  VARCHAR(255),
-  created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_routes_pair (origin, destination)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE client_rates (
   id         BIGINT PRIMARY KEY,
   client_id  BIGINT NOT NULL,
   route_id   BIGINT NOT NULL,
-  rate       DECIMAL(12,2) NOT NULL,
+  rate       DECIMAL(12,2) NOT NULL CHECK (rate > 0),
   valid_from DATE NOT NULL,
   valid_to   DATE,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_rates_client FOREIGN KEY (client_id) REFERENCES clients (id),
   CONSTRAINT fk_rates_route  FOREIGN KEY (route_id)  REFERENCES routes (id),
   INDEX idx_rates_lookup (client_id, route_id, valid_from)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- ---------------------------------------------------------------- requests
 
@@ -166,10 +161,10 @@ CREATE TABLE service_requests (
   client_id              BIGINT NOT NULL,
   route_id               BIGINT NOT NULL,
   cargo_description      VARCHAR(255),
-  estimated_weight       DECIMAL(10,1),
+  estimated_weight       DECIMAL(10,1) CHECK (estimated_weight IS NULL OR estimated_weight >= 0),
   pickup_date_scheduled  DATETIME,
   delivery_date_scheduled DATETIME,
-  agreed_rate            DECIMAL(12,2),
+  agreed_rate            DECIMAL(12,2) CHECK (agreed_rate IS NULL OR agreed_rate > 0),
   requires_documents     BOOLEAN NOT NULL DEFAULT TRUE,
   status                 VARCHAR(20) NOT NULL DEFAULT 'requested'
                          CHECK (status IN ('requested','authorized','scheduled','assigned','in_transit','delivered','closed','cancelled')),
@@ -182,10 +177,13 @@ CREATE TABLE service_requests (
   CONSTRAINT fk_sr_route      FOREIGN KEY (route_id)   REFERENCES routes (id),
   CONSTRAINT fk_sr_created_by FOREIGN KEY (created_by) REFERENCES users (id),
   CONSTRAINT fk_sr_updated_by FOREIGN KEY (updated_by) REFERENCES users (id),
+  CONSTRAINT ck_sr_dates CHECK (pickup_date_scheduled IS NULL OR delivery_date_scheduled IS NULL
+                                OR delivery_date_scheduled > pickup_date_scheduled),
   INDEX idx_sr_status (status),
   INDEX idx_sr_client (client_id),
-  INDEX idx_sr_route (route_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  INDEX idx_sr_route (route_id),
+  INDEX idx_sr_pickup (pickup_date_scheduled)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- ---------------------------------------------------------------- trips
 
@@ -194,8 +192,8 @@ CREATE TABLE trips (
   service_request_id BIGINT NOT NULL UNIQUE,
   vehicle_id         BIGINT NOT NULL,
   employee_id        BIGINT NOT NULL,
-  estimated_km       DECIMAL(10,1),
-  actual_km          DECIMAL(10,1),
+  estimated_km       DECIMAL(10,1) CHECK (estimated_km IS NULL OR estimated_km >= 0),
+  actual_km          DECIMAL(10,1) CHECK (actual_km IS NULL OR actual_km >= 0),
   planned_start      DATETIME NOT NULL,
   planned_end        DATETIME NOT NULL,
   departure_datetime DATETIME,
@@ -211,10 +209,12 @@ CREATE TABLE trips (
   CONSTRAINT fk_trip_employee FOREIGN KEY (employee_id)        REFERENCES employees (id),
   CONSTRAINT fk_trip_created  FOREIGN KEY (created_by)         REFERENCES users (id),
   CONSTRAINT fk_trip_updated  FOREIGN KEY (updated_by)         REFERENCES users (id),
+  CONSTRAINT ck_trip_window CHECK (planned_end > planned_start),
   INDEX idx_trips_vehicle_window (vehicle_id, planned_start),
   INDEX idx_trips_employee_window (employee_id, planned_start),
-  INDEX idx_trips_status (status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  INDEX idx_trips_status (status),
+  INDEX idx_trips_planned_start (planned_start)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE expenses (
   id           BIGINT PRIMARY KEY,
@@ -229,7 +229,7 @@ CREATE TABLE expenses (
   CONSTRAINT fk_expense_trip    FOREIGN KEY (trip_id)    REFERENCES trips (id),
   CONSTRAINT fk_expense_creator FOREIGN KEY (created_by) REFERENCES users (id),
   INDEX idx_expenses_trip (trip_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE advances (
   id             BIGINT PRIMARY KEY,
@@ -248,7 +248,7 @@ CREATE TABLE advances (
   CONSTRAINT fk_advance_settler  FOREIGN KEY (settled_by)  REFERENCES users (id),
   CONSTRAINT fk_advance_creator  FOREIGN KEY (created_by)  REFERENCES users (id),
   INDEX idx_advances_trip (trip_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE fuel_loads (
   id                BIGINT PRIMARY KEY,
@@ -259,15 +259,16 @@ CREATE TABLE fuel_loads (
   liters            DECIMAL(8,2) NOT NULL CHECK (liters > 0),
   price_per_liter   DECIMAL(8,3) NOT NULL CHECK (price_per_liter > 0),
   amount            DECIMAL(12,2) NOT NULL CHECK (amount > 0),
-  odometer_reading  DECIMAL(10,1),
+  odometer_reading  DECIMAL(10,1) CHECK (odometer_reading IS NULL OR odometer_reading >= 0),
   created_by        BIGINT,
   created_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_fuel_vehicle FOREIGN KEY (vehicle_id) REFERENCES vehicles (id),
   CONSTRAINT fk_fuel_trip    FOREIGN KEY (trip_id)    REFERENCES trips (id),
   CONSTRAINT fk_fuel_creator FOREIGN KEY (created_by) REFERENCES users (id),
   INDEX idx_fuel_vehicle_date (vehicle_id, load_date),
+  INDEX idx_fuel_load_date (load_date),
   INDEX idx_fuel_trip (trip_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE maintenance (
   id                BIGINT PRIMARY KEY,
@@ -278,7 +279,7 @@ CREATE TABLE maintenance (
                     CHECK (maintenance_type IN ('preventive','corrective')),
   work_performed    VARCHAR(500),
   provider          VARCHAR(150),
-  cost              DECIMAL(12,2) NOT NULL DEFAULT 0,
+  cost              DECIMAL(12,2) NOT NULL DEFAULT 0 CHECK (cost >= 0),
   next_service_date DATE,
   next_service_km   DECIMAL(10,1),
   created_by        BIGINT,
@@ -287,7 +288,7 @@ CREATE TABLE maintenance (
   CONSTRAINT fk_maint_creator FOREIGN KEY (created_by) REFERENCES users (id),
   INDEX idx_maint_vehicle (vehicle_id, maintenance_date),
   INDEX idx_maint_next (next_service_date)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE incidents (
   id             BIGINT PRIMARY KEY,
@@ -304,7 +305,7 @@ CREATE TABLE incidents (
   CONSTRAINT fk_incident_trip    FOREIGN KEY (trip_id)    REFERENCES trips (id),
   CONSTRAINT fk_incident_creator FOREIGN KEY (created_by) REFERENCES users (id),
   INDEX idx_incidents_trip (trip_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- one delivery per trip (BR-12)
 CREATE TABLE deliveries (
@@ -319,7 +320,7 @@ CREATE TABLE deliveries (
   created_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_delivery_trip    FOREIGN KEY (trip_id)    REFERENCES trips (id),
   CONSTRAINT fk_delivery_creator FOREIGN KEY (created_by) REFERENCES users (id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- ---------------------------------------------------------------- finance
 
@@ -340,9 +341,10 @@ CREATE TABLE invoices (
   CONSTRAINT fk_invoice_client  FOREIGN KEY (client_id)          REFERENCES clients (id),
   CONSTRAINT fk_invoice_request FOREIGN KEY (service_request_id) REFERENCES service_requests (id),
   CONSTRAINT fk_invoice_creator FOREIGN KEY (created_by)         REFERENCES users (id),
+  CONSTRAINT ck_invoice_dates CHECK (due_date >= issue_date),
   INDEX idx_invoices_status_due (status, due_date),
   INDEX idx_invoices_client (client_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE payments (
   id             BIGINT PRIMARY KEY,
@@ -356,7 +358,7 @@ CREATE TABLE payments (
   CONSTRAINT fk_payment_invoice FOREIGN KEY (invoice_id) REFERENCES invoices (id),
   CONSTRAINT fk_payment_creator FOREIGN KEY (created_by) REFERENCES users (id),
   INDEX idx_payments_invoice (invoice_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- ---------------------------------------------------------------- audit
 
@@ -370,14 +372,14 @@ CREATE TABLE audit_log (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_audit_user FOREIGN KEY (user_id) REFERENCES users (id),
   INDEX idx_audit_entity (entity, entity_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- ---------------------------------------------------------------- sequences
 
 CREATE TABLE sequences (
   name       VARCHAR(50) NOT NULL PRIMARY KEY,
   next_value BIGINT NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 
 -- ================================================================ routines
@@ -1835,6 +1837,14 @@ p: BEGIN
   SET p_problems = NULL;
   IF NOT fn_measure_valid(p_weight) THEN
     SET p_problems = CONCAT_WS('; ', p_problems, 'El peso estimado es invalido o excede el maximo permitido');
+  END IF;
+  IF p_rate IS NOT NULL AND (p_rate <= 0 OR NOT fn_money_valid(p_rate)) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La tarifa acordada debe ser mayor a cero y dentro del rango permitido');
+  END IF;
+  IF (p_pickup IS NULL) <> (p_delivery IS NULL) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'Debe indicar ambas fechas o ninguna');
+  ELSEIF p_pickup IS NOT NULL AND p_delivery <= p_pickup THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La fecha de entrega debe ser posterior a la de recoleccion');
   END IF;
   IF p_problems IS NOT NULL THEN LEAVE p; END IF;
   UPDATE service_requests SET client_id = p_client_id, route_id = p_route_id,

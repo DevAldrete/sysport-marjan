@@ -304,6 +304,14 @@ p: BEGIN
   IF NOT fn_measure_valid(p_weight) THEN
     SET p_problems = CONCAT_WS('; ', p_problems, 'El peso estimado es invalido o excede el maximo permitido');
   END IF;
+  IF p_rate IS NOT NULL AND (p_rate <= 0 OR NOT fn_money_valid(p_rate)) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La tarifa acordada debe ser mayor a cero y dentro del rango permitido');
+  END IF;
+  IF (p_pickup IS NULL) <> (p_delivery IS NULL) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'Debe indicar ambas fechas o ninguna');
+  ELSEIF p_pickup IS NOT NULL AND p_delivery <= p_pickup THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La fecha de entrega debe ser posterior a la de recoleccion');
+  END IF;
   IF p_problems IS NOT NULL THEN LEAVE p; END IF;
   UPDATE service_requests SET client_id = p_client_id, route_id = p_route_id,
                               cargo_description = p_cargo, estimated_weight = p_weight,
