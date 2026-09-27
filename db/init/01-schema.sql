@@ -598,6 +598,7 @@ p: BEGIN
     IF v_start IS NOT NULL AND v_end IS NOT NULL THEN
       SELECT COUNT(*) INTO v_conflicts FROM trips
         WHERE vehicle_id = p_vehicle_id
+          AND service_request_id <> p_request_id
           AND status IN ('scheduled','in_transit')
           AND planned_start < v_end AND planned_end > v_start;
       IF v_conflicts > 0 THEN
@@ -645,6 +646,7 @@ p: BEGIN
     IF v_start IS NOT NULL AND v_end IS NOT NULL THEN
       SELECT COUNT(*) INTO v_conflicts FROM trips
         WHERE employee_id = p_operator_id
+          AND service_request_id <> p_request_id
           AND status IN ('scheduled','in_transit')
           AND planned_start < v_end AND planned_end > v_start;
       IF v_conflicts > 0 THEN
@@ -2170,76 +2172,44 @@ p: BEGIN
   SELECT vehicle_id FROM trips WHERE id = p_trip_id;
 END$$
 
+-- BR-15: reassign before departure, validated like a new assignment and audited.
+-- The validators intentionally ignore the request's own trip, so they can be
+-- reused here without flagging the current trip as a conflict.
 CREATE PROCEDURE sp_reassign_trip(IN p_trip_id BIGINT, IN p_vehicle_id BIGINT,
     IN p_operator_id BIGINT, IN p_user_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
   DECLARE v_status VARCHAR(20) DEFAULT NULL;
-  DECLARE v_start DATETIME DEFAULT NULL;
-  DECLARE v_end DATETIME DEFAULT NULL;
-  DECLARE v_weight DECIMAL(10,1) DEFAULT NULL;
   DECLARE v_request BIGINT;
-  DECLARE v_veh_status VARCHAR(20) DEFAULT NULL;
-  DECLARE v_capacity DECIMAL(10,1) DEFAULT NULL;
-  DECLARE v_emp_status VARCHAR(20) DEFAULT NULL;
-  DECLARE v_exp DATE DEFAULT NULL;
-  DECLARE v_conflicts INT DEFAULT 0;
+  DECLARE v_req_status VARCHAR(20) DEFAULT NULL;
   DECLARE v_audit_id BIGINT;
+  DECLARE EXIT HANDLER FOR SQLEXCEPTION
+  BEGIN
+    ROLLBACK; SET p_problems = 'Error inesperado al reasignar el viaje';
+  END;
 
   SET p_problems = NULL;
-  SELECT status, service_request_id INTO v_status, v_request FROM trips WHERE id = p_trip_id;
+  START TRANSACTION;
+  SELECT status, service_request_id INTO v_status, v_request
+    FROM trips WHERE id = p_trip_id FOR UPDATE;
   IF v_status IS NULL THEN
-    SET p_problems = 'Viaje no encontrado';
-    LEAVE p;
+    ROLLBACK; SET p_problems = 'Viaje no encontrado'; LEAVE p;
   END IF;
   IF v_status <> 'scheduled' THEN
-    SET p_problems = 'Solo se puede reasignar un viaje programado (aun no inicia)';
-    LEAVE p;
+    ROLLBACK; SET p_problems = 'Solo se puede reasignar un viaje programado (aun no inicia)'; LEAVE p;
   END IF;
-  SELECT pickup_date_scheduled, delivery_date_scheduled, estimated_weight
-    INTO v_start, v_end, v_weight
-    FROM service_requests WHERE id = v_request;
-
-  SELECT status, load_capacity INTO v_veh_status, v_capacity FROM vehicles WHERE id = p_vehicle_id;
-  IF v_veh_status IS NULL THEN
-    SET p_problems = CONCAT_WS('; ', p_problems, 'Debe seleccionar una unidad');
-  ELSE
-    IF NOT fn_vehicle_assignable(v_veh_status) THEN
-      SET p_problems = CONCAT_WS('; ', p_problems, CONCAT('La unidad no esta disponible (', v_veh_status, ')'));
-    END IF;
-    IF NOT fn_capacity_ok(v_capacity, v_weight) THEN
-      SET p_problems = CONCAT_WS('; ', p_problems, 'La capacidad de la unidad es menor al peso estimado');
-    END IF;
-    SELECT COUNT(*) INTO v_conflicts FROM trips
-      WHERE vehicle_id = p_vehicle_id AND id <> p_trip_id
-        AND status IN ('scheduled','in_transit')
-        AND planned_start < v_end AND planned_end > v_start;
-    IF v_conflicts > 0 THEN
-      SET p_problems = CONCAT_WS('; ', p_problems, 'La unidad ya tiene un viaje en ese periodo');
-    END IF;
+  SELECT status INTO v_req_status FROM service_requests WHERE id = v_request FOR UPDATE;
+  IF v_req_status <> 'scheduled' THEN
+    ROLLBACK; SET p_problems = 'La solicitud debe estar programada para reasignar el viaje'; LEAVE p;
   END IF;
 
-  SELECT e.status, l.expiration_date INTO v_emp_status, v_exp
-    FROM employees e LEFT JOIN licenses l ON l.id = e.license_id WHERE e.id = p_operator_id;
-  IF v_emp_status IS NULL THEN
-    SET p_problems = CONCAT_WS('; ', p_problems, 'Debe seleccionar un operador');
-  ELSE
-    IF NOT fn_employee_assignable(v_emp_status) THEN
-      SET p_problems = CONCAT_WS('; ', p_problems, CONCAT('El operador no esta disponible (', v_emp_status, ')'));
-    END IF;
-    IF v_exp IS NULL THEN
-      SET p_problems = CONCAT_WS('; ', p_problems, 'El operador no tiene licencia registrada');
-    ELSEIF v_end IS NOT NULL AND v_exp < DATE(v_end) THEN
-      SET p_problems = CONCAT_WS('; ', p_problems, 'La licencia del operador vence antes del fin del viaje');
-    END IF;
-    SELECT COUNT(*) INTO v_conflicts FROM trips
-      WHERE employee_id = p_operator_id AND id <> p_trip_id
-        AND status IN ('scheduled','in_transit')
-        AND planned_start < v_end AND planned_end > v_start;
-    IF v_conflicts > 0 THEN
-      SET p_problems = CONCAT_WS('; ', p_problems, 'El operador ya tiene un viaje en ese periodo');
-    END IF;
+  -- Lock the candidate resources before checking overlaps, like a new assignment.
+  SELECT id INTO @lock_v FROM vehicles WHERE id = p_vehicle_id FOR UPDATE;
+  SELECT id INTO @lock_e FROM employees WHERE id = p_operator_id FOR UPDATE;
+  CALL validate_vehicle_assignment_into(v_request, p_vehicle_id, p_problems);
+  CALL validate_operator_assignment_into(v_request, p_operator_id, p_problems);
+  IF p_problems IS NOT NULL THEN
+    ROLLBACK; LEAVE p;
   END IF;
-  IF p_problems IS NOT NULL THEN LEAVE p; END IF;
 
   UPDATE trips SET vehicle_id = p_vehicle_id, employee_id = p_operator_id, updated_by = p_user_id
   WHERE id = p_trip_id;
@@ -2247,27 +2217,45 @@ p: BEGIN
   INSERT INTO audit_log (id, user_id, entity, entity_id, action, details)
   VALUES (v_audit_id, p_user_id, 'trip', p_trip_id, 'reassigned',
           CONCAT('vehicle=', p_vehicle_id, ', operator=', p_operator_id));
+  COMMIT;
 END$$
 
+-- BR-14: cleanup delete, only while the trip has not started. Audit rows are
+-- kept (BR-22). Covers its own children in one transaction.
 CREATE PROCEDURE sp_trip_delete(IN p_trip_id BIGINT, IN p_user_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
   DECLARE v_status VARCHAR(20) DEFAULT NULL;
   DECLARE v_request BIGINT;
+  DECLARE v_req_status VARCHAR(20) DEFAULT NULL;
+  DECLARE EXIT HANDLER FOR SQLEXCEPTION
+  BEGIN
+    ROLLBACK; SET p_problems = 'No se puede eliminar el viaje: tiene registros relacionados';
+  END;
+
   SET p_problems = NULL;
-  SELECT status, service_request_id INTO v_status, v_request FROM trips WHERE id = p_trip_id;
+  START TRANSACTION;
+  SELECT status, service_request_id INTO v_status, v_request
+    FROM trips WHERE id = p_trip_id FOR UPDATE;
   IF v_status IS NULL THEN
-    SET p_problems = 'Viaje no encontrado';
-    LEAVE p;
+    ROLLBACK; SET p_problems = 'Viaje no encontrado'; LEAVE p;
   END IF;
+  IF v_status NOT IN ('scheduled','cancelled') THEN
+    ROLLBACK; SET p_problems = 'Solo se puede eliminar un viaje programado o cancelado'; LEAVE p;
+  END IF;
+
   DELETE FROM expenses WHERE trip_id = p_trip_id;
   DELETE FROM advances WHERE trip_id = p_trip_id;
   DELETE FROM incidents WHERE trip_id = p_trip_id;
   DELETE FROM deliveries WHERE trip_id = p_trip_id;
   UPDATE fuel_loads SET trip_id = NULL WHERE trip_id = p_trip_id;
-  DELETE FROM audit_log WHERE entity = 'trip' AND entity_id = p_trip_id;
   DELETE FROM trips WHERE id = p_trip_id;
-  UPDATE service_requests SET status = 'scheduled', updated_by = p_user_id
-  WHERE id = v_request AND status IN ('assigned', 'in_transit');
+
+  -- Unassign the request only if the trip never progressed past assigned.
+  SELECT status INTO v_req_status FROM service_requests WHERE id = v_request FOR UPDATE;
+  IF v_req_status = 'assigned' THEN
+    UPDATE service_requests SET status = 'scheduled', updated_by = p_user_id WHERE id = v_request;
+  END IF;
+  COMMIT;
 END$$
 
 CREATE PROCEDURE sp_sweep_lifecycle(IN p_user_id BIGINT, OUT p_changes INT)
@@ -2286,8 +2274,13 @@ p: BEGIN
     WHERE t.status = 'scheduled' AND sr.status = 'assigned'
       AND t.planned_start IS NOT NULL AND t.planned_start <= NOW();
   DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = 1;
+  DECLARE EXIT HANDLER FOR SQLEXCEPTION
+  BEGIN
+    ROLLBACK; SET p_changes = -1;
+  END;
 
   SET v_now = NOW();
+  START TRANSACTION;
   UPDATE service_requests SET status = 'scheduled', updated_by = p_user_id
   WHERE status = 'authorized' AND pickup_date_scheduled IS NOT NULL
     AND delivery_date_scheduled IS NOT NULL
@@ -2310,6 +2303,7 @@ p: BEGIN
     SET p_changes = p_changes + 1;
   END LOOP;
   CLOSE cur;
+  COMMIT;
 
   SET p_changes = p_changes + v_scheduled;
 END$$
