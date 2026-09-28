@@ -1,0 +1,5 @@
+micronaut:
+  application:
+    name: sysport-api
+  server:
+    port: ${PORT:8080}
