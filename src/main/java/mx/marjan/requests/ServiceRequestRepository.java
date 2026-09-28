@@ -22,6 +22,8 @@ public class ServiceRequestRepository {
                 rs.getString("route_label"),
                 rs.getString("cargo_description"),
                 rs.getBigDecimal("estimated_weight"),
+                rs.getInt("package_count"),
+                rs.getBigDecimal("package_weight"),
                 rs.getObject("pickup_date_scheduled", LocalDateTime.class),
                 rs.getObject("delivery_date_scheduled", LocalDateTime.class),
                 rs.getBigDecimal("agreed_rate"),

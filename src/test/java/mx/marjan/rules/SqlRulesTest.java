@@ -133,6 +133,48 @@ class SqlRulesTest {
     }
 
     @Test
+    void reassignmentWorksWhileTripIsScheduled() throws Exception {
+        long request = createRequest(2, 4, "2027-08-05 08:00:00", "2027-08-06 18:00:00",
+                new BigDecimal("1000"), true);
+        authorize(request, new BigDecimal("1000"));
+        schedule(request, "2027-08-05 08:00:00", "2027-08-06 18:00:00");
+        long trip = assign(request, 5, 7);
+        assertEquals("assigned", requestStatus(request), "BR-15: assignment marks the request assigned");
+
+        assertNull(reassign(trip, 6, 10), "BR-15: reassign before departure must succeed");
+        assertEquals(6L, scalarLong("SELECT vehicle_id FROM trips WHERE id=" + trip),
+                "the trip must point at the new vehicle");
+    }
+
+    @Test
+    void packagesDriveEffectiveWeightAndCapacity() throws Exception {
+        long request = createRequest(2, 4, "2027-09-05 08:00:00", "2027-09-06 18:00:00",
+                new BigDecimal("1000"), true);
+        long heavy = savePackage(request, "Refrigeradores", new BigDecimal("40"), "pieza",
+                new BigDecimal("300"), 1);
+        long extra = savePackage(request, "Cajas", new BigDecimal("10"), "caja",
+                new BigDecimal("50"), 2);
+        assertEquals(0, new BigDecimal("12500.0").compareTo(requestWeight(request)),
+                "BR-08: effective weight is the sum of the packages");
+
+        authorize(request, new BigDecimal("1000"));
+        schedule(request, "2027-09-05 08:00:00", "2027-09-06 18:00:00");
+        Object tooSmall = call("{call sp_assign_trip(?,?,?,?,?,?)}",
+                new int[] { Types.VARCHAR, Types.BIGINT }, request, 10L, 10L, 1L)[0];
+        assertNotNull(tooSmall, "BR-08: a 3.5t unit cannot carry 12.5t of packages");
+        assertNull(call("{call sp_assign_trip(?,?,?,?,?,?)}",
+                new int[] { Types.VARCHAR, Types.BIGINT }, request, 5L, 7L, 1L)[0],
+                "a large enough unit assigns fine");
+
+        call("{call sp_package_delete(?)}", new int[0], heavy);
+        call("{call sp_package_delete(?)}", new int[0], extra);
+        savePackage(request, "Solo una pieza", new BigDecimal("1"), "pieza",
+                new BigDecimal("100"), 1);
+        assertEquals(0, new BigDecimal("100.0").compareTo(requestWeight(request)),
+                "fallback recomputes after the packages change");
+    }
+
+    @Test
     void foliosAreSequential() throws Exception {
         long a = createRequest(2, 4, "2027-05-05 08:00:00", "2027-05-06 18:00:00",
                 new BigDecimal("1000"), true);
@@ -179,6 +221,24 @@ class SqlRulesTest {
                 request, vehicle, operator, 1L);
         assertNull(out[0], "assignment should succeed");
         return ((Number) out[1]).longValue();
+    }
+
+    private long savePackage(long request, String description, BigDecimal quantity, String unit,
+            BigDecimal unitWeight, int line) throws Exception {
+        Object[] out = call("{call sp_package_save(?,?,?,?,?,?,?,?,?,?)}",
+                new int[] { Types.BIGINT, Types.VARCHAR },
+                0L, request, line, description, quantity, unit, unitWeight, 1L);
+        assertNull(out[1], "package save should succeed");
+        return ((Number) out[0]).longValue();
+    }
+
+    private BigDecimal requestWeight(long request) throws Exception {
+        return scalarBigDecimal("SELECT fn_request_weight(id) FROM service_requests WHERE id=" + request);
+    }
+
+    private String reassign(long trip, long vehicle, long operator) throws Exception {
+        return (String) call("{call sp_reassign_trip(?,?,?,?,?)}", new int[] { Types.VARCHAR },
+                trip, vehicle, operator, 1L)[0];
     }
 
     private String depart(long trip) throws Exception {
@@ -254,6 +314,18 @@ class SqlRulesTest {
     private double scalarDouble(String sql) throws Exception {
         try (Statement st = connection.createStatement(); ResultSet rs = st.executeQuery(sql)) {
             return rs.next() ? rs.getDouble(1) : 0;
+        }
+    }
+
+    private long scalarLong(String sql) throws Exception {
+        try (Statement st = connection.createStatement(); ResultSet rs = st.executeQuery(sql)) {
+            return rs.next() ? rs.getLong(1) : 0;
+        }
+    }
+
+    private BigDecimal scalarBigDecimal(String sql) throws Exception {
+        try (Statement st = connection.createStatement(); ResultSet rs = st.executeQuery(sql)) {
+            return rs.next() ? rs.getBigDecimal(1) : null;
         }
     }
 

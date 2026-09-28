@@ -20,11 +20,16 @@ import mx.marjan.finance.ExpenseService;
 import mx.marjan.finance.ExpenseType;
 import mx.marjan.fleet.FuelLoad;
 import mx.marjan.fleet.FuelService;
+import mx.marjan.requests.CargoPackage;
+import mx.marjan.requests.CargoPackageService;
+import mx.marjan.requests.PackageCondition;
 import mx.marjan.shared.Async;
 import mx.marjan.shared.Dates;
 import mx.marjan.shared.FormPanel;
 import mx.marjan.shared.ModalForm;
 import mx.marjan.shared.Money;
+import mx.marjan.shared.Numbers;
+import mx.marjan.shared.Validators;
 import mx.marjan.shared.RecordTableModel;
 import mx.marjan.shared.RecordTablePanel;
 import mx.marjan.shared.Result;
@@ -39,6 +44,7 @@ public class TripDetailDialog extends JDialog {
     private final AdvanceService advanceService = new AdvanceService();
     private final IncidentService incidentService = new IncidentService();
     private final DeliveryService deliveryService = new DeliveryService();
+    private final CargoPackageService packageService = new CargoPackageService();
 
     public static void show(Component parent, Trip trip) {
         new TripDetailDialog(parent, trip).setVisible(true);
@@ -54,6 +60,7 @@ public class TripDetailDialog extends JDialog {
         tabs.addTab("Combustible", fuelPanel());
         tabs.addTab("Anticipos", advancesPanel());
         tabs.addTab("Incidencias", incidentsPanel());
+        tabs.addTab("Paquetes", packagesPanel());
         tabs.addTab("Entrega", deliveryPanel());
         setLayout(new BorderLayout(8, 8));
         add(tabs, BorderLayout.CENTER);
@@ -182,7 +189,7 @@ public class TripDetailDialog extends JDialog {
         }
         Async.run(() -> advanceService.settle(panel.selected().id()), result -> {
             if (result.isErr()) {
-                Ui.error(this, "Error", result.problems());
+                Ui.error(this, "No se pudo comprobar el anticipo", result.problems());
             } else {
                 reload.run();
             }
@@ -255,11 +262,73 @@ public class TripDetailDialog extends JDialog {
         }, onSaved);
     }
 
+    private JPanel packagesPanel() {
+        RecordTableModel<CargoPackage> model = new RecordTableModel<>(List.of(
+                RecordTableModel.Column.text("Descripcion", CargoPackage::description, 40),
+                RecordTableModel.Column.of("Cantidad", CargoPackage::quantity),
+                RecordTableModel.Column.of("Unidad", pkg -> pkg.unit() == null ? "" : pkg.unit().label()),
+                RecordTableModel.Column.of("Recibido", CargoPackage::receivedQuantity),
+                RecordTableModel.Column.of("Condicion", pkg ->
+                        pkg.receiptCondition() == null ? "" : pkg.receiptCondition().label())));
+        RecordTablePanel<CargoPackage> panel = new RecordTablePanel<>(model);
+        Runnable reload = () -> Async.run(() -> packageService.list(trip.serviceRequestId()),
+                panel::setRows, failure -> Ui.failure(this, failure));
+        panel.withActions(
+                Ui.button("Registrar recepcion", "Anotar cuanto llego y su condicion", () -> openReceiptForm(panel, reload)),
+                Ui.button("Recibir todo", "Marcar todos como completos", () -> receiveAll(reload)),
+                Ui.button("Recargar", reload));
+        reload.run();
+        return panel;
+    }
+
+    private void openReceiptForm(RecordTablePanel<CargoPackage> panel, Runnable reload) {
+        CargoPackage selected = panel.selected();
+        if (selected == null) {
+            Ui.info(this, "Seleccione un paquete");
+            return;
+        }
+        BigDecimal received = selected.receivedQuantity() != null
+                ? selected.receivedQuantity() : selected.quantity();
+        FormPanel form = new FormPanel()
+                .addText("received", "Cantidad recibida", received.toPlainString(),
+                        "Entre 0 y la cantidad declarada")
+                .addCombo("condition", "Condicion", PackageCondition.values(),
+                        selected.receiptCondition() != null ? selected.receiptCondition() : PackageCondition.OK);
+        form.validate("received", Validators.number());
+        ModalForm.show(this, "Recepcion del paquete", form, () -> {
+            BigDecimal quantity = Numbers.parseOrZero(form.text("received"));
+            if (quantity == null || quantity.signum() < 0) {
+                return Result.err("La cantidad recibida debe ser un numero mayor o igual a cero");
+            }
+            CargoPackage updated = selected.withReceipt(quantity,
+                    (PackageCondition) form.selected("condition"));
+            return packageService.saveReceipts(List.of(updated));
+        }, reload);
+    }
+
+    private void receiveAll(Runnable reload) {
+        if (!Ui.confirm(this, "Marcar todos los paquetes como recibidos y completos?")) {
+            return;
+        }
+        Async.run(() -> {
+            List<CargoPackage> received = packageService.list(trip.serviceRequestId()).stream()
+                    .map(line -> line.withReceipt(line.quantity(), PackageCondition.OK))
+                    .toList();
+            return packageService.saveReceipts(received);
+        }, result -> {
+            if (result.isErr()) {
+                Ui.error(this, "No se puede registrar", result.problems());
+            } else {
+                reload.run();
+            }
+        }, failure -> Ui.failure(this, failure));
+    }
+
     private JPanel deliveryPanel() {
         JLabel status = new JLabel("Cargando...");
         JPanel panel = new JPanel(new BorderLayout(8, 8));
         panel.add(Ui.titled("Entrega registrada", status), BorderLayout.CENTER);
-        panel.add(Ui.row(Ui.button("Registrar / actualizar entrega", () -> openDeliveryForm()),
+        panel.add(Ui.row(Ui.button("Registrar / actualizar entrega", () -> openDeliveryForm(status)),
                 Ui.button("Recargar", () -> loadDelivery(status))), BorderLayout.SOUTH);
         loadDelivery(status);
         return panel;
@@ -276,22 +345,25 @@ public class TripDetailDialog extends JDialog {
                         + "<br>Evidencia: " + record.evidenceReference()
                         + "<br>Estado: " + record.status().label() + "</html>");
             }
-        }, failure -> status.setText("Error al cargar"));
+        }, failure -> status.setText("Error al cargar: "
+                + (failure.getMessage() == null ? failure.toString() : failure.getMessage())));
     }
 
-    private void openDeliveryForm() {
+    private void openDeliveryForm(JLabel status) {
         FormPanel form = new FormPanel()
                 .addText("datetime", "Fecha y hora (yyyy-MM-dd HH:mm)", Dates.format(Dates.now()))
                 .addText("receivedBy", "Recibio", "")
-                .addText("evidence", "Referencia de evidencia", "");
+                .addText("evidence", "Referencia de evidencia", "")
+                .addCombo("status", "Estado de la entrega", DeliveryStatus.values(), DeliveryStatus.COMPLETE);
         ModalForm.show(this, "Entrega del viaje " + trip.folio(), form, () -> {
             java.time.LocalDateTime dateTime = Dates.parseDateTime(form.text("datetime")).orElse(null);
             if (dateTime == null) {
                 return Result.err("La fecha y hora son obligatorias (yyyy-MM-dd HH:mm)");
             }
             Delivery delivery = new Delivery(0, trip.id(), trip.folio(), dateTime,
-                    form.text("receivedBy"), form.text("evidence"), DeliveryStatus.COMPLETE);
+                    form.text("receivedBy"), form.text("evidence"),
+                    (DeliveryStatus) form.selected("status"));
             return deliveryService.register(delivery);
-        });
+        }, () -> loadDelivery(status));
     }
 }

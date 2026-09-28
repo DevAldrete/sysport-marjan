@@ -152,8 +152,26 @@ public final class Database {
    * after the IN parameters, and returns their values in order.
    */
   public static Object[] call(String callSql, int[] outTypes, Object... inParams) {
-    try (Connection connection = getConnection();
-        CallableStatement statement = connection.prepareCall(callSql)) {
+    try (Connection connection = getConnection()) {
+      return invoke(connection, callSql, outTypes, inParams);
+    } catch (SQLException failure) {
+      throw new DataException(translate(failure), failure);
+    }
+  }
+
+  /** Same as {@link #call} but on a caller-owned connection (see {@link #inTransaction}). */
+  public static Object[] call(Connection connection, String callSql, int[] outTypes,
+      Object... inParams) {
+    try {
+      return invoke(connection, callSql, outTypes, inParams);
+    } catch (SQLException failure) {
+      throw new DataException(translate(failure), failure);
+    }
+  }
+
+  private static Object[] invoke(Connection connection, String callSql, int[] outTypes,
+      Object... inParams) throws SQLException {
+    try (CallableStatement statement = connection.prepareCall(callSql)) {
       bind(statement, inParams);
       for (int i = 0; i < outTypes.length; i++) {
         statement.registerOutParameter(inParams.length + 1 + i, outTypes[i]);
@@ -164,15 +182,31 @@ public final class Database {
         outs[i] = statement.getObject(inParams.length + 1 + i);
       }
       return outs;
-    } catch (SQLException failure) {
-      throw new DataException(translate(failure), failure);
     }
   }
 
   /** Runs a read procedure and maps all rows of its first result set. */
   public static <T> List<T> callList(String callSql, RowMapper<T> mapper, Object... params) {
-    try (Connection connection = getConnection();
-        CallableStatement statement = connection.prepareCall(callSql)) {
+    try (Connection connection = getConnection()) {
+      return readList(connection, callSql, mapper, params);
+    } catch (SQLException failure) {
+      throw new DataException(translate(failure), failure);
+    }
+  }
+
+  /** Same as {@link #callList} but on a caller-owned connection. */
+  public static <T> List<T> callList(Connection connection, String callSql, RowMapper<T> mapper,
+      Object... params) {
+    try {
+      return readList(connection, callSql, mapper, params);
+    } catch (SQLException failure) {
+      throw new DataException(translate(failure), failure);
+    }
+  }
+
+  private static <T> List<T> readList(Connection connection, String callSql, RowMapper<T> mapper,
+      Object... params) throws SQLException {
+    try (CallableStatement statement = connection.prepareCall(callSql)) {
       bind(statement, params);
       try (ResultSet rs = statement.executeQuery()) {
         List<T> rows = new ArrayList<>();
@@ -181,8 +215,6 @@ public final class Database {
         }
         return rows;
       }
-    } catch (SQLException failure) {
-      throw new DataException(translate(failure), failure);
     }
   }
 
@@ -200,35 +232,105 @@ public final class Database {
   /** Calls a procedure whose single OUT is {@code p_problems TEXT}. */
   public static Result<Void> callVoid(String callSql, Object... inParams) {
     Object[] out = call(callSql, new int[] { Types.VARCHAR }, inParams);
-    String problems = asProblems(out[0]);
-    return problems == null ? Result.ok(null) : Result.err(problems);
+    List<String> problems = asProblemList(out[0]);
+    return problems.isEmpty() ? Result.<Void>ok(null) : Result.err(problems);
   }
 
   /** Calls a procedure shaped as {@code OUT p_id BIGINT, OUT p_problems TEXT}. */
   public static Result<Long> callForId(String callSql, Object... inParams) {
     Object[] out = call(callSql, new int[] { Types.BIGINT, Types.VARCHAR }, inParams);
     Long id = asLong(out[0]);
-    String problems = asProblems(out[1]);
-    return problems == null ? Result.ok(id) : Result.err(problems);
+    List<String> problems = asProblemList(out[1]);
+    return problems.isEmpty() ? Result.<Long>ok(id) : Result.err(problems);
   }
 
   /** Calls a procedure shaped as {@code OUT p_problems TEXT, OUT p_id BIGINT}. */
   public static Result<Long> callForProblemsAndId(String callSql, Object... inParams) {
     Object[] out = call(callSql, new int[] { Types.VARCHAR, Types.BIGINT }, inParams);
-    String problems = asProblems(out[0]);
-    return problems == null ? Result.ok(asLong(out[1])) : Result.err(problems);
+    List<String> problems = asProblemList(out[0]);
+    return problems.isEmpty() ? Result.<Long>ok(asLong(out[1])) : Result.err(problems);
+  }
+
+  /** Connection-scoped variant of {@link #callVoid}. */
+  public static Result<Void> callVoid(Connection connection, String callSql, Object... inParams) {
+    Object[] out = call(connection, callSql, new int[] { Types.VARCHAR }, inParams);
+    List<String> problems = asProblemList(out[0]);
+    return problems.isEmpty() ? Result.<Void>ok(null) : Result.err(problems);
+  }
+
+  /** Connection-scoped variant of {@link #callForId}. */
+  public static Result<Long> callForId(Connection connection, String callSql, Object... inParams) {
+    Object[] out = call(connection, callSql, new int[] { Types.BIGINT, Types.VARCHAR }, inParams);
+    Long id = asLong(out[0]);
+    List<String> problems = asProblemList(out[1]);
+    return problems.isEmpty() ? Result.<Long>ok(id) : Result.err(problems);
+  }
+
+  /** Connection-scoped variant of {@link #callNoOut}. */
+  public static void callNoOut(Connection connection, String callSql, Object... inParams) {
+    call(connection, callSql, new int[0], inParams);
+  }
+
+  /** A unit of work that receives a shared connection and may throw SQLException. */
+  @FunctionalInterface
+  public interface TransactionWork<T> {
+    T run(Connection connection) throws SQLException;
+  }
+
+  /**
+   * Runs several statements on one connection inside a transaction: commits on
+   * success, rolls back on any failure. Lets repositories join one unit of work
+   * (PRD 3.5), which the single-call helpers above cannot.
+   */
+  public static <T> T inTransaction(TransactionWork<T> work) {
+    try (Connection connection = getConnection()) {
+      connection.setAutoCommit(false);
+      try {
+        T result = work.run(connection);
+        connection.commit();
+        return result;
+      } catch (Throwable failure) {
+        try {
+          connection.rollback();
+        } catch (SQLException ignored) {
+          // keep the original failure
+        }
+        if (failure instanceof SQLException sql) {
+          throw new DataException(translate(sql), sql);
+        }
+        if (failure instanceof RuntimeException runtime) {
+          throw runtime;
+        }
+        throw new DataException(String.valueOf(failure.getMessage()), new SQLException(failure));
+      }
+    } catch (SQLException failure) {
+      throw new DataException(translate(failure), failure);
+    }
   }
 
   public static Long asLong(Object value) {
     return value == null ? null : ((Number) value).longValue();
   }
 
-  public static String asProblems(Object value) {
+  /**
+   * Splits the procedures' {@code '; '}-joined problem string so the UI can show
+   * one bullet per rule violation instead of a single run-on sentence.
+   */
+  public static List<String> asProblemList(Object value) {
     if (value == null) {
-      return null;
+      return List.of();
     }
-    String problems = value.toString().trim();
-    return problems.isEmpty() ? null : problems;
+    String text = value.toString().trim();
+    if (text.isEmpty()) {
+      return List.of();
+    }
+    List<String> problems = new ArrayList<>();
+    for (String problem : text.split(";\\s*")) {
+      if (!problem.isBlank()) {
+        problems.add(problem.trim());
+      }
+    }
+    return problems;
   }
 
   /** Runs a read procedure and returns the raw first result set as a report. */

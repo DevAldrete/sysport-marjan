@@ -33,8 +33,13 @@ employee without a license still appears.
 
 - `client_name` (from `clients.name`)
 - `route_label` = `CONCAT(r.origin, ' -> ', r.destination)`
+- `package_count` and `package_weight` (= `SUM(quantity × unit_weight)` over `request_packages`)
 
-Used by every request search/by-id/status/pending-billing procedure.
+Used by every request search/by-id/status/pending-billing procedure. `estimated_weight` stays the
+manual fallback; the effective weight the UI validates against is
+`fn_request_weight(sr.id)` = `COALESCE(package_weight, estimated_weight)`. Note the view joins
+`request_packages` with **correlated subqueries**, so a request with no packages still lists
+(the count is 0, the weight null).
 
 ## `v_trip`
 

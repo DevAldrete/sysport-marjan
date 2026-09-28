@@ -33,10 +33,19 @@ See [Assignment](/domain/assignment/) for the assignment transaction in detail.
 | **Combustible** | fuel loads for the trip |
 | **Anticipos** | advances table + Registrar / Comprobar (settle) / Eliminar |
 | **Incidencias** | incidents table + Nueva / Eliminar |
-| **Entrega** | delivery status + Registrar / actualizar |
+| **Paquetes** | the request's packages + Registrar recepcion (received quantity and condition per line) / Recibir todo / Recargar |
+| **Entrega** | delivery status + Registrar / actualizar (status `complete` or `pending_documents`) |
 
 The **Resumen** total is computed from `ExpenseService` + `FuelService`; the advance outcome comes
 from `AdvanceService.balanceForTrip` (BR-16).
+
+## Packages & per-unit tracking
+
+The trip inherits the request's package list (`request_packages`). The **Paquetes** tab lists each
+line and lets the user record what actually arrived: `received_quantity` (capped at the declared
+quantity) and `receipt_condition` (`ok`, `shortage`, `damaged`, `missing`) via
+`sp_package_receipt_save`. This is the per-unit tracking that a plain cargo description cannot give;
+a shortage here is the natural trigger for a `cargo_damage` incident.
 
 ## Deliveries — BR-12 / BR-13
 
@@ -52,7 +61,10 @@ Free-form operational log per trip: type (`accident`, `mechanical_failure`, `del
 ## The UI
 
 `TripsView`: filter (Buscar + Estado) and actions Salida, Llegada, Reasignar, Cancelar, Detalle,
-Eliminar. Double-click opens the detail. `reload()` runs `sweepLifecycle()` first.
+Eliminar. Double-click opens the detail. `reload()` runs `sweepLifecycle()` first. Actions are
+enabled per permission (`trips.write` / `trips.assign`) **and** the selected trip's status: Salida
+and Reasignar/Cancelar only when `scheduled`, Llegada only when `in_transit`, Eliminar when
+`scheduled`/`cancelled`.
 
 ## Java map
 

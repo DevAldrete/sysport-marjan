@@ -91,7 +91,7 @@ public class LoginView extends JDialog {
                         user = result.value();
                         dispose();
                     } else {
-                        messageLabel.setText(result.problems().get(0));
+                        messageLabel.setText(String.join(" ", result.problems()));
                     }
                 },
                 failure -> {

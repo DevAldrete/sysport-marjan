@@ -18,8 +18,9 @@ Async.run(
 );
 ```
 
-`Async` is a thin `SwingWorker` wrapper that unwraps the cause so you get the real exception.
-`BaseView` wraps this further.
+`Async` is a thin `SwingWorker` wrapper that unwraps the cause so you get the real exception and
+shows a **wait cursor** on every window while at least one worker runs. `BaseView` wraps this
+further.
 
 ## `BaseView` — the screen shell
 
@@ -65,10 +66,12 @@ form.validate("pickup", Validators.dateTime());
 | `addCheck(key, label, value)` | checkbox |
 | `addArea(key, label, value[, hint])` | multi-line text area |
 | `addComputed(key, label, supplier)` | **read-only**, recomputed on every change |
+| `addSection(component)` | full-width custom row (e.g. a child-list editor) |
 | `validate(key, fn)` | live check; returns a message or `null` |
-| `hint(key, text)` | persistent helper text |
+| `hint(key, text)` | persistent helper text (also used as the field tooltip) |
 | `onSelect(key, action)` | run when a combo changes (e.g. prefill) |
 | `onChange(listener)` | run after any change |
+| `isValid()`, `focusFirstInvalid()` | mark all fields touched; block submit / focus the first red one |
 | `text(key)`, `selected(key)`, `checked(key)`, `setText(key, v)`, `field(key)` | read/write |
 
 A field with an invalid value is outlined red and its hint turns into the error message **as the
@@ -89,7 +92,11 @@ ModalForm.show(this, "Nueva ruta", form, () -> service.save(built), this::reload
 ```
 
 - The submit handler returns `Result<?>`.
+- **Submit is gated on live validation**: if a validated field is still red, the dialog focuses it
+  and does not call the handler.
 - On `Result.Err`, the problems are shown under *"No se pudo guardar"* and the user can fix them.
+  (The database reports every rule at once; `Database.asProblemList` splits the `'; '` string so
+  `Ui.error` shows one bullet per problem.)
 - On success the optional `afterSave` runs (usually `reload`).
 - The first editable field gets focus automatically.
 
@@ -102,7 +109,7 @@ ModalForm.show(this, "Nueva ruta", form, () -> service.save(built), this::reload
 | `Ui.confirm(parent, message)` | yes/no confirmation |
 | `Ui.delete(parent, what, action, onDone)` | confirm + async delete + uniform reporting |
 | `Ui.failure(parent, throwable)` | report an unexpected exception |
-| `Ui.button(text[, tooltip], action)` | a button wired to a `Runnable` |
+| `Ui.button(text[, tooltip], action[, enabled])` | a button wired to a `Runnable`; disabled when the user lacks the permission |
 | `Ui.onEnter(field, action)` | Enter in a search field |
 | `Ui.onDoubleClick(table, action)` | open a row on double-click |
 | `Ui.row(…)`, `Ui.column(…)`, `Ui.titled(…)` | layout helpers |

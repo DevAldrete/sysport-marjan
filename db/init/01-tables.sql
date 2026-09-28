@@ -174,6 +174,28 @@ CREATE TABLE service_requests (
   INDEX idx_sr_pickup (pickup_date_scheduled)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+-- Packages (bultos) that make up a service request's cargo. A request can carry
+-- many; the trip (1:1 with the request) inherits the list. unit_weight is per
+-- unit, so line weight = quantity x unit_weight. received_quantity/condition
+-- are filled when the trip is delivered, for per-unit tracking.
+CREATE TABLE request_packages (
+  id                 BIGINT PRIMARY KEY,
+  service_request_id BIGINT NOT NULL,
+  line_no            INT NOT NULL,
+  description        VARCHAR(255) NOT NULL,
+  quantity           DECIMAL(10,2) NOT NULL DEFAULT 1 CHECK (quantity > 0),
+  unit               VARCHAR(20) NOT NULL DEFAULT 'caja'
+                     CHECK (unit IN ('caja','paleta','saco','bulto','pieza','contenedor','otro')),
+  unit_weight        DECIMAL(10,1) CHECK (unit_weight IS NULL OR unit_weight >= 0),
+  received_quantity  DECIMAL(10,2) CHECK (received_quantity IS NULL OR received_quantity >= 0),
+  receipt_condition  VARCHAR(20)
+                     CHECK (receipt_condition IS NULL OR receipt_condition IN ('ok','shortage','damaged','missing')),
+  created_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_pkg_request FOREIGN KEY (service_request_id) REFERENCES service_requests (id),
+  INDEX idx_pkg_request (service_request_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 -- ---------------------------------------------------------------- trips
 
 CREATE TABLE trips (

@@ -124,6 +124,20 @@ public final class FormPanel {
         return this;
     }
 
+    /** Adds a full-width custom component on its own row (e.g. a child-list editor). */
+    public FormPanel addSection(JComponent component) {
+        GridBagConstraints constraints = new GridBagConstraints();
+        constraints.gridx = 0;
+        constraints.gridy = row;
+        constraints.gridwidth = 2;
+        constraints.weightx = 1;
+        constraints.fill = GridBagConstraints.HORIZONTAL;
+        constraints.insets = INSETS;
+        panel.add(component, constraints);
+        row += 2;
+        return this;
+    }
+
     /** A live format check. The message is shown once the user has edited the field. */
     public FormPanel validate(String key, Function<String, String> validator) {
         validators.put(key, validator);
@@ -178,6 +192,37 @@ public final class FormPanel {
         }
         for (Runnable listener : changeListeners) {
             listener.run();
+        }
+    }
+
+    /**
+     * Marks every validated field as edited and reports whether all pass, so a
+     * dialog can block submit while a field is still red.
+     */
+    public boolean isValid() {
+        touched.addAll(validators.keySet());
+        refresh();
+        for (Map.Entry<String, Function<String, String>> entry : validators.entrySet()) {
+            if (entry.getValue().apply(text(entry.getKey())) != null) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Puts the focus on the first field whose live validator is failing. */
+    public void focusFirstInvalid() {
+        for (Map.Entry<String, Function<String, String>> entry : validators.entrySet()) {
+            if (entry.getValue().apply(text(entry.getKey())) != null) {
+                JComponent component = fields.get(entry.getKey());
+                if (component != null) {
+                    component.requestFocusInWindow();
+                    if (component instanceof JTextField field) {
+                        field.selectAll();
+                    }
+                }
+                return;
+            }
         }
     }
 
@@ -250,6 +295,7 @@ public final class FormPanel {
         originalBorders.put(key, fieldToStore.getBorder());
         if (hint != null) {
             baseHints.put(key, hint);
+            fieldToDisplay.setToolTipText(hint);
         }
         row += 2;
     }

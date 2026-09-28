@@ -11,6 +11,7 @@ import mx.marjan.shared.Result;
 public class ServiceRequestService {
 
     private final ServiceRequestRepository requests = new ServiceRequestRepository();
+    private final CargoPackageService cargoPackages = new CargoPackageService();
 
     public List<ServiceRequest> search(RequestFilter filter) {
         return requests.search(filter);
@@ -31,12 +32,21 @@ public class ServiceRequestService {
 
     /** BR-01: the database assigns the next folio for the request's year. */
     public Result<ServiceRequest> create(ServiceRequest draft) {
+        return create(draft, List.of());
+    }
+
+    /** Creates the request and then its package list (the latter atomically). */
+    public Result<ServiceRequest> create(ServiceRequest draft, List<CargoPackage> packages) {
         if (!Session.has(Permissions.REQUESTS_WRITE)) {
             return Result.err("No tiene permiso para crear solicitudes");
         }
         Result<Long> saved = requests.create(draft, Session.userId());
         if (saved.isErr()) {
             return Result.err(saved.problems());
+        }
+        Result<Void> packagesSaved = cargoPackages.replace(saved.value(), packages);
+        if (packagesSaved.isErr()) {
+            return Result.err(packagesSaved.problems());
         }
         return requests.findById(saved.value())
                 .map(Result::ok)
@@ -52,11 +62,28 @@ public class ServiceRequestService {
     }
 
     public Result<ServiceRequest> update(ServiceRequest request) {
+        return update(request, null);
+    }
+
+    /**
+     * Updates the request and, when {@code packages} is not null, replaces its
+     * package list (null leaves the packages untouched).
+     */
+    public Result<ServiceRequest> update(ServiceRequest request, List<CargoPackage> packages) {
         if (!Session.has(Permissions.REQUESTS_WRITE)) {
             return Result.err("No tiene permiso para modificar solicitudes");
         }
         Result<Void> saved = requests.update(request, Session.userId());
-        return saved.isErr() ? Result.err(saved.problems()) : Result.ok(request);
+        if (saved.isErr()) {
+            return Result.err(saved.problems());
+        }
+        if (packages != null) {
+            Result<Void> packagesSaved = cargoPackages.replace(request.id(), packages);
+            if (packagesSaved.isErr()) {
+                return Result.err(packagesSaved.problems());
+            }
+        }
+        return requests.findById(request.id()).map(Result::ok).orElse(Result.ok(request));
     }
 
     public Result<ServiceRequest> authorize(long id, BigDecimal rate) {

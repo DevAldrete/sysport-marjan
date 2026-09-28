@@ -16,12 +16,15 @@ import mx.marjan.fleet.Vehicle;
 import mx.marjan.operators.Employee;
 import mx.marjan.routes.Route;
 import mx.marjan.routes.RouteService;
+import mx.marjan.security.Permissions;
+import mx.marjan.security.Session;
 import mx.marjan.shared.Async;
 import mx.marjan.shared.BaseView;
 import mx.marjan.shared.Dates;
 import mx.marjan.shared.FormPanel;
 import mx.marjan.shared.ModalForm;
 import mx.marjan.shared.Money;
+import mx.marjan.shared.Numbers;
 import mx.marjan.shared.RecordTableModel;
 import mx.marjan.shared.Result;
 import mx.marjan.shared.Ui;
@@ -31,6 +34,7 @@ import mx.marjan.trips.TripService;
 public class ServiceRequestsView extends BaseView {
 
     private final ServiceRequestService service = new ServiceRequestService();
+    private final CargoPackageService packageService = new CargoPackageService();
     private final ClientService clientService = new ClientService();
     private final RouteService routeService = new RouteService();
     private final TripService tripService = new TripService();
@@ -39,7 +43,8 @@ public class ServiceRequestsView extends BaseView {
             RecordTableModel.Column.of("Folio", ServiceRequest::folio),
             RecordTableModel.Column.of("Cliente", ServiceRequest::clientName),
             RecordTableModel.Column.of("Ruta", ServiceRequest::routeLabel),
-            RecordTableModel.Column.of("Peso", ServiceRequest::estimatedWeight),
+            RecordTableModel.Column.of("Paquetes", request -> request.packageCount() == 0 ? "" : request.packageCount()),
+            RecordTableModel.Column.of("Peso", ServiceRequest::effectiveWeight),
             RecordTableModel.Column.of("Recoleccion", request -> Dates.format(request.pickupScheduled())),
             RecordTableModel.Column.of("Entrega", request -> Dates.format(request.deliveryScheduled())),
             RecordTableModel.Column.of("Tarifa", request -> request.agreedRate() == null
@@ -52,6 +57,8 @@ public class ServiceRequestsView extends BaseView {
     private final JTextField toField = new JTextField(10);
     private final JComboBox<Object> clientFilter = new JComboBox<>();
     private final JComboBox<Object> statusFilter = new JComboBox<>();
+    // Keep the lifecycle moving while the screen is open (BR-03 automation).
+    private final javax.swing.Timer sweepTimer = new javax.swing.Timer(60_000, event -> sweep());
 
     public ServiceRequestsView() {
         Ui.onEnter(folioField, this::reload);
@@ -60,8 +67,13 @@ public class ServiceRequestsView extends BaseView {
         add(Ui.scroll(table), BorderLayout.CENTER);
         reloadClients();
         reload();
-        // Keep the lifecycle moving while the screen is open (BR-03 automation).
-        new javax.swing.Timer(60_000, event -> sweep()).start();
+        sweepTimer.start();
+    }
+
+    @Override
+    public void removeNotify() {
+        sweepTimer.stop();
+        super.removeNotify();
     }
 
     private void sweep() {
@@ -85,16 +97,18 @@ public class ServiceRequestsView extends BaseView {
                 Ui.button("Buscar", this::reload),
                 Ui.button("Limpiar", this::clearFilters),
                 Ui.button("Recargar", this::reload));
+        boolean canWrite = Session.has(Permissions.REQUESTS_WRITE);
+        boolean canAssign = Session.has(Permissions.REQUESTS_ASSIGN);
         JPanel actions = Ui.row(
-                Ui.button("Nueva", "Registrar una solicitud de servicio", this::openNew),
-                Ui.button("Editar", "Editar los datos de la solicitud", this::openEdit),
-                Ui.button("Autorizar", "Definir la tarifa acordada", this::openAuthorize),
-                Ui.button("Programar", "Definir recoleccion y entrega", this::openSchedule),
-                Ui.button("Asignar viaje", "Elegir unidad y operador", this::openAssign),
-                Ui.button("Cancelar", "Cancelar la solicitud", this::openCancel),
-                Ui.button("Cerrar", "Cerrar la solicitud entregada", this::closeRequest),
+                Ui.button("Nueva", "Registrar una solicitud de servicio", this::openNew, canWrite),
+                Ui.button("Editar", "Editar los datos de la solicitud", this::openEdit, canWrite),
+                Ui.button("Autorizar", "Definir la tarifa acordada", this::openAuthorize, canWrite),
+                Ui.button("Programar", "Definir recoleccion y entrega", this::openSchedule, canWrite),
+                Ui.button("Asignar viaje", "Elegir unidad y operador", this::openAssign, canAssign),
+                Ui.button("Cancelar", "Cancelar la solicitud", this::openCancel, canWrite),
+                Ui.button("Cerrar", "Cerrar la solicitud entregada", this::closeRequest, canWrite),
                 Ui.button("Detalle", "Ver la historia completa de la solicitud", this::openDetail),
-                Ui.button("Eliminar", "Eliminar la solicitud y todo lo relacionado", this::deleteRequest));
+                Ui.button("Eliminar", "Eliminar la solicitud y todo lo relacionado", this::deleteRequest, canWrite));
         return Ui.column(filters, actions);
     }
 
@@ -123,10 +137,22 @@ public class ServiceRequestsView extends BaseView {
 
     @Override
     public void reload() {
-        LocalDate from = fromField.getText().isBlank() ? null
-                : Dates.parseDate(fromField.getText()).orElse(null);
-        LocalDate to = toField.getText().isBlank() ? null
-                : Dates.parseDate(toField.getText()).orElse(null);
+        LocalDate from = null;
+        LocalDate to = null;
+        if (!fromField.getText().isBlank()) {
+            from = Dates.parseDate(fromField.getText()).orElse(null);
+            if (from == null) {
+                setStatus("La fecha 'Desde' no es valida (use AAAA-MM-DD)");
+                return;
+            }
+        }
+        if (!toField.getText().isBlank()) {
+            to = Dates.parseDate(toField.getText()).orElse(null);
+            if (to == null) {
+                setStatus("La fecha 'Hasta' no es valida (use AAAA-MM-DD)");
+                return;
+            }
+        }
         Object client = clientFilter.getSelectedItem();
         Object status = statusFilter.getSelectedItem();
         RequestFilter filter = new RequestFilter(
@@ -167,20 +193,24 @@ public class ServiceRequestsView extends BaseView {
     }
 
     private void showNewForm(List<Client> clients, List<Route> routes) {
+        PackageEditorPanel packages = new PackageEditorPanel(0, List.of());
         FormPanel form = new FormPanel()
                 .addCombo("client", "Cliente", clients.toArray(), clients.get(0))
                 .addCombo("route", "Ruta", routes.toArray(), routes.get(0))
-                .addText("cargo", "Descripcion de la mercancia", "", "Que se va a transportar")
-                .addText("weight", "Peso aproximado (kg)", "0", "En kilogramos, ej. 1200")
+                .addText("cargo", "Descripcion de la mercancia", "", "Resumen; el detalle va en los paquetes")
+                .addText("weight", "Peso manual (kg)", "0", "Solo si no captura paquetes")
                 .addText("pickup", "Recoleccion (opcional)", "", "Formato: AAAA-MM-DD HH:MM")
                 .addText("delivery", "Entrega (opcional)", "", "Formato: AAAA-MM-DD HH:MM")
                 .addCheck("documents", "Requiere documentacion", true)
-                .addArea("notes", "Observaciones", "", "Notas internas (opcional)");
+                .addArea("notes", "Observaciones", "", "Notas internas (opcional)")
+                .addComputed("total", "Peso total (calculado)", () -> weightLabel(packages.totalWeight()));
         form.validate("weight", Validators.number());
         form.validate("pickup", Validators.dateTime());
         form.validate("delivery", Validators.dateTime());
+        packages.setOnChange(form::refresh);
+        form.addSection(packages);
         ModalForm.show(this, "Nueva solicitud", form, () -> {
-            Result<BigDecimal> weightResult = Money.require(form.text("weight"), "peso aproximado");
+            Result<BigDecimal> weightResult = parseWeight(form);
             if (weightResult.isErr()) {
                 return weightResult;
             }
@@ -194,10 +224,10 @@ public class ServiceRequestsView extends BaseView {
             Client client = (Client) form.selected("client");
             Route route = (Route) form.selected("route");
             ServiceRequest draft = new ServiceRequest(0, "", client.id(), client.name(), route.id(),
-                    route.label(), form.text("cargo"), weight, pickup, delivery, null,
+                    route.label(), form.text("cargo"), weight, 0, null, pickup, delivery, null,
                     form.checked("documents"), RequestStatus.REQUESTED, form.text("notes"),
                     LocalDateTime.now());
-            return service.create(draft);
+            return service.create(draft, packages.packages());
         }, this::reload);
     }
 
@@ -206,26 +236,82 @@ public class ServiceRequestsView extends BaseView {
         if (request == null) {
             return;
         }
+        Async.run(() -> packageService.list(request.id()),
+                packages -> showEditForm(request, packages),
+                failure -> Ui.failure(this, failure));
+    }
+
+    private void showEditForm(ServiceRequest request, List<CargoPackage> existingPackages) {
+        PackageEditorPanel packages = new PackageEditorPanel(request.id(), existingPackages);
         FormPanel form = new FormPanel()
-                .addText("cargo", "Descripcion de la mercancia", request.cargoDescription(), "Que se va a transportar")
-                .addText("weight", "Peso aproximado (kg)",
+                .addText("cargo", "Descripcion de la mercancia", request.cargoDescription(),
+                        "Resumen; el detalle va en los paquetes")
+                .addText("weight", "Peso manual (kg)",
                         request.estimatedWeight() == null ? "0" : request.estimatedWeight().toPlainString(),
-                        "En kilogramos, ej. 1200")
-                .addCheck("documents", "Requiere documentacion", request.requiresDocuments())
-                .addArea("notes", "Observaciones", request.notes(), "Notas internas (opcional)");
+                        "Solo si no captura paquetes");
         form.validate("weight", Validators.number());
+        // The agreed rate exists only after authorization; let it be corrected.
+        boolean editRate = request.agreedRate() != null;
+        if (editRate) {
+            form.addText("rate", "Tarifa acordada", request.agreedRate().toPlainString(),
+                    "Importe sin IVA; se corrige aqui si hubo un error");
+            form.validate("rate", Validators.money());
+        }
+        form.addCheck("documents", "Requiere documentacion", request.requiresDocuments())
+                .addArea("notes", "Observaciones", request.notes(), "Notas internas (opcional)")
+                .addComputed("total", "Peso total (calculado)", () -> weightLabel(packages.totalWeight()));
+        packages.setOnChange(form::refresh);
+        form.addSection(packages);
         ModalForm.show(this, "Editar solicitud " + request.folio(), form, () -> {
-            Result<BigDecimal> weightResult = Money.require(form.text("weight"), "peso aproximado");
+            Result<BigDecimal> weightResult = parseWeight(form);
             if (weightResult.isErr()) {
                 return weightResult;
             }
+            BigDecimal rate = request.agreedRate();
+            if (editRate) {
+                Result<BigDecimal> rateResult = Money.require(form.text("rate"), "tarifa acordada");
+                if (rateResult.isErr()) {
+                    return rateResult;
+                }
+                rate = rateResult.value();
+            }
             ServiceRequest updated = new ServiceRequest(request.id(), request.folio(),
                     request.clientId(), request.clientName(), request.routeId(), request.routeLabel(),
-                    form.text("cargo"), weightResult.value(), request.pickupScheduled(),
-                    request.deliveryScheduled(), request.agreedRate(), form.checked("documents"),
+                    form.text("cargo"), weightResult.value(), request.packageCount(),
+                    request.packageWeight(), request.pickupScheduled(),
+                    request.deliveryScheduled(), rate, form.checked("documents"),
                     request.status(), form.text("notes"), request.createdAt());
-            return service.update(updated);
+            return service.update(updated, packages.packages());
         }, this::reload);
+    }
+
+    /** A weight field is a measure (kg), not money: parse it without forcing cents. */
+    private static Result<BigDecimal> parseWeight(FormPanel form) {
+        BigDecimal weight = Numbers.parseOrZero(form.text("weight"));
+        if (weight == null || weight.signum() < 0) {
+            return Result.err("El peso manual debe ser un numero mayor o igual a cero");
+        }
+        return Result.ok(weight);
+    }
+
+    private static String weightLabel(BigDecimal weight) {
+        return weight == null ? "-" : weight.stripTrailingZeros().toPlainString() + " kg";
+    }
+
+    /** Live BR-08 hint in the assign dialog: does the chosen unit fit the cargo? */
+    private static String capacityLabel(ServiceRequest request, FormPanel form) {
+        Object selected = form.selected("vehicle");
+        if (!(selected instanceof Vehicle vehicle)) {
+            return "-";
+        }
+        BigDecimal load = request.effectiveWeight();
+        String capacity = vehicle.loadCapacity() == null ? "-" : vehicle.loadCapacity() + " kg";
+        if (load == null || vehicle.loadCapacity() == null) {
+            return "Capacidad: " + capacity + " - Carga: " + weightLabel(load);
+        }
+        boolean fits = vehicle.loadCapacity().compareTo(load) >= 0;
+        return "Capacidad: " + capacity + " - Carga: " + weightLabel(load)
+                + (fits ? " (suficiente)" : " (EXCEDE LA CAPACIDAD)");
     }
 
     private void openAuthorize() {
@@ -275,8 +361,12 @@ public class ServiceRequestsView extends BaseView {
         if (request == null) {
             return;
         }
+        if (request.status() != RequestStatus.SCHEDULED) {
+            Ui.info(this, "La solicitud debe estar programada (autorizada y con fechas) para asignarle un viaje");
+            return;
+        }
         if (request.pickupScheduled() == null || request.deliveryScheduled() == null) {
-            Ui.info(this, "La solicitud debe estar programada");
+            Ui.info(this, "La solicitud debe tener recoleccion y entrega programadas");
             return;
         }
         Async.run(
@@ -299,6 +389,8 @@ public class ServiceRequestsView extends BaseView {
                 .addCombo("vehicle", "Unidad", vehicles.toArray(), vehicles.get(0))
                 .addCombo("operator", "Operador", operators.toArray(), operators.get(0));
         form.field("window").setEnabled(false);
+        form.addComputed("capacity", "Capacidad de la unidad", () -> capacityLabel(request, form));
+        form.onSelect("vehicle", form::refresh);
         ModalForm.show(this, "Asignar viaje a " + request.folio(), form, () -> {
             Vehicle vehicle = (Vehicle) form.selected("vehicle");
             Employee operator = (Employee) form.selected("operator");

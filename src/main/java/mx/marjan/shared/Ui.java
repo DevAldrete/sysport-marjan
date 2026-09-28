@@ -72,6 +72,16 @@ public final class Ui {
         return button;
     }
 
+    /** A tooltip button that starts disabled when the user lacks the permission. */
+    public static JButton button(String text, String tooltip, Runnable action, boolean enabled) {
+        JButton button = button(text, tooltip, action);
+        button.setEnabled(enabled);
+        if (!enabled) {
+            button.setToolTipText("No tiene permiso para esta accion");
+        }
+        return button;
+    }
+
     /** Runs an action when the user presses Enter in a search field. */
     public static void onEnter(JTextField field, Runnable action) {
         field.addActionListener(event -> action.run());

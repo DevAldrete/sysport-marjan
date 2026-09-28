@@ -29,7 +29,11 @@ LEFT JOIN licenses l ON l.id = e.license_id;
 CREATE OR REPLACE VIEW v_service_request AS
 SELECT sr.id, sr.folio, sr.client_id, c.name AS client_name, sr.route_id,
        CONCAT(r.origin, ' -> ', r.destination) AS route_label,
-       sr.cargo_description, sr.estimated_weight, sr.pickup_date_scheduled,
+       sr.cargo_description, sr.estimated_weight,
+       (SELECT COUNT(*) FROM request_packages p WHERE p.service_request_id = sr.id) AS package_count,
+       (SELECT SUM(p.quantity * p.unit_weight) FROM request_packages p
+         WHERE p.service_request_id = sr.id) AS package_weight,
+       sr.pickup_date_scheduled,
        sr.delivery_date_scheduled, sr.agreed_rate, sr.requires_documents,
        sr.status, sr.notes, sr.created_at
 FROM service_requests sr

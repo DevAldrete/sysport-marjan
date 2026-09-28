@@ -1,6 +1,6 @@
 ---
 title: Stored procedures
-description: The 107 procedures that implement every use case, grouped by domain.
+description: The 112 procedures that implement every use case, grouped by domain.
 ---
 
 Procedures are the app's **use cases**. A repository method maps to exactly one procedure. Most
@@ -69,26 +69,30 @@ problems at once.
 
 | Procedure | Purpose / rule |
 | --- | --- |
-| `sp_requests_search`, `sp_request_by_id`, `sp_requests_by_status`, `sp_requests_pending_billing` | Reads from `v_service_request`; `pending_billing` = rate>0, not cancelled, no invoice (**FR-INV-1**). |
+| `sp_requests_search`, `sp_request_by_id`, `sp_requests_by_status`, `sp_requests_pending_billing` | Reads from `v_service_request`; `pending_billing` = rate>0, **`delivered`/`closed`**, no invoice (**FR-INV-1**). |
 | `sp_request_create` | Validate client/route/weight/dates (both-or-none, delivery>pickup); allocate id, generate folio (**BR-01**), status `requested`, `created_by`/`updated_by`. |
 | `sp_request_update` | Edit data only, never status; sets `updated_by`. |
-| `sp_request_delete` | **BR-14** cascade: payments, invoices, expenses, advances, incidents, deliveries, trips, then the request. Audit rows are kept. |
+| `sp_request_packages` | Read a request's package lines ordered by `line_no`. |
+| `sp_package_save` (OUT id) | Upsert one package line (validation only; no transaction of its own — the repository composes several calls in one `Database.inTransaction`). |
+| `sp_package_delete` | Delete one package line (used to remove lines absent from the submitted set). |
+| `sp_package_receipt_save` | Per-unit tracking: set `received_quantity` (≤ declared) and `receipt_condition`. |
+| `sp_request_delete` | **BR-14** cascade: request_packages, payments, invoices, expenses, advances, incidents, deliveries, trips, then the request. Audit rows are kept. |
 | `sp_authorize_request` | **BR-03 / BR-04** — from `requested` only; rate>0; snapshots `agreed_rate`; audit `authorized`. |
-| `sp_schedule_request` | **BR-03** — to `scheduled`; both dates required, delivery > pickup. |
+| `sp_schedule_request` | **BR-03** — schedule or **reschedule** while `fn_request_reschedulable` (authorized/scheduled/assigned); both dates required, delivery > pickup; keeps the linked trip's planned window in sync. |
 | `sp_cancel_request` | **BR-03** — pre-transit only; reason required (stored in `notes`). |
 | `sp_close_request` | **FR-DEL-2 / BR-13** — only `delivered`; if `requires_documents`, the delivery must be `complete` with `received_by` + `evidence_reference`. |
-| `sp_validate_vehicle_assignment` (+ `validate_vehicle_assignment_into`) | **BR-05…BR-11** — request `scheduled`, vehicle assignable, capacity ok, no overlap. |
+| `sp_validate_vehicle_assignment` (+ `validate_vehicle_assignment_into`) | **BR-05…BR-11** — request ready to assign (`scheduled`, or `assigned` with a scheduled trip), vehicle assignable, capacity ≥ effective weight, no overlap. |
 
 ## Trips, deliveries & incidents — `60-trips.sql`
 
 | Procedure | Purpose / rule |
 | --- | --- |
-| `sp_trips_search`, `sp_trip_by_id`, `sp_trip_by_request` | Reads from `v_trip`. |
-| `sp_assign_trip` | **FR-TRP-2 / BR-05…BR-11** — transaction with `FOR UPDATE` locks on request/vehicle/operator, runs both validators, inserts the trip (`scheduled`), sets the request `assigned`, audit `assigned`. |
+| `sp_trips_search`, `sp_trip_by_id`, `sp_trip_by_request`, `sp_trip_vehicle` | Reads from `v_trip`; `sp_trip_vehicle` returns the vehicle of a trip (fuel loads). |
+| `sp_assign_trip` | **FR-TRP-2 / BR-05…BR-11** — transaction with `FOR UPDATE` locks on request/vehicle/operator, runs both validators, inserts the trip (`scheduled`, `estimated_km` from the route), sets the request `assigned`, audit `assigned`. |
 | `sp_depart_trip` | Trip `scheduled → in_transit`; request → `in_transit`; vehicle & employee → `on_trip`; sets departure. |
 | `sp_arrive_trip` | Trip `in_transit → completed`; vehicle `available` + **BR-21** `mileage += actual_km`; employee `available`; if the request does not require documents → `delivered`. |
 | `sp_cancel_trip` | Only `scheduled`; reason required; cancels trip + request; audit `cancelled`. |
-| `sp_reassign_trip` | **BR-15** — only a `scheduled` trip on a `scheduled` request; re-validates both resources; audit `reassigned`. |
+| `sp_reassign_trip` | **BR-15** — only a `scheduled` trip whose request is `assigned`; re-validates both resources; audit `reassigned`. |
 | `sp_trip_delete` | **BR-14** — only `scheduled`/`cancelled`; cascades children; reverts the request to `scheduled` when needed. |
 | `sp_sweep_lifecycle` (OUT changes) | Batch: promotes `authorized` requests with dates to `scheduled`, and departs scheduled trips whose `planned_start ≤ NOW()`. Called from the UI timer and on reload (**BR-03** automation). |
 | `sp_delivery_by_trip`, `sp_delivery_save`, `sp_delivery_delete` | **BR-12 / BR-13** — one delivery per trip; the trip must be `completed`; a delivery moves the request to `delivered`. |

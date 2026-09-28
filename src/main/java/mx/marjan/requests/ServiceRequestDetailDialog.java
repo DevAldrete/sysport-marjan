@@ -24,6 +24,7 @@ import mx.marjan.trips.TripService;
 final class ServiceRequestDetailDialog {
 
     private final ServiceRequest request;
+    private final CargoPackageService packages = new CargoPackageService();
     private final TripService trips = new TripService();
     private final ExpenseService expenses = new ExpenseService();
     private final AdvanceService advances = new AdvanceService();
@@ -47,8 +48,39 @@ final class ServiceRequestDetailDialog {
                 .append("Estado: ").append(request.status().label()).append('\n')
                 .append("Tarifa: ").append(request.agreedRate() == null ? "-" : Money.format(request.agreedRate()))
                 .append("\n\n");
+        appendPackages(text);
         trips.findByRequest(request.id()).ifPresent(trip -> appendTrip(text, trip));
         return text.toString();
+    }
+
+    private void appendPackages(StringBuilder text) {
+        java.util.List<CargoPackage> lines = packages.list(request.id());
+        text.append("--- Paquetes ---\n");
+        if (lines.isEmpty()) {
+            text.append("Sin paquetes capturados")
+                    .append(" (peso manual: ")
+                    .append(request.estimatedWeight() == null ? "-" : request.estimatedWeight())
+                    .append(" kg)\n\n");
+            return;
+        }
+        for (CargoPackage line : lines) {
+            text.append(line.quantity()).append(' ')
+                    .append(line.unit() == null ? "" : line.unit().label())
+                    .append(" - ").append(line.description());
+            if (line.unitWeight() != null) {
+                text.append(" (").append(line.unitWeight()).append(" kg/u)");
+            }
+            if (line.receiptCondition() != null) {
+                text.append(" [").append(line.receiptCondition().label());
+                if (line.receivedQuantity() != null) {
+                    text.append(": ").append(line.receivedQuantity()).append('/').append(line.quantity());
+                }
+                text.append(']');
+            }
+            text.append('\n');
+        }
+        BigDecimal total = request.effectiveWeight();
+        text.append("Peso total: ").append(total == null ? "-" : total + " kg").append("\n\n");
     }
 
     private void appendTrip(StringBuilder text, Trip trip) {

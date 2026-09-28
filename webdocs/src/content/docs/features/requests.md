@@ -13,7 +13,7 @@ off it.
 | Create | `sp_request_create` | `requests.write` | folio auto (BR-01) |
 | Edit data | `sp_request_update` | `requests.write` | never changes status |
 | Authorize | `sp_authorize_request` | `requests.write` | BR-03 / BR-04 (rate snapshot) |
-| Schedule | `sp_schedule_request` | `requests.write` | BR-03 (delivery > pickup) |
+| Schedule / reschedule | `sp_schedule_request` | `requests.write` | BR-03 (delivery > pickup; reschedulable before transit) |
 | Cancel | `sp_cancel_request` | `requests.write` | BR-03 (reason required) |
 | Close | `sp_close_request` (via `TripService`) | `requests.write` | BR-13 |
 | Delete | `sp_request_delete` | `requests.write` | BR-14 cascade |
@@ -36,11 +36,26 @@ then, inside a transaction:
 
 `ServiceRequestService.create` re-reads the created request and returns it.
 
+## Packages — the cargo list
+
+A request no longer carries a single cargo string; it carries a **list of packages**
+(`request_packages`). Each line has a description, quantity, unit and per-unit weight, so a trip can
+carry many different bultos at once and the load is still tracked per unit. `estimated_weight` remains
+as the manual fallback for a request with no package lines.
+
+`PackageEditorPanel` is embedded in the create/edit dialog (via `FormPanel.addSection`) and holds the
+lines in memory with a running **Peso total**; on save, `ServiceRequestService` calls
+`CargoPackageService.replace`, which upserts each line and deletes the ones no longer present inside a
+single `Database.inTransaction`. The effective weight shown and validated is
+`fn_request_weight` = `SUM(quantity × unit_weight)`, or the manual weight if there are no packages
+(BR-08). Per-unit receipts are recorded later from the trip's **Paquetes** tab.
+
 ## The detail dialog — FR-REQ-5
 
 `ServiceRequestDetailDialog.show(...)` builds a read-only "whole story" asynchronously: the request,
-then its trip, costs (expenses total, advance balance), delivery and invoice. It composes
-`TripService`, `ExpenseService`, `AdvanceService`, `DeliveryService` and `InvoiceService`.
+its packages (with any receipt status), then its trip, costs (expenses total, advance balance),
+delivery and invoice. It composes `CargoPackageService`, `TripService`, `ExpenseService`,
+`AdvanceService`, `DeliveryService` and `InvoiceService`.
 
 ## The UI
 
@@ -58,18 +73,22 @@ reload) calls `sp_sweep_lifecycle` so time-driven transitions happen while the s
 
 | Layer | Class |
 | --- | --- |
-| Record | `ServiceRequest`, `RequestFilter` |
-| Enum | `RequestStatus` |
-| Repository | `ServiceRequestRepository` |
-| Service | `ServiceRequestService` (lifecycle), `TripService.closeRequest` |
-| View | `ServiceRequestsView`, `ServiceRequestDetailDialog` |
+| Record | `ServiceRequest`, `RequestFilter`, `CargoPackage` |
+| Enum | `RequestStatus`, `PackageUnit`, `PackageCondition` |
+| Repository | `ServiceRequestRepository`, `CargoPackageRepository` |
+| Service | `ServiceRequestService` (lifecycle + packages), `CargoPackageService`, `TripService.closeRequest` |
+| View | `ServiceRequestsView`, `ServiceRequestDetailDialog`, `PackageEditorPanel` |
 
 ## Gotchas
 
 - `agreed_rate` is a **snapshot**: editing the client's rates later never changes an authorized
   request (BR-04).
 - A request has at most one trip and one invoice (D4); both are `UNIQUE` on `service_request_id`.
-- The cascade delete removes the trip and its costs, the delivery, the invoice and its payments —
-  but **keeps audit rows** (BR-14/BR-22).
+- The cascade delete removes the packages, the trip and its costs, the delivery, the invoice and its
+  payments — but **keeps audit rows** (BR-14/BR-22).
+- Package rows are **replaced atomically** on save; a rejected line rolls the whole list back, and the
+  request data itself is a separate step (if it succeeds and the packages fail, fix them by editing).
+- Write buttons are disabled when the signed-in user lacks `requests.write` / `requests.assign`, and
+  the assign dialog shows a live capacity-vs-cargo hint for the chosen unit (BR-08).
 
 Next: [Trips](/features/trips/).
