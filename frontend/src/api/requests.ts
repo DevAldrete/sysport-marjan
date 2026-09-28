@@ -66,4 +66,8 @@ export const requestsApi = {
   assignment: (id: number) => api.get<AssignmentOptions>(`/requests/${id}/assignment`),
   assign: (id: number, vehicleId: number, operatorId: number) =>
     api.post<Trip>(`/requests/${id}/assign`, { vehicleId, operatorId }),
+  saveReceipts: (
+    id: number,
+    receipts: { id: number; receivedQuantity: number | null; receiptCondition: string | null }[],
+  ) => api.post<void>(`/requests/${id}/receipts`, receipts),
 }

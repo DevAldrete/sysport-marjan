@@ -77,6 +77,52 @@ export const tripStatuses: Option[] = [
   { value: 'cancelled', label: 'Cancelado' },
 ]
 
+export const expenseTypes: Option[] = [
+  { value: 'tolls', label: 'Casetas' },
+  { value: 'food', label: 'Alimentos' },
+  { value: 'parking', label: 'Estacionamiento' },
+  { value: 'lodging', label: 'Hospedaje' },
+  { value: 'repairs', label: 'Reparaciones' },
+  { value: 'handling', label: 'Maniobras' },
+  { value: 'permits', label: 'Permisos' },
+  { value: 'other', label: 'Otro' },
+]
+
+export const incidentTypes: Option[] = [
+  { value: 'accident', label: 'Accidente' },
+  { value: 'mechanical_failure', label: 'Falla mecanica' },
+  { value: 'delay', label: 'Retraso' },
+  { value: 'road_closure', label: 'Cierre carretero' },
+  { value: 'cargo_damage', label: 'Dano a la mercancia' },
+  { value: 'documentation_issue', label: 'Problema de documentacion' },
+  { value: 'other', label: 'Otro' },
+]
+
+export const advanceStatuses: Option[] = [
+  { value: 'pending', label: 'Pendiente' },
+  { value: 'settled', label: 'Comprobado' },
+]
+
+export const deliveryStatuses: Option[] = [
+  { value: 'pending_documents', label: 'Documentos pendientes' },
+  { value: 'complete', label: 'Completa' },
+]
+
+export const invoiceStatuses: Option[] = [
+  { value: 'pending', label: 'Pendiente' },
+  { value: 'paid', label: 'Pagada' },
+  { value: 'overdue', label: 'Vencida' },
+  { value: 'cancelled', label: 'Cancelada' },
+]
+
+export const paymentMethods: Option[] = [
+  { value: 'cash', label: 'Efectivo' },
+  { value: 'transfer', label: 'Transferencia' },
+  { value: 'check', label: 'Cheque' },
+  { value: 'card', label: 'Tarjeta' },
+  { value: 'other', label: 'Otro' },
+]
+
 export function labelOf(options: Option[], value: string | null | undefined): string {
   return options.find((option) => option.value === value)?.label ?? (value ?? '')
 }

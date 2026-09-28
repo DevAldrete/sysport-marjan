@@ -171,3 +171,84 @@ export interface AssignmentOptions {
   vehicles: Vehicle[]
   operators: Employee[]
 }
+
+export interface Expense {
+  id: number
+  tripId: number
+  tripFolio: string
+  type: string
+  amount: number
+  expenseDate: string
+  description: string
+}
+
+export interface Advance {
+  id: number
+  tripId: number
+  tripFolio: string
+  employeeId: number
+  employeeName: string
+  amountGiven: number
+  deliveredDate: string
+  status: string
+  settledAt: string | null
+}
+
+export interface AdvanceBalance {
+  given: number
+  proven: number
+  outcome: string
+  amount: number | null
+  label: string
+}
+
+export interface Incident {
+  id: number
+  tripId: number
+  tripFolio: string
+  incidentDate: string
+  incidentTime: string
+  location: string
+  type: string
+  description: string
+  actionsTaken: string
+}
+
+export interface Delivery {
+  id: number
+  tripId: number
+  tripFolio: string
+  actualDatetime: string
+  receivedBy: string
+  evidenceReference: string
+  status: string
+}
+
+export interface Invoice {
+  id: number
+  clientId: number
+  clientName: string
+  serviceRequestId: number
+  requestFolio: string
+  invoiceNumber: string
+  amount: number
+  issueDate: string
+  dueDate: string
+  status: string
+  paid: number
+}
+
+export interface Payment {
+  id: number
+  invoiceId: number
+  invoiceNumber: string
+  amount: number
+  paymentDate: string
+  method: string
+}
+
+export interface Report {
+  title: string
+  headers: string[]
+  rows: (string | number | null)[][]
+}

@@ -17,6 +17,7 @@ export function onUnauthorized(handler: () => void) {
 export interface RequestOptions {
   headers?: HeadersInit
   query?: Record<string, unknown>
+  responseType?: 'json' | 'text' | 'blob'
 }
 
 async function request<T>(
@@ -38,6 +39,7 @@ async function request<T>(
       body: body as Record<string, unknown> | undefined,
       headers,
       query: options.query,
+      responseType: (options.responseType ?? 'json') as 'json',
     })
   }
 
@@ -65,4 +67,6 @@ export const api = {
   put: <T>(url: string, body?: unknown, options?: RequestOptions) =>
     request<T>(url, 'PUT', body, options),
   delete: <T>(url: string, options?: RequestOptions) => request<T>(url, 'DELETE', undefined, options),
+  text: (url: string, options?: RequestOptions) =>
+    request<string>(url, 'GET', undefined, { ...options, responseType: 'text' }),
 }
