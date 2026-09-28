@@ -3,20 +3,25 @@ package mx.marjan.reports;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.IOException;
+import java.io.Writer;
 import java.nio.file.Files;
 import java.util.List;
 
-/** FR-RPT-7: exports any report to a CSV file. */
+/** FR-RPT-7: exports any report to CSV, on disk or to any writer (e.g. an HTTP response). */
 public final class CsvExporter {
 
     private CsvExporter() {}
 
     public static void write(Report report, File file) throws IOException {
         try (BufferedWriter writer = Files.newBufferedWriter(file.toPath())) {
-            writer.write(line(report.headers()));
-            for (List<Object> row : report.rows()) {
-                writer.write(line(row));
-            }
+            write(report, writer);
+        }
+    }
+
+    public static void write(Report report, Writer writer) throws IOException {
+        writer.write(line(report.headers()));
+        for (List<Object> row : report.rows()) {
+            writer.write(line(row));
         }
     }
 
