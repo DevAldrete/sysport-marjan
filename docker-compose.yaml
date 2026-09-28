@@ -11,7 +11,7 @@ services:
       MYSQL_DATABASE: ${DB_NAME}
 
     ports:
-        - "3306:3306"
+      - "3306:3306"
 
     volumes:
       - mysql_data:/var/lib/mysql
@@ -25,6 +25,48 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    container_name: sysport-api
+    restart: unless-stopped
+
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:-sysport-dev-access-secret-please-change-32bytes}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-sysport-dev-refresh-secret-please-change-32bytes}
+
+    ports:
+      - "8080:8080"
+
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+    networks:
+      - sysport-network
+
+  web:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    container_name: sysport-web
+    restart: unless-stopped
+
+    ports:
+      - "8081:80"
+
+    depends_on:
+      - api
+
+    networks:
+      - sysport-network
 
 volumes:
   mysql_data:
