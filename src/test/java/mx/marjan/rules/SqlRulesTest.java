@@ -166,8 +166,8 @@ class SqlRulesTest {
                 new int[] { Types.VARCHAR, Types.BIGINT }, request, 5L, 7L, 1L)[0],
                 "a large enough unit assigns fine");
 
-        call("{call sp_package_delete(?)}", new int[0], heavy);
-        call("{call sp_package_delete(?)}", new int[0], extra);
+        call("{call sp_package_delete(?,?)}", new int[] { Types.VARCHAR }, heavy);
+        call("{call sp_package_delete(?,?)}", new int[] { Types.VARCHAR }, extra);
         savePackage(request, "Solo una pieza", new BigDecimal("1"), "pieza",
                 new BigDecimal("100"), 1);
         assertEquals(0, new BigDecimal("100.0").compareTo(requestWeight(request)),
@@ -193,6 +193,96 @@ class SqlRulesTest {
         assertNull(rateProblems(7, 2, "40000", "2027-01-01", "2027-06-30"));
         assertNotNull(rateProblems(7, 2, "41000", "2027-03-01", null), "BR-04: overlapping rate rejected");
         assertNotNull(deleteProblems(1L), "clients with children cannot be deleted");
+    }
+
+    @Test
+    void routeStopsDefineThePathAndRejectDuplicates() throws Exception {
+        long route = saveRoute("A", "C");
+        saveRouteStop(route, 1, "A");
+        saveRouteStop(route, 2, "B");
+        saveRouteStop(route, 3, "C");
+        assertEquals("A -> B -> C", scalarString("SELECT fn_route_label(" + route + ")"),
+                "BR-25: the label lists every stop in order");
+        assertNull(duplicateRoute(route), "no other route has the same stops yet");
+
+        long twin = saveRoute("A", "C");
+        saveRouteStop(twin, 1, "A");
+        saveRouteStop(twin, 2, "B");
+        saveRouteStop(twin, 3, "C");
+        assertNotNull(duplicateRoute(route), "BR-25: an identical route is rejected");
+
+        exec("DELETE FROM route_stops WHERE route_id IN (" + route + "," + twin + ")");
+        exec("DELETE FROM routes WHERE id IN (" + route + "," + twin + ")");
+    }
+
+    @Test
+    void intermediateStopArrivalIsRecorded() throws Exception {
+        long route = saveRoute("X", "Z");
+        saveRouteStop(route, 1, "X");
+        long middle = saveRouteStop(route, 2, "Y");
+        saveRouteStop(route, 3, "Z");
+        assertEquals("X -> Y -> Z", scalarString("SELECT fn_route_label(" + route + ")"));
+
+        long request = createRequest(2, (int) route, "2027-11-05 08:00:00", "2027-11-06 18:00:00",
+                new BigDecimal("1000"), false);
+        authorize(request, new BigDecimal("1000"));
+        schedule(request, "2027-11-05 08:00:00", "2027-11-06 18:00:00");
+        long trip = assign(request, 5, 7);
+
+        assertNull(saveStopArrival(trip, middle, "2027-11-05 12:00:00", "paso por Y"),
+                "BR-25: an intermediate stop can be marked as visited");
+        assertEquals(1, scalarLong("SELECT COUNT(*) FROM trip_stop_arrivals WHERE trip_id=" + trip));
+        assertEquals("Y", scalarString("SELECT rs.location FROM trip_stop_arrivals a "
+                + "JOIN route_stops rs ON rs.id = a.route_stop_id WHERE a.trip_id=" + trip),
+                "BR-25: the record shows the truck actually went through Y");
+        assertNotNull(saveStopArrival(trip, 1L, "2027-11-05 12:00:00", "otra ruta"),
+                "BR-25: a stop from another route is rejected");
+        assertNotNull(routeStopDeleteProblems(middle),
+                "BR-25: a stop with a recorded arrival cannot be removed");
+    }
+
+    @Test
+    void hardDeletesAreRestrictedToUntouchedRecords() throws Exception {
+        assertNotNull(deleteRequestProblems(1L), "BR-26: a closed request cannot be deleted");
+        assertNotNull(deleteRequestProblems(10L), "BR-26: an assigned request cannot be deleted");
+        assertNotNull(deleteInvoiceProblems(2L), "BR-26: a paid invoice cannot be deleted");
+        assertNotNull(deletePackageProblems(5L), "BR-26: cargo of an in-transit request is frozen");
+
+        long requested = createRequest(2, 4, "2027-12-05 08:00:00", "2027-12-06 18:00:00",
+                new BigDecimal("1000"), false);
+        assertNull(deleteRequestProblems(requested), "BR-26: a fresh request may still be deleted");
+    }
+
+    @Test
+    void licenseNumberIsAssignedByTheDatabase() throws Exception {
+        Object[] created = saveEmployee("", "Federal C");
+        assertNull(created[1], "a valid license type is accepted");
+        long employee = ((Number) created[0]).longValue();
+        String number = scalarString("SELECT l.license_number FROM employees e "
+                + "JOIN licenses l ON l.id = e.license_id WHERE e.id=" + employee);
+        assertTrue(number != null && number.matches("LIC-MRJ-\\d{4}"),
+                "BR-25: the blank number becomes an internal LIC-MRJ-#### number");
+
+        assertNotNull(saveEmployee("", "Invalido")[1], "BR-25: an unknown license type is rejected");
+    }
+
+    @Test
+    void routeRepositoryWritesHeaderAndStopsAtomically() {
+        mx.marjan.routes.RouteRepository repository = new mx.marjan.routes.RouteRepository();
+        java.util.List<mx.marjan.routes.RouteStop> stops = java.util.List.of(
+                new mx.marjan.routes.RouteStop(0, 0, 1, "P1"),
+                new mx.marjan.routes.RouteStop(0, 0, 2, "P2"),
+                new mx.marjan.routes.RouteStop(0, 0, 3, "P3"));
+        mx.marjan.shared.Result<Long> saved = repository.save(
+                new mx.marjan.routes.Route(0, "", "", new BigDecimal("5.0"), "repo test", ""), stops);
+        assertTrue(saved.isOk(), "the repository writes route and stops in one transaction");
+        long id = saved.value();
+        assertEquals("P1 -> P2 -> P3", repository.findById(id).orElseThrow().label());
+        assertEquals(3, repository.listStops(id).size());
+
+        mx.marjan.shared.Result<Long> duplicate = repository.save(
+                new mx.marjan.routes.Route(0, "", "", new BigDecimal("5.0"), "dup", ""), stops);
+        assertTrue(duplicate.isErr(), "BR-25: the duplicate route rolls back the whole transaction");
     }
 
     // ------------------------------------------------------------------ helpers
@@ -289,6 +379,55 @@ class SqlRulesTest {
 
     private String deleteProblems(long id) throws Exception {
         return (String) call("{call sp_client_delete(?,?)}", new int[] { Types.VARCHAR }, id)[0];
+    }
+
+    private long saveRoute(String origin, String destination) throws Exception {
+        Object[] out = call("{call sp_route_save(?,?,?,?,?,?,?)}",
+                new int[] { Types.BIGINT, Types.VARCHAR },
+                0L, origin, destination, new BigDecimal("1.0"), "test");
+        assertNull(out[1], "route save should succeed");
+        return ((Number) out[0]).longValue();
+    }
+
+    private long saveRouteStop(long routeId, int sequence, String location) throws Exception {
+        Object[] out = call("{call sp_route_stop_save(?,?,?,?,?,?)}",
+                new int[] { Types.BIGINT, Types.VARCHAR }, 0L, routeId, sequence, location);
+        assertNull(out[1], "route stop save should succeed");
+        return ((Number) out[0]).longValue();
+    }
+
+    private String duplicateRoute(long routeId) throws Exception {
+        return (String) call("{call sp_route_duplicate(?,?)}", new int[] { Types.VARCHAR }, routeId)[0];
+    }
+
+    private String routeStopDeleteProblems(long stopId) throws Exception {
+        return (String) call("{call sp_route_stop_delete(?,?)}", new int[] { Types.VARCHAR }, stopId)[0];
+    }
+
+    private String saveStopArrival(long trip, long routeStopId, String arrivedAt, String notes)
+            throws Exception {
+        return (String) call("{call sp_trip_stop_arrival_save(?,?,?,?,?,?)}",
+                new int[] { Types.VARCHAR }, trip, routeStopId, arrivedAt, notes, 1L)[0];
+    }
+
+    private String deleteRequestProblems(long request) throws Exception {
+        return (String) call("{call sp_request_delete(?,?)}", new int[] { Types.VARCHAR }, request)[0];
+    }
+
+    private String deleteInvoiceProblems(long invoice) throws Exception {
+        return (String) call("{call sp_invoice_delete(?,?)}", new int[] { Types.VARCHAR }, invoice)[0];
+    }
+
+    private String deletePackageProblems(long packageId) throws Exception {
+        return (String) call("{call sp_package_delete(?,?)}", new int[] { Types.VARCHAR }, packageId)[0];
+    }
+
+    private Object[] saveEmployee(String licenseNumber, String licenseType) throws Exception {
+        return call("{call sp_employee_save(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)}",
+                new int[] { Types.BIGINT, Types.VARCHAR },
+                0L, "Test Operador", "Calle 1", "5559990001", "test@marjan.mx", "TESU800101ABC",
+                "TESU800101HDFRSS01", "EC", "5559990099", 0L, licenseNumber, licenseType,
+                "2025-01-01", "2030-01-01");
     }
 
     private String requestStatus(long request) throws Exception {
