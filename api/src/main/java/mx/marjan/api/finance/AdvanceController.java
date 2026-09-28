@@ -29,8 +29,16 @@ public class AdvanceController {
 
     @Get("/balance")
     @Secured(Permissions.ADVANCES_READ)
-    public AdvanceBalance balance(Authentication authentication, @QueryValue long tripId) {
-        return service(authentication).balanceForTrip(tripId);
+    public BalanceView balance(Authentication authentication, @QueryValue long tripId) {
+        AdvanceBalance balance = service(authentication).balanceForTrip(tripId);
+        return switch (balance.outcome()) {
+            case AdvanceBalance.Settled ignored ->
+                new BalanceView(balance.given(), balance.proven(), "settled", null, balance.label());
+            case AdvanceBalance.OperatorOwes owes ->
+                new BalanceView(balance.given(), balance.proven(), "operator_owes", owes.amount(), balance.label());
+            case AdvanceBalance.CompanyOwes owes ->
+                new BalanceView(balance.given(), balance.proven(), "company_owes", owes.amount(), balance.label());
+        };
     }
 
     @Post
@@ -56,4 +64,8 @@ public class AdvanceController {
     private AdvanceService service(Authentication authentication) {
         return new AdvanceService(Callers.forAuthentication(authentication));
     }
+
+    /** Flattened BR-16 outcome so the client does not have to decode a sealed type. */
+    public record BalanceView(java.math.BigDecimal given, java.math.BigDecimal proven, String outcome,
+            java.math.BigDecimal amount, String label) {}
 }
