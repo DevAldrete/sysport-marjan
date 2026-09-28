@@ -9,8 +9,9 @@ import mx.marjan.fleet.VehicleRepository;
 import mx.marjan.operators.Employee;
 import mx.marjan.operators.EmployeeRepository;
 import mx.marjan.requests.ServiceRequestRepository;
+import mx.marjan.security.Caller;
 import mx.marjan.security.Permissions;
-import mx.marjan.security.Session;
+import mx.marjan.security.SessionCaller;
 import mx.marjan.shared.Result;
 
 /**
@@ -23,6 +24,15 @@ public class TripService {
     private final VehicleRepository vehicles = new VehicleRepository();
     private final EmployeeRepository employees = new EmployeeRepository();
     private final ServiceRequestRepository requests = new ServiceRequestRepository();
+    private final Caller caller;
+
+    public TripService() {
+        this(SessionCaller.INSTANCE);
+    }
+
+    public TripService(Caller caller) {
+        this.caller = caller;
+    }
 
     public List<Trip> search(String term, TripStatus status) {
         return trips.search(term, status);
@@ -46,10 +56,10 @@ public class TripService {
 
     /** FR-TRP-2 / §8.1: validate everything, insert the trip and mark the request assigned. */
     public Result<Trip> assign(long requestId, long vehicleId, long operatorId) {
-        if (!Session.has(Permissions.TRIPS_ASSIGN)) {
+        if (!caller.has(Permissions.TRIPS_ASSIGN)) {
             return Result.err("No tiene permiso para asignar viajes");
         }
-        Result<Long> saved = trips.assign(requestId, vehicleId, operatorId, Session.userId());
+        Result<Long> saved = trips.assign(requestId, vehicleId, operatorId, caller.userId());
         if (saved.isErr()) {
             return Result.err(saved.problems());
         }
@@ -58,27 +68,27 @@ public class TripService {
 
     /** BR-15: reassign before departure, re-validated like a new assignment and audited. */
     public Result<Trip> reassign(long tripId, long vehicleId, long operatorId) {
-        if (!Session.has(Permissions.TRIPS_ASSIGN)) {
+        if (!caller.has(Permissions.TRIPS_ASSIGN)) {
             return Result.err("No tiene permiso para reasignar viajes");
         }
-        Result<Void> moved = trips.reassign(tripId, vehicleId, operatorId, Session.userId());
+        Result<Void> moved = trips.reassign(tripId, vehicleId, operatorId, caller.userId());
         return afterMove(moved, tripId);
     }
 
     /** Records departure: the trip and request move to in_transit, resources to on_trip. */
     public Result<Trip> depart(long tripId) {
-        if (!Session.has(Permissions.TRIPS_WRITE)) {
+        if (!caller.has(Permissions.TRIPS_WRITE)) {
             return Result.err("No tiene permiso para registrar la salida");
         }
-        return afterMove(trips.depart(tripId, Session.userId()), tripId);
+        return afterMove(trips.depart(tripId, caller.userId()), tripId);
     }
 
     /** Records arrival: trip completed, resources freed, mileage advanced (BR-21). */
     public Result<Trip> arrive(long tripId, BigDecimal actualKm) {
-        if (!Session.has(Permissions.TRIPS_WRITE)) {
+        if (!caller.has(Permissions.TRIPS_WRITE)) {
             return Result.err("No tiene permiso para registrar la llegada");
         }
-        return afterMove(trips.arrive(tripId, actualKm, Session.userId()), tripId);
+        return afterMove(trips.arrive(tripId, actualKm, caller.userId()), tripId);
     }
 
     /**
@@ -86,18 +96,18 @@ public class TripService {
      * and departs assigned trips whose planned start has already passed.
      */
     public int sweepLifecycle() {
-        if (!Session.has(Permissions.TRIPS_WRITE)) {
+        if (!caller.has(Permissions.TRIPS_WRITE)) {
             return 0;
         }
-        return trips.sweepLifecycle(Session.userId());
+        return trips.sweepLifecycle(caller.userId());
     }
 
     /** Cancels a scheduled trip and its request, freeing the resources. */
     public Result<Trip> cancel(long tripId, String reason) {
-        if (!Session.has(Permissions.TRIPS_WRITE)) {
+        if (!caller.has(Permissions.TRIPS_WRITE)) {
             return Result.err("No tiene permiso para cancelar viajes");
         }
-        return afterMove(trips.cancel(tripId, reason, Session.userId()), tripId);
+        return afterMove(trips.cancel(tripId, reason, caller.userId()), tripId);
     }
 
     /**
@@ -105,18 +115,18 @@ public class TripService {
      * delivery, unlinks fuel loads, and sends the request back to scheduled.
      */
     public Result<Void> delete(long tripId) {
-        if (!Session.has(Permissions.TRIPS_WRITE)) {
+        if (!caller.has(Permissions.TRIPS_WRITE)) {
             return Result.err("No tiene permiso para eliminar viajes");
         }
-        return trips.delete(tripId, Session.userId());
+        return trips.delete(tripId, caller.userId());
     }
 
     /** FR-DEL-2 / BR-13: closes a delivered request only when its delivery is complete. */
     public Result<Void> closeRequest(long requestId) {
-        if (!Session.has(Permissions.REQUESTS_WRITE)) {
+        if (!caller.has(Permissions.REQUESTS_WRITE)) {
             return Result.err("No tiene permiso para cerrar solicitudes");
         }
-        return requests.close(requestId, Session.userId());
+        return requests.close(requestId, caller.userId());
     }
 
     private Result<Trip> afterMove(Result<Void> moved, long tripId) {

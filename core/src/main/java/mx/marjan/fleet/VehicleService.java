@@ -2,13 +2,23 @@ package mx.marjan.fleet;
 
 import java.util.List;
 import java.util.Optional;
+import mx.marjan.security.Caller;
 import mx.marjan.security.Permissions;
-import mx.marjan.security.Session;
+import mx.marjan.security.SessionCaller;
 import mx.marjan.shared.Result;
 
 public class VehicleService {
 
     private final VehicleRepository vehicles = new VehicleRepository();
+    private final Caller caller;
+
+    public VehicleService() {
+        this(SessionCaller.INSTANCE);
+    }
+
+    public VehicleService(Caller caller) {
+        this.caller = caller;
+    }
 
     public List<Vehicle> search(String term) {
         return vehicles.search(term);
@@ -19,7 +29,7 @@ public class VehicleService {
     }
 
     public Result<Vehicle> save(Vehicle vehicle) {
-        if (!Session.has(Permissions.FLEET_WRITE)) {
+        if (!caller.has(Permissions.FLEET_WRITE)) {
             return Result.err("No tiene permiso para modificar unidades");
         }
         Result<Long> saved = vehicles.save(vehicle);
@@ -32,14 +42,14 @@ public class VehicleService {
     }
 
     public Result<Void> delete(long id) {
-        if (!Session.has(Permissions.FLEET_WRITE)) {
+        if (!caller.has(Permissions.FLEET_WRITE)) {
             return Result.err("No tiene permiso para eliminar unidades");
         }
         return vehicles.delete(id);
     }
 
     public Result<Void> setStatus(long id, VehicleStatus status) {
-        if (!Session.has(Permissions.FLEET_WRITE)) {
+        if (!caller.has(Permissions.FLEET_WRITE)) {
             return Result.err("No tiene permiso para modificar unidades");
         }
         return vehicles.setStatus(id, status);

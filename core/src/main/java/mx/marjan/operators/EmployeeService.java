@@ -2,13 +2,23 @@ package mx.marjan.operators;
 
 import java.util.List;
 import java.util.Optional;
+import mx.marjan.security.Caller;
 import mx.marjan.security.Permissions;
-import mx.marjan.security.Session;
+import mx.marjan.security.SessionCaller;
 import mx.marjan.shared.Result;
 
 public class EmployeeService {
 
     private final EmployeeRepository employees = new EmployeeRepository();
+    private final Caller caller;
+
+    public EmployeeService() {
+        this(SessionCaller.INSTANCE);
+    }
+
+    public EmployeeService(Caller caller) {
+        this.caller = caller;
+    }
 
     public List<Employee> search(String term) {
         return employees.search(term);
@@ -19,7 +29,7 @@ public class EmployeeService {
     }
 
     public Result<Employee> save(Employee employee) {
-        if (!Session.has(Permissions.OPERATORS_WRITE)) {
+        if (!caller.has(Permissions.OPERATORS_WRITE)) {
             return Result.err("No tiene permiso para modificar operadores");
         }
         Result<Long> saved = employees.save(employee);
@@ -33,14 +43,14 @@ public class EmployeeService {
     }
 
     public Result<Void> delete(long id) {
-        if (!Session.has(Permissions.OPERATORS_WRITE)) {
+        if (!caller.has(Permissions.OPERATORS_WRITE)) {
             return Result.err("No tiene permiso para eliminar operadores");
         }
         return employees.delete(id);
     }
 
     public Result<Void> setStatus(long id, EmployeeStatus status) {
-        if (!Session.has(Permissions.OPERATORS_WRITE)) {
+        if (!caller.has(Permissions.OPERATORS_WRITE)) {
             return Result.err("No tiene permiso para modificar operadores");
         }
         return employees.setStatus(id, status);

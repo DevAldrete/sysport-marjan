@@ -2,14 +2,24 @@ package mx.marjan.reports;
 
 import java.time.LocalDate;
 import java.util.function.Supplier;
+import mx.marjan.security.Caller;
 import mx.marjan.security.Permissions;
-import mx.marjan.security.Session;
+import mx.marjan.security.SessionCaller;
 import mx.marjan.shared.Result;
 
 /** FR-RPT-1..7: report use cases. The permission check lives here, not in the view. */
 public class ReportService {
 
     private final ReportRepository reports = new ReportRepository();
+    private final Caller caller;
+
+    public ReportService() {
+        this(SessionCaller.INSTANCE);
+    }
+
+    public ReportService(Caller caller) {
+        this.caller = caller;
+    }
 
     public Result<Report> revenueByClient(LocalDate from, LocalDate to) {
         return run(() -> reports.revenueByClient(from, to));
@@ -44,7 +54,7 @@ public class ReportService {
     }
 
     private Result<Report> run(Supplier<Report> query) {
-        if (!Session.has(Permissions.REPORTS_VIEW)) {
+        if (!caller.has(Permissions.REPORTS_VIEW)) {
             return Result.err("No tiene permiso para ver reportes");
         }
         return Result.ok(query.get());

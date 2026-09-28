@@ -1,13 +1,23 @@
 package mx.marjan.fleet;
 
 import java.util.List;
+import mx.marjan.security.Caller;
 import mx.marjan.security.Permissions;
-import mx.marjan.security.Session;
+import mx.marjan.security.SessionCaller;
 import mx.marjan.shared.Result;
 
 public class FuelService {
 
     private final FuelLoadRepository loads = new FuelLoadRepository();
+    private final Caller caller;
+
+    public FuelService() {
+        this(SessionCaller.INSTANCE);
+    }
+
+    public FuelService(Caller caller) {
+        this.caller = caller;
+    }
 
     public List<FuelLoad> listByVehicle(long vehicleId) {
         return loads.listByVehicle(vehicleId);
@@ -23,15 +33,15 @@ public class FuelService {
 
     /** BR-18: consistency checks, vehicle/trip match and mileage update run in the database. */
     public Result<Void> register(FuelLoad load) {
-        if (!Session.has(Permissions.FUEL_WRITE)) {
+        if (!caller.has(Permissions.FUEL_WRITE)) {
             return Result.err("No tiene permiso para registrar cargas de combustible");
         }
-        Result<Long> saved = loads.save(load, Session.userId());
+        Result<Long> saved = loads.save(load, caller.userId());
         return saved.isOk() ? Result.ok(null) : Result.err(saved.problems());
     }
 
     public Result<Void> delete(long id) {
-        if (!Session.has(Permissions.FUEL_WRITE)) {
+        if (!caller.has(Permissions.FUEL_WRITE)) {
             return Result.err("No tiene permiso para eliminar cargas de combustible");
         }
         loads.delete(id);

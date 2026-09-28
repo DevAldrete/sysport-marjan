@@ -15,6 +15,15 @@ public class AuthService {
     private static final int MIN_PASSWORD_LENGTH = 6;
 
     private final UserRepository users = new UserRepository();
+    private final Caller caller;
+
+    public AuthService() {
+        this(SessionCaller.INSTANCE);
+    }
+
+    public AuthService(Caller caller) {
+        this.caller = caller;
+    }
 
     public Result<CurrentUser> login(String username, String password) {
         if (username == null || username.isBlank() || password == null || password.isBlank()) {
@@ -73,7 +82,7 @@ public class AuthService {
         if (denied != null) {
             return denied;
         }
-        if (id == Session.userId()) {
+        if (id == caller.userId()) {
             return Result.err("No puede eliminar su propio usuario");
         }
         users.delete(id);
@@ -115,7 +124,7 @@ public class AuthService {
     }
 
     public Result<Void> changeOwnPassword(String currentPassword, String newPassword) {
-        long userId = Session.userId();
+        long userId = caller.userId();
         return users.findById(userId).map(user -> {
             if (!BCrypt.checkpw(currentPassword, user.passwordHash())) {
                 return Result.<Void>err("La contrasena actual no es correcta");
@@ -129,7 +138,7 @@ public class AuthService {
     }
 
     private Result<Void> requireAdmin() {
-        if (!Session.has(Permissions.SECURITY_USERS)) {
+        if (!caller.has(Permissions.SECURITY_USERS)) {
             return Result.err("No tiene permiso para administrar usuarios");
         }
         return null;

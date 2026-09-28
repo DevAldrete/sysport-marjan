@@ -4,14 +4,25 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import mx.marjan.security.Caller;
 import mx.marjan.security.Permissions;
-import mx.marjan.security.Session;
+import mx.marjan.security.SessionCaller;
 import mx.marjan.shared.Result;
 
 public class ServiceRequestService {
 
     private final ServiceRequestRepository requests = new ServiceRequestRepository();
-    private final CargoPackageService cargoPackages = new CargoPackageService();
+    private final CargoPackageService cargoPackages;
+    private final Caller caller;
+
+    public ServiceRequestService() {
+        this(SessionCaller.INSTANCE);
+    }
+
+    public ServiceRequestService(Caller caller) {
+        this.caller = caller;
+        this.cargoPackages = new CargoPackageService(caller);
+    }
 
     public List<ServiceRequest> search(RequestFilter filter) {
         return requests.search(filter);
@@ -37,10 +48,10 @@ public class ServiceRequestService {
 
     /** Creates the request and then its package list (the latter atomically). */
     public Result<ServiceRequest> create(ServiceRequest draft, List<CargoPackage> packages) {
-        if (!Session.has(Permissions.REQUESTS_WRITE)) {
+        if (!caller.has(Permissions.REQUESTS_WRITE)) {
             return Result.err("No tiene permiso para crear solicitudes");
         }
-        Result<Long> saved = requests.create(draft, Session.userId());
+        Result<Long> saved = requests.create(draft, caller.userId());
         if (saved.isErr()) {
             return Result.err(saved.problems());
         }
@@ -55,7 +66,7 @@ public class ServiceRequestService {
 
     /** BR-14: careful cascade; removes the request with its trip, costs, delivery and invoices. */
     public Result<Void> delete(long id) {
-        if (!Session.has(Permissions.REQUESTS_WRITE)) {
+        if (!caller.has(Permissions.REQUESTS_WRITE)) {
             return Result.err("No tiene permiso para eliminar solicitudes");
         }
         return requests.delete(id);
@@ -70,10 +81,10 @@ public class ServiceRequestService {
      * package list (null leaves the packages untouched).
      */
     public Result<ServiceRequest> update(ServiceRequest request, List<CargoPackage> packages) {
-        if (!Session.has(Permissions.REQUESTS_WRITE)) {
+        if (!caller.has(Permissions.REQUESTS_WRITE)) {
             return Result.err("No tiene permiso para modificar solicitudes");
         }
-        Result<Void> saved = requests.update(request, Session.userId());
+        Result<Void> saved = requests.update(request, caller.userId());
         if (saved.isErr()) {
             return Result.err(saved.problems());
         }
@@ -87,24 +98,24 @@ public class ServiceRequestService {
     }
 
     public Result<ServiceRequest> authorize(long id, BigDecimal rate) {
-        if (!Session.has(Permissions.REQUESTS_WRITE)) {
+        if (!caller.has(Permissions.REQUESTS_WRITE)) {
             return Result.err("No tiene permiso para autorizar solicitudes");
         }
-        return afterMove(requests.authorize(id, rate, Session.userId()), id);
+        return afterMove(requests.authorize(id, rate, caller.userId()), id);
     }
 
     public Result<ServiceRequest> schedule(long id, LocalDateTime pickup, LocalDateTime delivery) {
-        if (!Session.has(Permissions.REQUESTS_WRITE)) {
+        if (!caller.has(Permissions.REQUESTS_WRITE)) {
             return Result.err("No tiene permiso para programar solicitudes");
         }
-        return afterMove(requests.schedule(id, pickup, delivery, Session.userId()), id);
+        return afterMove(requests.schedule(id, pickup, delivery, caller.userId()), id);
     }
 
     public Result<ServiceRequest> cancel(long id, String reason) {
-        if (!Session.has(Permissions.REQUESTS_WRITE)) {
+        if (!caller.has(Permissions.REQUESTS_WRITE)) {
             return Result.err("No tiene permiso para cancelar solicitudes");
         }
-        return afterMove(requests.cancel(id, reason, Session.userId()), id);
+        return afterMove(requests.cancel(id, reason, caller.userId()), id);
     }
 
     private Result<ServiceRequest> afterMove(Result<Void> moved, long id) {

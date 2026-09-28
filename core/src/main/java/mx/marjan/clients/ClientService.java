@@ -4,8 +4,9 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import mx.marjan.security.Caller;
 import mx.marjan.security.Permissions;
-import mx.marjan.security.Session;
+import mx.marjan.security.SessionCaller;
 import mx.marjan.shared.Result;
 
 /** Use cases for clients and negotiated rates. Permission checks live here, not in the UI. */
@@ -13,6 +14,15 @@ public class ClientService {
 
     private final ClientRepository clients = new ClientRepository();
     private final ClientRateRepository rates = new ClientRateRepository();
+    private final Caller caller;
+
+    public ClientService() {
+        this(SessionCaller.INSTANCE);
+    }
+
+    public ClientService(Caller caller) {
+        this.caller = caller;
+    }
 
     public List<Client> search(String term) {
         return clients.search(term);
@@ -27,7 +37,7 @@ public class ClientService {
     }
 
     public Result<Client> save(Client client) {
-        if (!Session.has(Permissions.CLIENTS_WRITE)) {
+        if (!caller.has(Permissions.CLIENTS_WRITE)) {
             return Result.err("No tiene permiso para modificar clientes");
         }
         Result<Long> saved = clients.save(client);
@@ -39,7 +49,7 @@ public class ClientService {
 
     /** Hard delete. Fails (surfaced to the UI) when the client has related records. */
     public Result<Void> delete(long id) {
-        if (!Session.has(Permissions.CLIENTS_WRITE)) {
+        if (!caller.has(Permissions.CLIENTS_WRITE)) {
             return Result.err("No tiene permiso para eliminar clientes");
         }
         return clients.delete(id);
@@ -54,7 +64,7 @@ public class ClientService {
     }
 
     private Result<Void> changeStatus(long id, ClientStatus status) {
-        if (!Session.has(Permissions.CLIENTS_WRITE)) {
+        if (!caller.has(Permissions.CLIENTS_WRITE)) {
             return Result.err("No tiene permiso para modificar clientes");
         }
         return clients.setStatus(id, status);
@@ -69,7 +79,7 @@ public class ClientService {
     }
 
     public Result<ClientRate> saveRate(ClientRate rate) {
-        if (!Session.has(Permissions.RATES_WRITE)) {
+        if (!caller.has(Permissions.RATES_WRITE)) {
             return Result.err("No tiene permiso para modificar tarifas");
         }
         Result<Long> saved = rates.save(rate);
@@ -81,7 +91,7 @@ public class ClientService {
     }
 
     public Result<Void> deleteRate(long id) {
-        if (!Session.has(Permissions.RATES_WRITE)) {
+        if (!caller.has(Permissions.RATES_WRITE)) {
             return Result.err("No tiene permiso para eliminar tarifas");
         }
         return rates.delete(id);
