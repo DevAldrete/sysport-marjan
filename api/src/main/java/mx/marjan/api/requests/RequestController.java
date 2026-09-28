@@ -22,6 +22,7 @@ import mx.marjan.api.security.Callers;
 import mx.marjan.operators.Employee;
 import mx.marjan.requests.CargoPackage;
 import mx.marjan.requests.CargoPackageService;
+import mx.marjan.requests.PackageCondition;
 import mx.marjan.requests.PackageUnit;
 import mx.marjan.requests.RequestFilter;
 import mx.marjan.requests.RequestStatus;
@@ -67,6 +68,21 @@ public class RequestController {
     @Secured(Permissions.REQUESTS_READ)
     public List<CargoPackage> packages(Authentication authentication, long id) {
         return new CargoPackageService(Callers.forAuthentication(authentication)).list(id);
+    }
+
+    /** FR-DEL-2: per-unit receipts recorded from the trip detail (deliveries.write). */
+    @Post("/{id}/receipts")
+    @Secured(Permissions.DELIVERIES_WRITE)
+    public HttpResponse<?> saveReceipts(Authentication authentication, long id,
+            @Body List<ReceiptLine> receipts) {
+        List<CargoPackage> lines = new ArrayList<>();
+        for (ReceiptLine line : receipts) {
+            lines.add(new CargoPackage(line.id(), id, 0, null, null, null, null,
+                    line.receivedQuantity(),
+                    line.receiptCondition() == null ? null : PackageCondition.fromDb(line.receiptCondition())));
+        }
+        return Responses.of(new CargoPackageService(Callers.forAuthentication(authentication))
+                .saveReceipts(lines));
     }
 
     @Get("/{id}/trip")
@@ -177,6 +193,8 @@ public class RequestController {
 
     public record PackageLine(long id, String description, BigDecimal quantity, String unit,
             BigDecimal unitWeight) {}
+
+    public record ReceiptLine(long id, BigDecimal receivedQuantity, String receiptCondition) {}
 
     public record RequestWrite(Long clientId, Long routeId, String cargoDescription,
             BigDecimal estimatedWeight, LocalDateTime pickupScheduled, LocalDateTime deliveryScheduled,
