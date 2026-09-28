@@ -39,6 +39,7 @@ import mx.marjan.shared.Ui;
 public class TripDetailDialog extends JDialog {
 
     private final Trip trip;
+    private final TripService tripService = new TripService();
     private final ExpenseService expenseService = new ExpenseService();
     private final FuelService fuelService = new FuelService();
     private final AdvanceService advanceService = new AdvanceService();
@@ -56,6 +57,7 @@ public class TripDetailDialog extends JDialog {
         this.trip = trip;
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Resumen", summaryPanel());
+        tabs.addTab("Paradas", stopsPanel());
         tabs.addTab("Gastos", expensesPanel());
         tabs.addTab("Combustible", fuelPanel());
         tabs.addTab("Anticipos", advancesPanel());
@@ -94,6 +96,64 @@ public class TripDetailDialog extends JDialog {
                     + "</html>");
         }, failure -> Ui.failure(this, failure));
         return panel;
+    }
+
+    private JPanel stopsPanel() {
+        RecordTableModel<TripStop> model = new RecordTableModel<>(List.of(
+                RecordTableModel.Column.of("#", TripStop::sequenceNo),
+                RecordTableModel.Column.text("Parada", TripStop::location, 40),
+                RecordTableModel.Column.of("Llegada", stop -> stop.visited()
+                        ? Dates.format(stop.arrivedAt()) : "Pendiente"),
+                RecordTableModel.Column.text("Notas", stop -> stop.notes() == null ? "" : stop.notes(), 40)));
+        RecordTablePanel<TripStop> panel = new RecordTablePanel<>(model);
+        Runnable reload = () -> Async.run(() -> tripService.stops(trip.id()), panel::setRows,
+                failure -> Ui.failure(this, failure));
+        panel.withActions(
+                Ui.button("Marcar llegada", "Registrar la llegada real a la parada",
+                        () -> openStopArrivalForm(panel, reload)),
+                Ui.button("Quitar llegada", "Borrar la llegada registrada en la parada",
+                        () -> removeStopArrival(panel, reload)),
+                Ui.button("Recargar", reload));
+        reload.run();
+        return panel;
+    }
+
+    private void openStopArrivalForm(RecordTablePanel<TripStop> panel, Runnable reload) {
+        TripStop selected = panel.selected();
+        if (selected == null) {
+            Ui.info(this, "Seleccione una parada");
+            return;
+        }
+        java.time.LocalDateTime initial = selected.visited() ? selected.arrivedAt() : Dates.now();
+        FormPanel form = new FormPanel()
+                .addDateTime("arrived", "Llegada", initial)
+                .addText("notes", "Notas", selected.notes() == null ? "" : selected.notes());
+        ModalForm.show(this, "Llegada a " + selected.location(), form, () -> {
+            java.time.LocalDateTime arrived = form.dateTime("arrived");
+            if (arrived == null) {
+                return Result.err("La fecha y hora son obligatorias");
+            }
+            return tripService.saveStopArrival(trip.id(), selected.routeStopId(), arrived,
+                    form.text("notes"));
+        }, reload);
+    }
+
+    private void removeStopArrival(RecordTablePanel<TripStop> panel, Runnable reload) {
+        TripStop selected = panel.selected();
+        if (selected == null || !selected.visited()) {
+            Ui.info(this, "Seleccione una parada con llegada registrada");
+            return;
+        }
+        if (!Ui.confirm(this, "Quitar la llegada a " + selected.location() + "?")) {
+            return;
+        }
+        Async.run(() -> tripService.deleteStopArrival(selected.arrivalId()), result -> {
+            if (result.isErr()) {
+                Ui.error(this, "No se puede quitar la llegada", result.problems());
+            } else {
+                reload.run();
+            }
+        }, failure -> Ui.failure(this, failure));
     }
 
     private JPanel expensesPanel() {
