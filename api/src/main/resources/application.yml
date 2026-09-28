@@ -3,3 +3,24 @@ micronaut:
     name: sysport-api
   server:
     port: ${PORT:8080}
+  security:
+    authentication: bearer
+    endpoints:
+      login:
+        path: /api/auth/login
+      logout:
+        path: /api/auth/logout
+      oauth:
+        path: /api/auth/refresh
+    token:
+      jwt:
+        signatures:
+          secret:
+            generator:
+              secret: "${JWT_SECRET:sysport-dev-access-secret-please-change-32bytes}"
+        generator:
+          access-token:
+            expiration: ${JWT_ACCESS_EXPIRATION:3600}
+          refresh-token:
+            enabled: true
+            secret: "${JWT_REFRESH_SECRET:sysport-dev-refresh-secret-please-change-32bytes}"
