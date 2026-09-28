@@ -41,6 +41,7 @@ import mx.marjan.ui.Ui;
 final class ServiceRequestDetailDialog {
 
     private final ServiceRequest request;
+    private final CargoPackageService packages = new CargoPackageService();
     private final TripService trips = new TripService();
     private final ExpenseService expenses = new ExpenseService();
     private final FuelService fuel = new FuelService();
@@ -56,8 +57,9 @@ final class ServiceRequestDetailDialog {
         new ServiceRequestDetailDialog(request).open(parent);
     }
 
-    private record Detail(Optional<Trip> trip, List<Expense> expenses, List<FuelLoad> fuelLoads,
-            AdvanceBalance advance, Optional<Delivery> delivery, Optional<Invoice> invoice) {}
+    private record Detail(List<CargoPackage> packages, Optional<Trip> trip, List<Expense> expenses,
+            List<FuelLoad> fuelLoads, AdvanceBalance advance, Optional<Delivery> delivery,
+            Optional<Invoice> invoice) {}
 
     private void open(Window parent) {
         VBox body = new VBox(14);
@@ -87,12 +89,13 @@ final class ServiceRequestDetailDialog {
     }
 
     private Detail load() {
+        List<CargoPackage> lines = packages.list(request.id());
         Optional<Trip> trip = trips.findByRequest(request.id());
         if (trip.isEmpty()) {
-            return new Detail(trip, List.of(), List.of(), null, Optional.empty(), Optional.empty());
+            return new Detail(lines, trip, List.of(), List.of(), null, Optional.empty(), Optional.empty());
         }
         long tripId = trip.get().id();
-        return new Detail(trip, expenses.listByTrip(tripId), fuel.listByTrip(tripId),
+        return new Detail(lines, trip, expenses.listByTrip(tripId), fuel.listByTrip(tripId),
                 advances.balanceForTrip(tripId), deliveries.findByTrip(tripId),
                 invoices.findByRequest(request.id()));
     }
@@ -100,11 +103,38 @@ final class ServiceRequestDetailDialog {
     private List<Node> render(Detail detail) {
         VBox story = new VBox(14,
                 section("Solicitud", requestGrid()),
+                section("Paquetes", packagesGrid(detail.packages())),
                 section("Viaje", tripGrid(detail)),
                 section("Costos", costGrid(detail)),
                 section("Entrega", deliveryGrid(detail.delivery())),
                 section("Factura", invoiceGrid(detail.invoice())));
         return story.getChildren();
+    }
+
+    private Node packagesGrid(List<CargoPackage> lines) {
+        if (lines.isEmpty()) {
+            return Ui.muted("Sin paquetes capturados");
+        }
+        VBox box = new VBox(6);
+        for (CargoPackage line : lines) {
+            StringBuilder value = new StringBuilder()
+                    .append(line.quantity()).append(' ')
+                    .append(line.unit() == null ? "" : line.unit().label())
+                    .append(" - ").append(line.description());
+            if (line.unitWeight() != null) {
+                value.append(" (").append(line.unitWeight()).append(" kg/u)");
+            }
+            if (line.receiptCondition() != null) {
+                value.append(" [").append(line.receiptCondition().label());
+                if (line.receivedQuantity() != null) {
+                    value.append(": ").append(line.receivedQuantity())
+                            .append('/').append(line.quantity());
+                }
+                value.append(']');
+            }
+            box.getChildren().add(kv("Paquete", value.toString()));
+        }
+        return box;
     }
 
     private Node requestGrid() {
@@ -113,8 +143,8 @@ final class ServiceRequestDetailDialog {
                 kv("Cliente", request.clientName()),
                 kv("Ruta", request.routeLabel()),
                 kv("Mercancia", request.cargoDescription()),
-                kv("Peso aproximado", request.estimatedWeight() == null
-                        ? "-" : request.estimatedWeight().toPlainString() + " kg"),
+                kv("Peso", request.effectiveWeight() == null
+                        ? "-" : request.effectiveWeight().toPlainString() + " kg"),
                 kv("Recoleccion", Dates.format(request.pickupScheduled())),
                 kv("Entrega", Dates.format(request.deliveryScheduled())),
                 kv("Tarifa acordada", request.agreedRate() == null

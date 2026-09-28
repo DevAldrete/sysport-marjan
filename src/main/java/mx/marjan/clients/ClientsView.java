@@ -132,7 +132,7 @@ public class ClientsView extends BaseView {
                 : service.activate(client.id()),
                 result -> {
                     if (result.isErr()) {
-                        Ui.error(Ui.windowOf(this), "Error", result.problems());
+                        Ui.error(Ui.windowOf(this), "No se pudo cambiar el estado", result.problems());
                     } else {
                         reload();
                     }
