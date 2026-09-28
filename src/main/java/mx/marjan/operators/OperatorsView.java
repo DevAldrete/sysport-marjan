@@ -78,6 +78,10 @@ public class OperatorsView extends BaseView {
     private void openForm(Employee employee) {
         boolean isNew = employee.id() == 0;
         License license = employee.license() != null ? employee.license() : License.empty();
+        String numberHint = license.licenseNumber() == null || license.licenseNumber().isBlank()
+                ? "Automatico al guardar" : license.licenseNumber();
+        LicenseType initialType = LicenseType.fromDb(license.licenseType()) != null
+                ? LicenseType.fromDb(license.licenseType()) : LicenseType.FEDERAL_C;
         FormPanel form = new FormPanel()
                 .addText("name", "Nombre", employee.name())
                 .addText("phone", "Telefono", employee.phone())
@@ -87,18 +91,20 @@ public class OperatorsView extends BaseView {
                 .addText("curp", "CURP", employee.curp())
                 .addText("ecName", "Contacto de emergencia", employee.emergencyContactName())
                 .addText("ecPhone", "Telefono de emergencia", employee.emergencyContactPhone())
-                .addText("licenseNumber", "No. de licencia", license.licenseNumber())
-                .addText("licenseType", "Tipo de licencia", license.licenseType())
+                .addText("licenseNumber", "No. de licencia", numberHint,
+                        "El sistema asigna el numero interno automaticamente")
+                .addCombo("licenseType", "Tipo de licencia", LicenseType.values(), initialType)
                 .addDate("licenseIssue", "Expedicion", license.issueDate())
                 .addDate("licenseExpiry", "Vencimiento", license.expirationDate());
+        form.field("licenseNumber").setEnabled(false);
         ModalForm.show(this, isNew ? "Nuevo operador" : "Editar operador", form, () -> {
             License builtLicense = null;
-            String number = form.text("licenseNumber");
-            if (!number.isBlank()) {
+            Object typeValue = form.selected("licenseType");
+            if (typeValue instanceof LicenseType type) {
                 LocalDate issue = form.date("licenseIssue");
                 LocalDate expiry = form.date("licenseExpiry");
-                builtLicense = new License(license.id(), number, form.text("licenseType"),
-                        issue, expiry);
+                builtLicense = new License(license.id(), license.licenseNumber(),
+                        type.dbValue(), issue, expiry);
             }
             Employee built = new Employee(employee.id(), form.text("name"), form.text("address"),
                     form.text("phone"), form.text("email"), form.text("rfc"), form.text("curp"),
