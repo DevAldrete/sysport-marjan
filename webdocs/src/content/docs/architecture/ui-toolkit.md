@@ -20,7 +20,8 @@ Async.run(
 ```
 
 `Async` is a thin `javafx.concurrent.Task` wrapper that marshals the callbacks back to the FX
-thread. `BaseView` wraps this further.
+thread and shows a **wait cursor** on every open window while at least one worker runs. `BaseView`
+wraps this further.
 
 ## `AppShell` and `Navigation` — the window
 
@@ -69,10 +70,12 @@ form.validate("weight", Validators.number());
 | `addCheck(key, label, value)` | checkbox |
 | `addArea(key, label, value[, hint])` | multi-line text area |
 | `addComputed(key, label, supplier)` | **read-only**, recomputed on every change |
+| `addSection(node)` | full-width custom row (e.g. the package-list editor) |
 | `validate(key, fn)` | live check; returns a message or `null` |
-| `hint(key, text)` | persistent helper text |
+| `hint(key, text)` | persistent helper text (also used as the control tooltip) |
 | `onSelect(key, action)` | run when a combo changes (e.g. prefill) |
 | `onChange(listener)` | run after any change |
+| `isValid()`, `focusFirstInvalid()` | mark all fields touched; block submit / focus the first red one |
 | `text(key)`, `selected(key)`, `checked(key)`, `setText(key, v)`, `control(key)` | read/write |
 
 A field with an invalid value is outlined and its hint turns into the error message **as the user
@@ -93,7 +96,10 @@ ModalForm.show(Ui.windowOf(this), "Nueva ruta", form, () -> service.save(built),
 ```
 
 - The submit handler returns `Result<?>`.
-- On `Result.Err`, the problems are shown under the form and the user can fix them.
+- **Submit is gated on live validation**: if a validated field is still invalid, the dialog focuses
+  it and does not call the handler.
+- On `Result.Err`, the problems are shown under the form (bulleted when the database reported
+  several; `Database.asProblemList` splits the `'; '` string) and the user can fix them.
 - On success the optional `afterSave` runs (usually `reload`).
 - The first editable field gets focus automatically.
 
@@ -106,7 +112,7 @@ ModalForm.show(Ui.windowOf(this), "Nueva ruta", form, () -> service.save(built),
 | `Ui.confirm/confirmDanger(window, message[, verb])` | yes/no confirmations |
 | `Ui.delete(window, what, action, onDone)` | confirm + async delete + uniform reporting |
 | `Ui.failure(window, throwable)` | report an unexpected exception |
-| `Ui.button/primary(text[, tooltip], action)` | a button wired to a `Runnable` |
+| `Ui.button/primary(text[, tooltip], action[, enabled])` | a button wired to a `Runnable`; disabled when the user lacks the permission |
 | `Ui.onDoubleClick(table, action)` | open a row on double-click |
 | `Ui.toolbar(...)`, `Ui.filters(...)` | wrapping action / filter rows |
 | `Ui.windowOf(node)` | the owning `Window` for dialogs |
