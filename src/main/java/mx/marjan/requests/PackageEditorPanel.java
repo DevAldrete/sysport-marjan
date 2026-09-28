@@ -25,6 +25,7 @@ public final class PackageEditorPanel extends JPanel {
 
     private final long requestId;
     private final List<CargoPackage> rows = new ArrayList<>();
+    private final boolean locked;
     private final RecordTableModel<CargoPackage> model = new RecordTableModel<>(List.of(
             RecordTableModel.Column.text("Descripcion", CargoPackage::description, 40),
             RecordTableModel.Column.of("Cantidad", CargoPackage::quantity),
@@ -36,14 +37,20 @@ public final class PackageEditorPanel extends JPanel {
     private Runnable onChange = () -> {};
 
     public PackageEditorPanel(long requestId, List<CargoPackage> initial) {
+        this(requestId, initial, false);
+    }
+
+    /** When {@code locked}, the cargo can be viewed but not changed (after departure). */
+    public PackageEditorPanel(long requestId, List<CargoPackage> initial, boolean locked) {
         super(new BorderLayout(4, 4));
         this.requestId = requestId;
+        this.locked = locked;
         rows.addAll(initial);
         setBorder(BorderFactory.createTitledBorder("Paquetes (bultos)"));
         JPanel actions = Ui.row(
-                Ui.button("Agregar", "Agregar un paquete a la lista", this::addPackage),
-                Ui.button("Editar", "Editar el paquete seleccionado", this::editPackage),
-                Ui.button("Quitar", "Quitar el paquete seleccionado", this::removePackage));
+                Ui.button("Agregar", "Agregar un paquete a la lista", this::addPackage, !locked),
+                Ui.button("Editar", "Editar el paquete seleccionado", this::editPackage, !locked),
+                Ui.button("Quitar", "Quitar el paquete seleccionado", this::removePackage, !locked));
         JPanel south = Ui.column(actions, Ui.row(total));
         add(table, BorderLayout.CENTER);
         add(south, BorderLayout.SOUTH);
@@ -151,7 +158,8 @@ public final class PackageEditorPanel extends JPanel {
     private void refresh() {
         model.setRows(rows);
         total.setText(rows.size() + " linea(s) - Peso total: "
-                + (totalWeight() == null ? "-" : totalWeight().stripTrailingZeros().toPlainString() + " kg"));
+                + (totalWeight() == null ? "-" : totalWeight().stripTrailingZeros().toPlainString() + " kg")
+                + (locked ? "  (carga bloqueada: la solicitud ya salio)" : ""));
         onChange.run();
     }
 }

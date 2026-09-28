@@ -236,7 +236,8 @@ public class ServiceRequestsView extends BaseView {
     }
 
     private void showEditForm(ServiceRequest request, List<CargoPackage> existingPackages) {
-        PackageEditorPanel packages = new PackageEditorPanel(request.id(), existingPackages);
+        PackageEditorPanel packages = new PackageEditorPanel(request.id(), existingPackages,
+                isCargoLocked(request.status()));
         FormPanel form = new FormPanel()
                 .addText("cargo", "Descripcion de la mercancia", request.cargoDescription(),
                         "Resumen; el detalle va en los paquetes")
@@ -418,9 +419,21 @@ public class ServiceRequestsView extends BaseView {
         if (request == null) {
             return;
         }
+        if (request.status() == RequestStatus.ASSIGNED || request.status() == RequestStatus.IN_TRANSIT
+                || request.status() == RequestStatus.DELIVERED || request.status() == RequestStatus.CLOSED) {
+            Ui.info(this, "No se puede eliminar una solicitud con viaje asignado o entregada. "
+                    + "Use 'Cancelar' para conservar el historial.");
+            return;
+        }
         Ui.delete(this, "la solicitud " + request.folio()
-                        + " y todo lo relacionado (viaje, gastos, anticipos, incidencias, entrega, factura y pagos)",
+                        + " y todo lo relacionado (viaje, gastos, anticipos, incidencias, entrega y factura)",
                 () -> service.delete(request.id()), this::reload);
+    }
+
+    /** Cargo is frozen once the trip has started (BR-26). */
+    private static boolean isCargoLocked(RequestStatus status) {
+        return status == RequestStatus.IN_TRANSIT || status == RequestStatus.DELIVERED
+                || status == RequestStatus.CLOSED;
     }
 
     private void openDetail() {

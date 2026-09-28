@@ -262,7 +262,12 @@ public class InvoicesView extends BaseView {
         if (invoice == null) {
             return;
         }
-        Ui.delete(this, "la factura " + invoice.invoiceNumber() + " y sus pagos",
+        if (invoice.status() != InvoiceStatus.PENDING) {
+            Ui.info(this, "Solo se puede eliminar una factura pendiente. "
+                    + "Use 'Cancelar' para conservar el historial.");
+            return;
+        }
+        Ui.delete(this, "la factura " + invoice.invoiceNumber(),
                 () -> service.delete(invoice.id()), this::reload);
     }
 
