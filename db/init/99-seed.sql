@@ -140,7 +140,7 @@ INSERT INTO routes (id, origin, destination, estimated_km, description) VALUES
   (9, 'Monterrey, NL', 'Saltillo, COAH', 90.0, 'Ruta regional'),
   (10, 'CDMX', 'Puebla, PUE', 130.0, 'Ruta metropolitana');
 
--- BR-25: ordered stops. Routes 1, 2, 5 and 6 include intermediate stops, so the
+-- BR-26: ordered stops. Routes 1, 2, 5 and 6 include intermediate stops, so the
 -- record distinguishes "CDMX -> Monterrey" from "CDMX -> Queretaro -> SLP -> Monterrey".
 INSERT INTO route_stops (id, route_id, sequence_no, location) VALUES
   (1, 1, 1, 'CDMX'),
@@ -269,7 +269,7 @@ INSERT INTO deliveries (id, trip_id, actual_datetime, received_by, evidence_refe
   (3, 4, '2026-07-07 19:30:00', 'Diego Luna', 'PO-88233', 'complete', 1),
   (4, 5, '2026-09-13 21:20:00', 'Paola Cruz', 'PO-88234', 'complete', 1);
 
--- BR-25: actual arrivals at the planned stops of two finished trips and one
+-- BR-26: actual arrivals at the planned stops of two finished trips and one
 -- in-progress trip (its second stop is still pending).
 INSERT INTO trip_stop_arrivals (id, trip_id, route_stop_id, arrived_at, notes, created_by) VALUES
   (1, 1, 1, '2026-05-02 08:20:00', 'Salida de patio', 1),

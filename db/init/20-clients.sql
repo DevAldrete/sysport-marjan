@@ -224,7 +224,7 @@ p: BEGIN
   END IF;
 END$$
 
--- BR-25: ordered stops of a route. Written row by row by the repository inside
+-- BR-26: ordered stops of a route. Written row by row by the repository inside
 -- one Java transaction (see RouteRepository), so no transaction here.
 CREATE PROCEDURE sp_route_stops(IN p_route_id BIGINT)
 p: BEGIN
@@ -276,7 +276,7 @@ p: BEGIN
   DELETE FROM route_stops WHERE id = p_id;
 END$$
 
--- BR-25: reject a route whose ordered stops repeat another route's.
+-- BR-26: reject a route whose ordered stops repeat another route's.
 CREATE PROCEDURE sp_route_duplicate(IN p_route_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
   DECLARE v_signature VARCHAR(500);

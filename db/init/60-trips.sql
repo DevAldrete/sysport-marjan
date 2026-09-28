@@ -285,7 +285,7 @@ p: BEGIN
   COMMIT;
 END$$
 
--- BR-25: the trip's planned stops with the actual arrival at each one, so the
+-- BR-26: the trip's planned stops with the actual arrival at each one, so the
 -- history proves A -> B -> C was followed. arrived_at is null until recorded.
 CREATE PROCEDURE sp_trip_stops(IN p_trip_id BIGINT)
 p: BEGIN

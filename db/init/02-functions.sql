@@ -187,7 +187,7 @@ BEGIN
       FROM licenses WHERE license_number LIKE 'LIC-MRJ-%');
 END$$
 
--- BR-25: human label of a route's ordered stops, e.g. "A -> B -> C".
+-- BR-26: human label of a route's ordered stops, e.g. "A -> B -> C".
 CREATE FUNCTION fn_route_label(p_route_id BIGINT)
 RETURNS VARCHAR(500)
 READS SQL DATA
@@ -196,7 +196,7 @@ BEGIN
           FROM route_stops WHERE route_id = p_route_id);
 END$$
 
--- BR-25: canonical signature of a route's ordered stops, used to reject
+-- BR-26: canonical signature of a route's ordered stops, used to reject
 -- duplicates that the old (origin, destination) unique key used to catch.
 CREATE FUNCTION fn_route_signature(p_route_id BIGINT)
 RETURNS VARCHAR(500)

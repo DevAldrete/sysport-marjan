@@ -7,7 +7,7 @@ import java.util.List;
 import mx.marjan.shared.Database;
 import mx.marjan.shared.Result;
 
-/** Thin JDBC wrapper over the trip-stop arrival procedures (BR-25). */
+/** Thin JDBC wrapper over the trip-stop arrival procedures (BR-26). */
 public class TripStopRepository {
 
     private TripStop map(ResultSet rs) throws SQLException {

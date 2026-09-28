@@ -120,12 +120,12 @@ public class TripService {
         return requests.close(requestId, Session.userId());
     }
 
-    /** BR-25: the trip's planned stops with their recorded arrivals. */
+    /** BR-26: the trip's planned stops with their recorded arrivals. */
     public List<TripStop> stops(long tripId) {
         return tripStops.listByTrip(tripId);
     }
 
-    /** BR-25: records (or corrects) the actual arrival at one of the trip's stops. */
+    /** BR-26: records (or corrects) the actual arrival at one of the trip's stops. */
     public Result<Void> saveStopArrival(long tripId, long routeStopId, LocalDateTime arrivedAt,
             String notes) {
         if (!Session.has(Permissions.TRIPS_WRITE)) {

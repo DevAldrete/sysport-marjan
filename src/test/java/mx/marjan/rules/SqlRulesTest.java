@@ -202,14 +202,14 @@ class SqlRulesTest {
         saveRouteStop(route, 2, "B");
         saveRouteStop(route, 3, "C");
         assertEquals("A -> B -> C", scalarString("SELECT fn_route_label(" + route + ")"),
-                "BR-25: the label lists every stop in order");
+                "BR-26: the label lists every stop in order");
         assertNull(duplicateRoute(route), "no other route has the same stops yet");
 
         long twin = saveRoute("A", "C");
         saveRouteStop(twin, 1, "A");
         saveRouteStop(twin, 2, "B");
         saveRouteStop(twin, 3, "C");
-        assertNotNull(duplicateRoute(route), "BR-25: an identical route is rejected");
+        assertNotNull(duplicateRoute(route), "BR-26: an identical route is rejected");
 
         exec("DELETE FROM route_stops WHERE route_id IN (" + route + "," + twin + ")");
         exec("DELETE FROM routes WHERE id IN (" + route + "," + twin + ")");
@@ -230,27 +230,27 @@ class SqlRulesTest {
         long trip = assign(request, 5, 7);
 
         assertNull(saveStopArrival(trip, middle, "2027-11-05 12:00:00", "paso por Y"),
-                "BR-25: an intermediate stop can be marked as visited");
+                "BR-26: an intermediate stop can be marked as visited");
         assertEquals(1, scalarLong("SELECT COUNT(*) FROM trip_stop_arrivals WHERE trip_id=" + trip));
         assertEquals("Y", scalarString("SELECT rs.location FROM trip_stop_arrivals a "
                 + "JOIN route_stops rs ON rs.id = a.route_stop_id WHERE a.trip_id=" + trip),
-                "BR-25: the record shows the truck actually went through Y");
+                "BR-26: the record shows the truck actually went through Y");
         assertNotNull(saveStopArrival(trip, 1L, "2027-11-05 12:00:00", "otra ruta"),
-                "BR-25: a stop from another route is rejected");
+                "BR-26: a stop from another route is rejected");
         assertNotNull(routeStopDeleteProblems(middle),
-                "BR-25: a stop with a recorded arrival cannot be removed");
+                "BR-26: a stop with a recorded arrival cannot be removed");
     }
 
     @Test
     void hardDeletesAreRestrictedToUntouchedRecords() throws Exception {
-        assertNotNull(deleteRequestProblems(1L), "BR-26: a closed request cannot be deleted");
-        assertNotNull(deleteRequestProblems(10L), "BR-26: an assigned request cannot be deleted");
-        assertNotNull(deleteInvoiceProblems(2L), "BR-26: a paid invoice cannot be deleted");
-        assertNotNull(deletePackageProblems(5L), "BR-26: cargo of an in-transit request is frozen");
+        assertNotNull(deleteRequestProblems(1L), "BR-27: a closed request cannot be deleted");
+        assertNotNull(deleteRequestProblems(10L), "BR-27: an assigned request cannot be deleted");
+        assertNotNull(deleteInvoiceProblems(2L), "BR-27: a paid invoice cannot be deleted");
+        assertNotNull(deletePackageProblems(5L), "BR-27: cargo of an in-transit request is frozen");
 
         long requested = createRequest(2, 4, "2027-12-05 08:00:00", "2027-12-06 18:00:00",
                 new BigDecimal("1000"), false);
-        assertNull(deleteRequestProblems(requested), "BR-26: a fresh request may still be deleted");
+        assertNull(deleteRequestProblems(requested), "BR-27: a fresh request may still be deleted");
     }
 
     @Test
@@ -282,7 +282,7 @@ class SqlRulesTest {
 
         mx.marjan.shared.Result<Long> duplicate = repository.save(
                 new mx.marjan.routes.Route(0, "", "", new BigDecimal("5.0"), "dup", ""), stops);
-        assertTrue(duplicate.isErr(), "BR-25: the duplicate route rolls back the whole transaction");
+        assertTrue(duplicate.isErr(), "BR-26: the duplicate route rolls back the whole transaction");
     }
 
     // ------------------------------------------------------------------ helpers

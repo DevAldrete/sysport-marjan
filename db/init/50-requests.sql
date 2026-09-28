@@ -402,7 +402,7 @@ p: BEGIN
   END IF;
 END$$
 
--- BR-26: a package line can be edited until the request is in transit; after
+-- BR-27: a package line can be edited until the request is in transit; after
 -- that the cargo is history (receipts are recorded, not rewritten).
 CREATE PROCEDURE sp_package_delete(IN p_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
@@ -443,7 +443,7 @@ p: BEGIN
 END$$
 
 -- BR-14: careful cascade in one transaction. Audit rows are intentionally kept
--- (BR-22), even for a hard delete. BR-26: a request with a trip or an invoice
+-- (BR-22), even for a hard delete. BR-27: a request with a trip or an invoice
 -- is history, so it must be cancelled instead of deleted.
 CREATE PROCEDURE sp_request_delete(IN p_id BIGINT, OUT p_problems TEXT)
 p: BEGIN

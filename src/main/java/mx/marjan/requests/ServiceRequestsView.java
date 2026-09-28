@@ -430,7 +430,7 @@ public class ServiceRequestsView extends BaseView {
                 () -> service.delete(request.id()), this::reload);
     }
 
-    /** Cargo is frozen once the trip has started (BR-26). */
+    /** Cargo is frozen once the trip has started (BR-27). */
     private static boolean isCargoLocked(RequestStatus status) {
         return status == RequestStatus.IN_TRANSIT || status == RequestStatus.DELIVERED
                 || status == RequestStatus.CLOSED;

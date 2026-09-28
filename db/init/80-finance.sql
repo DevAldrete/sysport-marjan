@@ -135,7 +135,7 @@ p: BEGIN
   SELECT * FROM v_invoice WHERE service_request_id = p_request_id;
 END$$
 
--- BR-26: only a pending invoice without payments may be hard-deleted; anything
+-- BR-27: only a pending invoice without payments may be hard-deleted; anything
 -- with history is cancelled instead.
 CREATE PROCEDURE sp_invoice_delete(IN p_id BIGINT, OUT p_problems TEXT)
 p: BEGIN

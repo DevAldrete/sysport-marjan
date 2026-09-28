@@ -65,7 +65,7 @@ p: BEGIN
   UPDATE users SET password_hash = p_hash WHERE id = p_id;
 END$$
 
--- BR-26: a user cannot delete itself and the last active administrator is
+-- BR-27: a user cannot delete itself and the last active administrator is
 -- protected, so the system can never be locked out.
 CREATE PROCEDURE sp_user_delete(IN p_id BIGINT, IN p_actor_id BIGINT, OUT p_problems TEXT)
 p: BEGIN

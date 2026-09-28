@@ -129,7 +129,7 @@ CREATE TABLE routes (
   created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
--- BR-25: a route is an ordered list of stops, so A -> B -> C is different from
+-- BR-26: a route is an ordered list of stops, so A -> B -> C is different from
 -- A -> C. origin/destination above stay as the first/last stop snapshots.
 CREATE TABLE route_stops (
   id          BIGINT PRIMARY KEY,
@@ -345,7 +345,7 @@ CREATE TABLE deliveries (
   CONSTRAINT fk_delivery_creator FOREIGN KEY (created_by) REFERENCES users (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
--- BR-25: actual arrival at each planned stop, so the record shows B was visited
+-- BR-26: actual arrival at each planned stop, so the record shows B was visited
 -- and not just that the truck went from A to C.
 CREATE TABLE trip_stop_arrivals (
   id            BIGINT PRIMARY KEY,
