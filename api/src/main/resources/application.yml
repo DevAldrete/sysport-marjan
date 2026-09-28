@@ -28,3 +28,8 @@ micronaut:
 jackson:
   serialization:
     write-dates-as-timestamps: false
+
+sysport:
+  jobs:
+    # User written to the audit trail by the scheduled reconciliation jobs.
+    system-user-id: ${SYSPORT_SYSTEM_USER:1}
