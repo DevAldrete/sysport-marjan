@@ -185,6 +185,28 @@ CREATE TABLE service_requests (
   INDEX idx_sr_pickup (pickup_date_scheduled)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+-- Packages (bultos) that make up a service request's cargo. A request can carry
+-- many; the trip (1:1 with the request) inherits the list. unit_weight is per
+-- unit, so line weight = quantity x unit_weight. received_quantity/condition
+-- are filled when the trip is delivered, for per-unit tracking.
+CREATE TABLE request_packages (
+  id                 BIGINT PRIMARY KEY,
+  service_request_id BIGINT NOT NULL,
+  line_no            INT NOT NULL,
+  description        VARCHAR(255) NOT NULL,
+  quantity           DECIMAL(10,2) NOT NULL DEFAULT 1 CHECK (quantity > 0),
+  unit               VARCHAR(20) NOT NULL DEFAULT 'caja'
+                     CHECK (unit IN ('caja','paleta','saco','bulto','pieza','contenedor','otro')),
+  unit_weight        DECIMAL(10,1) CHECK (unit_weight IS NULL OR unit_weight >= 0),
+  received_quantity  DECIMAL(10,2) CHECK (received_quantity IS NULL OR received_quantity >= 0),
+  receipt_condition  VARCHAR(20)
+                     CHECK (receipt_condition IS NULL OR receipt_condition IN ('ok','shortage','damaged','missing')),
+  created_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_pkg_request FOREIGN KEY (service_request_id) REFERENCES service_requests (id),
+  INDEX idx_pkg_request (service_request_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 -- ---------------------------------------------------------------- trips
 
 CREATE TABLE trips (
@@ -439,6 +461,21 @@ BEGIN
   RETURN (p_status IN ('authorized','scheduled','assigned'));
 END$$
 
+-- BR-08: effective weight of a request = sum of its packages
+-- (quantity x unit weight) or, when it has none, the manually estimated weight.
+CREATE FUNCTION fn_request_weight(p_request_id BIGINT)
+RETURNS DECIMAL(10,1)
+READS SQL DATA
+BEGIN
+  DECLARE v_packages DECIMAL(12,2) DEFAULT NULL;
+  SELECT SUM(p.quantity * p.unit_weight) INTO v_packages
+    FROM request_packages p WHERE p.service_request_id = p_request_id;
+  IF v_packages IS NOT NULL THEN
+    RETURN v_packages;
+  END IF;
+  RETURN (SELECT estimated_weight FROM service_requests WHERE id = p_request_id);
+END$$
+
 -- BR-07 / BR-11: only 'available' vehicles may be assigned.
 CREATE FUNCTION fn_vehicle_assignable(p_status VARCHAR(20))
 RETURNS TINYINT DETERMINISTIC
@@ -668,7 +705,11 @@ LEFT JOIN licenses l ON l.id = e.license_id;
 CREATE OR REPLACE VIEW v_service_request AS
 SELECT sr.id, sr.folio, sr.client_id, c.name AS client_name, sr.route_id,
        CONCAT(r.origin, ' -> ', r.destination) AS route_label,
-       sr.cargo_description, sr.estimated_weight, sr.pickup_date_scheduled,
+       sr.cargo_description, sr.estimated_weight,
+       (SELECT COUNT(*) FROM request_packages p WHERE p.service_request_id = sr.id) AS package_count,
+       (SELECT SUM(p.quantity * p.unit_weight) FROM request_packages p
+         WHERE p.service_request_id = sr.id) AS package_weight,
+       sr.pickup_date_scheduled,
        sr.delivery_date_scheduled, sr.agreed_rate, sr.requires_documents,
        sr.status, sr.notes, sr.created_at
 FROM service_requests sr
@@ -1563,13 +1604,14 @@ p: BEGIN
   DECLARE v_conflicts INT DEFAULT 0;
 
   SET p_problems = NULL;
-  SELECT status, pickup_date_scheduled, delivery_date_scheduled, estimated_weight
-    INTO v_req_status, v_start, v_end, v_weight
+  SELECT status, pickup_date_scheduled, delivery_date_scheduled
+    INTO v_req_status, v_start, v_end
     FROM service_requests WHERE id = p_request_id;
   IF v_req_status IS NULL THEN
     SET p_problems = 'Solicitud no encontrada';
     LEAVE p;
   END IF;
+  SET v_weight = fn_request_weight(p_request_id);
   -- 'assigned' with a still-scheduled trip is the reassignment case: the
   -- request is ready to be pointed at a different unit/operator.
   IF v_req_status <> 'scheduled'
@@ -1888,6 +1930,87 @@ p: BEGIN
   WHERE id = p_id;
 END$$
 
+-- ---------------------------------------------------------------- packages
+
+CREATE PROCEDURE sp_request_packages(IN p_request_id BIGINT)
+p: BEGIN
+  SELECT id, service_request_id, line_no, description, quantity, unit, unit_weight,
+         received_quantity, receipt_condition
+  FROM request_packages WHERE service_request_id = p_request_id
+  ORDER BY line_no;
+END$$
+
+-- Packages are written row by row by the repository inside one Java
+-- transaction (see PackageRepository), so this procedure validates and writes
+-- but deliberately does not start, commit or roll back a transaction.
+CREATE PROCEDURE sp_package_save(IN p_id BIGINT, IN p_request_id BIGINT, IN p_line_no INT,
+    IN p_description VARCHAR(255), IN p_quantity DECIMAL(10,2), IN p_unit VARCHAR(20),
+    IN p_unit_weight DECIMAL(10,1), IN p_user_id BIGINT,
+    OUT p_new_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  SET p_problems = NULL;
+  SET p_new_id = NULL;
+  IF p_request_id IS NULL OR p_request_id = 0
+     OR (SELECT COUNT(*) FROM service_requests WHERE id = p_request_id) = 0 THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La solicitud del paquete no existe');
+  END IF;
+  IF p_description IS NULL OR p_description = '' THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La descripcion del paquete es obligatoria');
+  END IF;
+  IF p_quantity IS NULL OR p_quantity <= 0 THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La cantidad del paquete debe ser mayor a cero');
+  END IF;
+  IF p_unit IS NULL OR p_unit NOT IN ('caja','paleta','saco','bulto','pieza','contenedor','otro') THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La unidad del paquete no es valida');
+  END IF;
+  IF p_unit_weight IS NOT NULL AND NOT fn_measure_valid(p_unit_weight) THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'El peso por unidad no es valido');
+  END IF;
+  IF p_problems IS NOT NULL THEN LEAVE p; END IF;
+
+  IF p_id IS NULL OR p_id = 0 THEN
+    CALL sp_next_id('request_packages', p_new_id);
+    INSERT INTO request_packages
+      (id, service_request_id, line_no, description, quantity, unit, unit_weight)
+    VALUES (p_new_id, p_request_id, p_line_no, p_description, p_quantity, p_unit, p_unit_weight);
+  ELSE
+    SET p_new_id = p_id;
+    UPDATE request_packages
+      SET line_no = p_line_no, description = p_description, quantity = p_quantity,
+          unit = p_unit, unit_weight = p_unit_weight
+    WHERE id = p_id AND service_request_id = p_request_id;
+    IF (SELECT COUNT(*) FROM request_packages WHERE id = p_id) = 0 THEN
+      SET p_problems = 'Paquete no encontrado';
+      SET p_new_id = NULL;
+    END IF;
+  END IF;
+END$$
+
+CREATE PROCEDURE sp_package_delete(IN p_id BIGINT)
+p: BEGIN
+  DELETE FROM request_packages WHERE id = p_id;
+END$$
+
+-- Per-unit tracking: how much of a package arrived and its condition.
+CREATE PROCEDURE sp_package_receipt_save(IN p_id BIGINT, IN p_received DECIMAL(10,2),
+    IN p_condition VARCHAR(20), OUT p_problems TEXT)
+p: BEGIN
+  DECLARE v_quantity DECIMAL(10,2) DEFAULT NULL;
+  SET p_problems = NULL;
+  SELECT quantity INTO v_quantity FROM request_packages WHERE id = p_id;
+  IF v_quantity IS NULL THEN
+    SET p_problems = 'Paquete no encontrado'; LEAVE p;
+  END IF;
+  IF p_received IS NULL OR p_received < 0 OR p_received > v_quantity THEN
+    SET p_problems = CONCAT('La cantidad recibida debe estar entre 0 y ', v_quantity); LEAVE p;
+  END IF;
+  IF p_condition IS NULL OR p_condition NOT IN ('ok','shortage','damaged','missing') THEN
+    SET p_problems = 'La condicion del paquete no es valida'; LEAVE p;
+  END IF;
+  UPDATE request_packages SET received_quantity = p_received, receipt_condition = p_condition
+  WHERE id = p_id;
+END$$
+
 -- BR-14: careful cascade in one transaction. Audit rows are intentionally kept
 -- (BR-22), even for a hard delete.
 CREATE PROCEDURE sp_request_delete(IN p_id BIGINT, OUT p_problems TEXT)
@@ -1901,6 +2024,7 @@ p: BEGIN
     SET p_problems = 'Solicitud no encontrada'; LEAVE p;
   END IF;
   START TRANSACTION;
+  DELETE FROM request_packages WHERE service_request_id = p_id;
   DELETE FROM payments WHERE invoice_id IN (SELECT id FROM invoices WHERE service_request_id = p_id);
   DELETE FROM invoices WHERE service_request_id = p_id;
   DELETE FROM expenses WHERE trip_id IN (SELECT id FROM trips WHERE service_request_id = p_id);
@@ -3053,6 +3177,24 @@ INSERT INTO service_requests
   (10, 'SR-2026-000010', 1, 2, 'Partes automotrices', 7000.0, '2026-10-01 06:00:00', '2026-10-03 18:00:00',
    30000.00, TRUE, 'assigned', NULL, 1);
 
+-- Packages per request; the demo dataset shows a couple of multi-line cargos
+-- and a delivered request with a shortage (request 8). Line weight is
+-- quantity x unit_weight and, summed, matches service_requests.estimated_weight.
+INSERT INTO request_packages
+  (id, service_request_id, line_no, description, quantity, unit, unit_weight,
+   received_quantity, receipt_condition) VALUES
+  (1, 1, 1, 'Refrigerador linea blanca', 40, 'pieza', 300.0, 40, 'ok'),
+  (2, 2, 1, 'Escritorio de oficina', 20, 'pieza', 250.0, 20, 'ok'),
+  (3, 2, 2, 'Silla de oficina', 30, 'pieza', 100.0, 30, 'ok'),
+  (4, 3, 1, 'Caja de alimento no perecedero', 100, 'caja', 30.0, NULL, NULL),
+  (5, 4, 1, 'Bulto de autopartes', 50, 'bulto', 300.0, NULL, NULL),
+  (6, 5, 1, 'Caja de electrodomestico', 25, 'caja', 200.0, NULL, NULL),
+  (7, 6, 1, 'Caja de abarrotes', 50, 'caja', 50.0, NULL, NULL),
+  (8, 7, 1, 'Paleta de lamina de acero', 10, 'paleta', 2000.0, 10, 'ok'),
+  (9, 8, 1, 'Caja de electronica', 60, 'caja', 150.0, 59, 'shortage'),
+  (10, 9, 1, 'Paleta de envases de vidrio', 70, 'paleta', 200.0, NULL, NULL),
+  (11, 10, 1, 'Bulto de partes automotrices', 35, 'bulto', 200.0, NULL, NULL);
+
 -- ---------------------------------------------------------------- trips
 
 INSERT INTO trips
@@ -3175,6 +3317,7 @@ UNION ALL SELECT 'employees', COALESCE(MAX(id), 0) FROM employees
 UNION ALL SELECT 'users', COALESCE(MAX(id), 0) FROM users
 UNION ALL SELECT 'vehicles', COALESCE(MAX(id), 0) FROM vehicles
 UNION ALL SELECT 'service_requests', COALESCE(MAX(id), 0) FROM service_requests
+UNION ALL SELECT 'request_packages', COALESCE(MAX(id), 0) FROM request_packages
 UNION ALL SELECT 'trips', COALESCE(MAX(id), 0) FROM trips
 UNION ALL SELECT 'deliveries', COALESCE(MAX(id), 0) FROM deliveries
 UNION ALL SELECT 'expenses', COALESCE(MAX(id), 0) FROM expenses

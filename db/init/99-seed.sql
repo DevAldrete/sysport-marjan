@@ -194,6 +194,24 @@ INSERT INTO service_requests
   (10, 'SR-2026-000010', 1, 2, 'Partes automotrices', 7000.0, '2026-10-01 06:00:00', '2026-10-03 18:00:00',
    30000.00, TRUE, 'assigned', NULL, 1);
 
+-- Packages per request; the demo dataset shows a couple of multi-line cargos
+-- and a delivered request with a shortage (request 8). Line weight is
+-- quantity x unit_weight and, summed, matches service_requests.estimated_weight.
+INSERT INTO request_packages
+  (id, service_request_id, line_no, description, quantity, unit, unit_weight,
+   received_quantity, receipt_condition) VALUES
+  (1, 1, 1, 'Refrigerador linea blanca', 40, 'pieza', 300.0, 40, 'ok'),
+  (2, 2, 1, 'Escritorio de oficina', 20, 'pieza', 250.0, 20, 'ok'),
+  (3, 2, 2, 'Silla de oficina', 30, 'pieza', 100.0, 30, 'ok'),
+  (4, 3, 1, 'Caja de alimento no perecedero', 100, 'caja', 30.0, NULL, NULL),
+  (5, 4, 1, 'Bulto de autopartes', 50, 'bulto', 300.0, NULL, NULL),
+  (6, 5, 1, 'Caja de electrodomestico', 25, 'caja', 200.0, NULL, NULL),
+  (7, 6, 1, 'Caja de abarrotes', 50, 'caja', 50.0, NULL, NULL),
+  (8, 7, 1, 'Paleta de lamina de acero', 10, 'paleta', 2000.0, 10, 'ok'),
+  (9, 8, 1, 'Caja de electronica', 60, 'caja', 150.0, 59, 'shortage'),
+  (10, 9, 1, 'Paleta de envases de vidrio', 70, 'paleta', 200.0, NULL, NULL),
+  (11, 10, 1, 'Bulto de partes automotrices', 35, 'bulto', 200.0, NULL, NULL);
+
 -- ---------------------------------------------------------------- trips
 
 INSERT INTO trips
@@ -316,6 +334,7 @@ UNION ALL SELECT 'employees', COALESCE(MAX(id), 0) FROM employees
 UNION ALL SELECT 'users', COALESCE(MAX(id), 0) FROM users
 UNION ALL SELECT 'vehicles', COALESCE(MAX(id), 0) FROM vehicles
 UNION ALL SELECT 'service_requests', COALESCE(MAX(id), 0) FROM service_requests
+UNION ALL SELECT 'request_packages', COALESCE(MAX(id), 0) FROM request_packages
 UNION ALL SELECT 'trips', COALESCE(MAX(id), 0) FROM trips
 UNION ALL SELECT 'deliveries', COALESCE(MAX(id), 0) FROM deliveries
 UNION ALL SELECT 'expenses', COALESCE(MAX(id), 0) FROM expenses

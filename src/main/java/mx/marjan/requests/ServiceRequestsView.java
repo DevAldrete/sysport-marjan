@@ -201,7 +201,7 @@ public class ServiceRequestsView extends BaseView {
             Client client = (Client) form.selected("client");
             Route route = (Route) form.selected("route");
             ServiceRequest draft = new ServiceRequest(0, "", client.id(), client.name(), route.id(),
-                    route.label(), form.text("cargo"), weight, pickup, delivery, null,
+                    route.label(), form.text("cargo"), weight, 0, null, pickup, delivery, null,
                     form.checked("documents"), RequestStatus.REQUESTED, form.text("notes"),
                     LocalDateTime.now());
             return service.create(draft);
@@ -243,7 +243,8 @@ public class ServiceRequestsView extends BaseView {
             }
             ServiceRequest updated = new ServiceRequest(request.id(), request.folio(),
                     request.clientId(), request.clientName(), request.routeId(), request.routeLabel(),
-                    form.text("cargo"), weightResult.value(), request.pickupScheduled(),
+                    form.text("cargo"), weightResult.value(), request.packageCount(),
+                    request.packageWeight(), request.pickupScheduled(),
                     request.deliveryScheduled(), rate, form.checked("documents"),
                     request.status(), form.text("notes"), request.createdAt());
             return service.update(updated);
