@@ -31,6 +31,12 @@ public class FuelController {
         return service(authentication).listByVehicle(vehicleId);
     }
 
+    @Get("/trip/{tripId}")
+    @Secured(Permissions.FUEL_READ)
+    public List<FuelLoad> byTrip(Authentication authentication, long tripId) {
+        return service(authentication).listByTrip(tripId);
+    }
+
     @Post
     @Secured(Permissions.FUEL_WRITE)
     public HttpResponse<?> create(Authentication authentication, @Body FuelLoad load) {
