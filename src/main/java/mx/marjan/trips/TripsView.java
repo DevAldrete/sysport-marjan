@@ -5,12 +5,15 @@ import mx.marjan.shared.Numbers;
 import java.awt.BorderLayout;
 import java.math.BigDecimal;
 import java.util.List;
+import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JTable;
 import javax.swing.JTextField;
 import mx.marjan.fleet.Vehicle;
 import mx.marjan.operators.Employee;
+import mx.marjan.security.Permissions;
+import mx.marjan.security.Session;
 import mx.marjan.shared.Async;
 import mx.marjan.shared.BaseView;
 import mx.marjan.shared.Dates;
@@ -36,6 +39,16 @@ public class TripsView extends BaseView {
     private final JTable table = Ui.table(model);
     private final JTextField searchField = new JTextField(14);
     private final JComboBox<Object> statusFilter = new JComboBox<>();
+    private final JButton departButton = Ui.button("Salida", "Registrar la salida del viaje",
+            this::depart, Session.has(Permissions.TRIPS_WRITE));
+    private final JButton arriveButton = Ui.button("Llegada", "Registrar la llegada y los kilometros reales",
+            this::arrive, Session.has(Permissions.TRIPS_WRITE));
+    private final JButton reassignButton = Ui.button("Reasignar", "Cambiar la unidad o el operador",
+            this::reassign, Session.has(Permissions.TRIPS_ASSIGN));
+    private final JButton cancelButton = Ui.button("Cancelar", "Cancelar el viaje",
+            this::cancel, Session.has(Permissions.TRIPS_WRITE));
+    private final JButton deleteButton = Ui.button("Eliminar", "Eliminar el viaje y todo lo relacionado",
+            this::deleteTrip, Session.has(Permissions.TRIPS_WRITE));
 
     public TripsView() {
         statusFilter.addItem("(todos)");
@@ -46,15 +59,27 @@ public class TripsView extends BaseView {
         Ui.onDoubleClick(table, this::detail);
         add(Ui.row(new JLabel("Buscar:"), searchField, new JLabel("Estado:"), statusFilter,
                 Ui.button("Buscar", "Aplicar los filtros", this::reload),
-                Ui.button("Salida", "Registrar la salida del viaje", this::depart),
-                Ui.button("Llegada", "Registrar la llegada y los kilometros reales", this::arrive),
-                Ui.button("Reasignar", "Cambiar la unidad o el operador", this::reassign),
-                Ui.button("Cancelar", "Cancelar el viaje", this::cancel),
+                departButton, arriveButton, reassignButton, cancelButton,
                 Ui.button("Detalle", "Ver el detalle del viaje", this::detail),
-                Ui.button("Eliminar", "Eliminar el viaje y todo lo relacionado", this::deleteTrip),
+                deleteButton,
                 Ui.button("Recargar", this::reload)), BorderLayout.NORTH);
         add(Ui.scroll(table), BorderLayout.CENTER);
+        table.getSelectionModel().addListSelectionListener(event -> updateActions());
+        updateActions();
         reload();
+    }
+
+    /** Enables each action only when it makes sense for the selected trip's status. */
+    private void updateActions() {
+        Trip trip = selected();
+        TripStatus status = trip == null ? null : trip.status();
+        boolean write = Session.has(Permissions.TRIPS_WRITE);
+        boolean assign = Session.has(Permissions.TRIPS_ASSIGN);
+        departButton.setEnabled(write && status == TripStatus.SCHEDULED);
+        arriveButton.setEnabled(write && status == TripStatus.IN_TRANSIT);
+        reassignButton.setEnabled(assign && status == TripStatus.SCHEDULED);
+        cancelButton.setEnabled(write && status == TripStatus.SCHEDULED);
+        deleteButton.setEnabled(write && (status == TripStatus.SCHEDULED || status == TripStatus.CANCELLED));
     }
 
     @Override
@@ -63,7 +88,10 @@ public class TripsView extends BaseView {
         loadRows(() -> {
             service.sweepLifecycle();
             return service.search(searchField.getText(), status instanceof TripStatus s ? s : null);
-        }, model::setRows);
+        }, rows -> {
+            model.setRows(rows);
+            updateActions();
+        });
     }
 
     private Trip selected() {
@@ -162,7 +190,7 @@ public class TripsView extends BaseView {
 
     private void run(Result<?> result) {
         if (result.isErr()) {
-            Ui.error(this, "Error", result.problems());
+            Ui.error(this, "No se pudo completar la operacion", result.problems());
         } else {
             reload();
         }

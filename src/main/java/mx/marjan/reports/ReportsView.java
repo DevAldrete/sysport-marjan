@@ -80,7 +80,7 @@ public class ReportsView extends BaseView {
             case MAINTENANCE -> service.maintenanceDue(Dates.today());
         }, result -> {
             if (result.isErr()) {
-                Ui.error(this, "Reporte", result.problems());
+                Ui.error(this, "No se pudo generar el reporte", result.problems());
             } else {
                 show(result.value());
             }

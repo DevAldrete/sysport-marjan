@@ -232,38 +232,38 @@ public final class Database {
   /** Calls a procedure whose single OUT is {@code p_problems TEXT}. */
   public static Result<Void> callVoid(String callSql, Object... inParams) {
     Object[] out = call(callSql, new int[] { Types.VARCHAR }, inParams);
-    String problems = asProblems(out[0]);
-    return problems == null ? Result.ok(null) : Result.err(problems);
+    List<String> problems = asProblemList(out[0]);
+    return problems.isEmpty() ? Result.<Void>ok(null) : Result.err(problems);
   }
 
   /** Calls a procedure shaped as {@code OUT p_id BIGINT, OUT p_problems TEXT}. */
   public static Result<Long> callForId(String callSql, Object... inParams) {
     Object[] out = call(callSql, new int[] { Types.BIGINT, Types.VARCHAR }, inParams);
     Long id = asLong(out[0]);
-    String problems = asProblems(out[1]);
-    return problems == null ? Result.ok(id) : Result.err(problems);
+    List<String> problems = asProblemList(out[1]);
+    return problems.isEmpty() ? Result.<Long>ok(id) : Result.err(problems);
   }
 
   /** Calls a procedure shaped as {@code OUT p_problems TEXT, OUT p_id BIGINT}. */
   public static Result<Long> callForProblemsAndId(String callSql, Object... inParams) {
     Object[] out = call(callSql, new int[] { Types.VARCHAR, Types.BIGINT }, inParams);
-    String problems = asProblems(out[0]);
-    return problems == null ? Result.ok(asLong(out[1])) : Result.err(problems);
+    List<String> problems = asProblemList(out[0]);
+    return problems.isEmpty() ? Result.<Long>ok(asLong(out[1])) : Result.err(problems);
   }
 
   /** Connection-scoped variant of {@link #callVoid}. */
   public static Result<Void> callVoid(Connection connection, String callSql, Object... inParams) {
     Object[] out = call(connection, callSql, new int[] { Types.VARCHAR }, inParams);
-    String problems = asProblems(out[0]);
-    return problems == null ? Result.ok(null) : Result.err(problems);
+    List<String> problems = asProblemList(out[0]);
+    return problems.isEmpty() ? Result.<Void>ok(null) : Result.err(problems);
   }
 
   /** Connection-scoped variant of {@link #callForId}. */
   public static Result<Long> callForId(Connection connection, String callSql, Object... inParams) {
     Object[] out = call(connection, callSql, new int[] { Types.BIGINT, Types.VARCHAR }, inParams);
     Long id = asLong(out[0]);
-    String problems = asProblems(out[1]);
-    return problems == null ? Result.ok(id) : Result.err(problems);
+    List<String> problems = asProblemList(out[1]);
+    return problems.isEmpty() ? Result.<Long>ok(id) : Result.err(problems);
   }
 
   /** Connection-scoped variant of {@link #callNoOut}. */
@@ -312,12 +312,25 @@ public final class Database {
     return value == null ? null : ((Number) value).longValue();
   }
 
-  public static String asProblems(Object value) {
+  /**
+   * Splits the procedures' {@code '; '}-joined problem string so the UI can show
+   * one bullet per rule violation instead of a single run-on sentence.
+   */
+  public static List<String> asProblemList(Object value) {
     if (value == null) {
-      return null;
+      return List.of();
     }
-    String problems = value.toString().trim();
-    return problems.isEmpty() ? null : problems;
+    String text = value.toString().trim();
+    if (text.isEmpty()) {
+      return List.of();
+    }
+    List<String> problems = new ArrayList<>();
+    for (String problem : text.split(";\\s*")) {
+      if (!problem.isBlank()) {
+        problems.add(problem.trim());
+      }
+    }
+    return problems;
   }
 
   /** Runs a read procedure and returns the raw first result set as a report. */

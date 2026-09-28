@@ -189,7 +189,7 @@ public class TripDetailDialog extends JDialog {
         }
         Async.run(() -> advanceService.settle(panel.selected().id()), result -> {
             if (result.isErr()) {
-                Ui.error(this, "Error", result.problems());
+                Ui.error(this, "No se pudo comprobar el anticipo", result.problems());
             } else {
                 reload.run();
             }
@@ -345,7 +345,8 @@ public class TripDetailDialog extends JDialog {
                         + "<br>Evidencia: " + record.evidenceReference()
                         + "<br>Estado: " + record.status().label() + "</html>");
             }
-        }, failure -> status.setText("Error al cargar"));
+        }, failure -> status.setText("Error al cargar: "
+                + (failure.getMessage() == null ? failure.toString() : failure.getMessage())));
     }
 
     private void openDeliveryForm(JLabel status) {

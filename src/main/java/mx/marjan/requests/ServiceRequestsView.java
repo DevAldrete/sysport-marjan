@@ -16,12 +16,15 @@ import mx.marjan.fleet.Vehicle;
 import mx.marjan.operators.Employee;
 import mx.marjan.routes.Route;
 import mx.marjan.routes.RouteService;
+import mx.marjan.security.Permissions;
+import mx.marjan.security.Session;
 import mx.marjan.shared.Async;
 import mx.marjan.shared.BaseView;
 import mx.marjan.shared.Dates;
 import mx.marjan.shared.FormPanel;
 import mx.marjan.shared.ModalForm;
 import mx.marjan.shared.Money;
+import mx.marjan.shared.Numbers;
 import mx.marjan.shared.RecordTableModel;
 import mx.marjan.shared.Result;
 import mx.marjan.shared.Ui;
@@ -94,16 +97,18 @@ public class ServiceRequestsView extends BaseView {
                 Ui.button("Buscar", this::reload),
                 Ui.button("Limpiar", this::clearFilters),
                 Ui.button("Recargar", this::reload));
+        boolean canWrite = Session.has(Permissions.REQUESTS_WRITE);
+        boolean canAssign = Session.has(Permissions.REQUESTS_ASSIGN);
         JPanel actions = Ui.row(
-                Ui.button("Nueva", "Registrar una solicitud de servicio", this::openNew),
-                Ui.button("Editar", "Editar los datos de la solicitud", this::openEdit),
-                Ui.button("Autorizar", "Definir la tarifa acordada", this::openAuthorize),
-                Ui.button("Programar", "Definir recoleccion y entrega", this::openSchedule),
-                Ui.button("Asignar viaje", "Elegir unidad y operador", this::openAssign),
-                Ui.button("Cancelar", "Cancelar la solicitud", this::openCancel),
-                Ui.button("Cerrar", "Cerrar la solicitud entregada", this::closeRequest),
+                Ui.button("Nueva", "Registrar una solicitud de servicio", this::openNew, canWrite),
+                Ui.button("Editar", "Editar los datos de la solicitud", this::openEdit, canWrite),
+                Ui.button("Autorizar", "Definir la tarifa acordada", this::openAuthorize, canWrite),
+                Ui.button("Programar", "Definir recoleccion y entrega", this::openSchedule, canWrite),
+                Ui.button("Asignar viaje", "Elegir unidad y operador", this::openAssign, canAssign),
+                Ui.button("Cancelar", "Cancelar la solicitud", this::openCancel, canWrite),
+                Ui.button("Cerrar", "Cerrar la solicitud entregada", this::closeRequest, canWrite),
                 Ui.button("Detalle", "Ver la historia completa de la solicitud", this::openDetail),
-                Ui.button("Eliminar", "Eliminar la solicitud y todo lo relacionado", this::deleteRequest));
+                Ui.button("Eliminar", "Eliminar la solicitud y todo lo relacionado", this::deleteRequest, canWrite));
         return Ui.column(filters, actions);
     }
 
@@ -132,10 +137,22 @@ public class ServiceRequestsView extends BaseView {
 
     @Override
     public void reload() {
-        LocalDate from = fromField.getText().isBlank() ? null
-                : Dates.parseDate(fromField.getText()).orElse(null);
-        LocalDate to = toField.getText().isBlank() ? null
-                : Dates.parseDate(toField.getText()).orElse(null);
+        LocalDate from = null;
+        LocalDate to = null;
+        if (!fromField.getText().isBlank()) {
+            from = Dates.parseDate(fromField.getText()).orElse(null);
+            if (from == null) {
+                setStatus("La fecha 'Desde' no es valida (use AAAA-MM-DD)");
+                return;
+            }
+        }
+        if (!toField.getText().isBlank()) {
+            to = Dates.parseDate(toField.getText()).orElse(null);
+            if (to == null) {
+                setStatus("La fecha 'Hasta' no es valida (use AAAA-MM-DD)");
+                return;
+            }
+        }
         Object client = clientFilter.getSelectedItem();
         Object status = statusFilter.getSelectedItem();
         RequestFilter filter = new RequestFilter(
@@ -193,7 +210,7 @@ public class ServiceRequestsView extends BaseView {
         packages.setOnChange(form::refresh);
         form.addSection(packages);
         ModalForm.show(this, "Nueva solicitud", form, () -> {
-            Result<BigDecimal> weightResult = Money.require(form.text("weight"), "peso aproximado");
+            Result<BigDecimal> weightResult = parseWeight(form);
             if (weightResult.isErr()) {
                 return weightResult;
             }
@@ -246,7 +263,7 @@ public class ServiceRequestsView extends BaseView {
         packages.setOnChange(form::refresh);
         form.addSection(packages);
         ModalForm.show(this, "Editar solicitud " + request.folio(), form, () -> {
-            Result<BigDecimal> weightResult = Money.require(form.text("weight"), "peso aproximado");
+            Result<BigDecimal> weightResult = parseWeight(form);
             if (weightResult.isErr()) {
                 return weightResult;
             }
@@ -266,6 +283,15 @@ public class ServiceRequestsView extends BaseView {
                     request.status(), form.text("notes"), request.createdAt());
             return service.update(updated, packages.packages());
         }, this::reload);
+    }
+
+    /** A weight field is a measure (kg), not money: parse it without forcing cents. */
+    private static Result<BigDecimal> parseWeight(FormPanel form) {
+        BigDecimal weight = Numbers.parseOrZero(form.text("weight"));
+        if (weight == null || weight.signum() < 0) {
+            return Result.err("El peso manual debe ser un numero mayor o igual a cero");
+        }
+        return Result.ok(weight);
     }
 
     private static String weightLabel(BigDecimal weight) {

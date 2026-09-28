@@ -1,12 +1,22 @@
 package mx.marjan.rules;
 
 import java.sql.SQLException;
+import java.util.List;
 import mx.marjan.shared.Database;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DatabaseMessagesTest {
+
+    @Test
+    void splitsJoinedProblemsSoEachRuleGetsItsOwnBullet() {
+        assertEquals(List.of("Primera regla", "Segunda regla"),
+                Database.asProblemList("Primera regla; Segunda regla"));
+        assertTrue(Database.asProblemList("  ").isEmpty());
+        assertTrue(Database.asProblemList(null).isEmpty());
+    }
 
     @Test
     void duplicateKeyNamesTheFieldAndValue() {

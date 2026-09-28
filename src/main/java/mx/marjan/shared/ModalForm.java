@@ -45,6 +45,11 @@ public final class ModalForm {
 
         cancel.addActionListener(event -> dialog.dispose());
         save.addActionListener(event -> {
+            // Block submit while a live-validated field is still red.
+            if (!form.isValid()) {
+                form.focusFirstInvalid();
+                return;
+            }
             save.setEnabled(false);
             Async.run(onSubmit,
                     result -> {

@@ -195,6 +195,37 @@ public final class FormPanel {
         }
     }
 
+    /**
+     * Marks every validated field as edited and reports whether all pass, so a
+     * dialog can block submit while a field is still red.
+     */
+    public boolean isValid() {
+        touched.addAll(validators.keySet());
+        refresh();
+        for (Map.Entry<String, Function<String, String>> entry : validators.entrySet()) {
+            if (entry.getValue().apply(text(entry.getKey())) != null) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Puts the focus on the first field whose live validator is failing. */
+    public void focusFirstInvalid() {
+        for (Map.Entry<String, Function<String, String>> entry : validators.entrySet()) {
+            if (entry.getValue().apply(text(entry.getKey())) != null) {
+                JComponent component = fields.get(entry.getKey());
+                if (component != null) {
+                    component.requestFocusInWindow();
+                    if (component instanceof JTextField field) {
+                        field.selectAll();
+                    }
+                }
+                return;
+            }
+        }
+    }
+
     /** Puts the keyboard focus on the first editable field, ready for typing. */
     public void focusFirst() {
         JComponent target = null;
@@ -264,6 +295,7 @@ public final class FormPanel {
         originalBorders.put(key, fieldToStore.getBorder());
         if (hint != null) {
             baseHints.put(key, hint);
+            fieldToDisplay.setToolTipText(hint);
         }
         row += 2;
     }
