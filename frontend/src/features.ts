@@ -1,4 +1,5 @@
 import type { Component } from 'vue'
+import type { RouteComponent } from 'vue-router'
 import {
   BarChart3,
   ClipboardList,
@@ -13,32 +14,36 @@ import {
   Users,
 } from '@lucide/vue'
 
-import ComingSoonView from '@/views/ComingSoonView.vue'
-import DashboardView from '@/views/DashboardView.vue'
-
 /**
  * One entry per screen: the router builds its routes from this list and the
  * sidebar builds its menu from it too, so they never drift apart. A feature
  * without permission is visible to everyone authenticated (the dashboard).
+ * Screens are lazy so each becomes its own chunk.
  */
 export interface Feature {
   path: string
   name: string
   title: string
   icon: Component
-  component: Component
+  component: RouteComponent
   permission?: string
 }
 
 export const features: Feature[] = [
-  { path: '', name: 'dashboard', title: 'Inicio', icon: Home, component: DashboardView },
+  {
+    path: '',
+    name: 'dashboard',
+    title: 'Inicio',
+    icon: Home,
+    component: () => import('@/views/DashboardView.vue'),
+  },
   {
     path: 'clientes',
     name: 'clients',
     title: 'Clientes',
     icon: Users,
     permission: 'clients.read',
-    component: ComingSoonView,
+    component: () => import('@/views/ClientsView.vue'),
   },
   {
     path: 'rutas',
@@ -46,7 +51,7 @@ export const features: Feature[] = [
     title: 'Rutas',
     icon: MapPin,
     permission: 'routes.read',
-    component: ComingSoonView,
+    component: () => import('@/views/RoutesView.vue'),
   },
   {
     path: 'operadores',
@@ -54,7 +59,7 @@ export const features: Feature[] = [
     title: 'Operadores',
     icon: UserCog,
     permission: 'operators.read',
-    component: ComingSoonView,
+    component: () => import('@/views/OperatorsView.vue'),
   },
   {
     path: 'unidades',
@@ -62,7 +67,7 @@ export const features: Feature[] = [
     title: 'Unidades',
     icon: Truck,
     permission: 'fleet.read',
-    component: ComingSoonView,
+    component: () => import('@/views/VehiclesView.vue'),
   },
   {
     path: 'combustible',
@@ -70,7 +75,7 @@ export const features: Feature[] = [
     title: 'Combustible',
     icon: Fuel,
     permission: 'fuel.read',
-    component: ComingSoonView,
+    component: () => import('@/views/FuelView.vue'),
   },
   {
     path: 'solicitudes',
@@ -78,7 +83,7 @@ export const features: Feature[] = [
     title: 'Solicitudes',
     icon: ClipboardList,
     permission: 'requests.read',
-    component: ComingSoonView,
+    component: () => import('@/views/ComingSoonView.vue'),
   },
   {
     path: 'viajes',
@@ -86,7 +91,7 @@ export const features: Feature[] = [
     title: 'Viajes',
     icon: Navigation,
     permission: 'trips.read',
-    component: ComingSoonView,
+    component: () => import('@/views/ComingSoonView.vue'),
   },
   {
     path: 'facturas',
@@ -94,7 +99,7 @@ export const features: Feature[] = [
     title: 'Facturas',
     icon: Receipt,
     permission: 'invoices.read',
-    component: ComingSoonView,
+    component: () => import('@/views/ComingSoonView.vue'),
   },
   {
     path: 'reportes',
@@ -102,7 +107,7 @@ export const features: Feature[] = [
     title: 'Reportes',
     icon: BarChart3,
     permission: 'reports.view',
-    component: ComingSoonView,
+    component: () => import('@/views/ComingSoonView.vue'),
   },
   {
     path: 'usuarios',
@@ -110,6 +115,6 @@ export const features: Feature[] = [
     title: 'Usuarios',
     icon: ShieldCheck,
     permission: 'security.users',
-    component: ComingSoonView,
+    component: () => import('@/views/ComingSoonView.vue'),
   },
 ]
