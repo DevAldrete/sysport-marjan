@@ -41,9 +41,11 @@ export default defineConfig({
 					label: 'Architecture',
 					items: [
 						{ label: 'Architecture overview', slug: 'architecture/overview' },
-						{ label: 'The four layers', slug: 'architecture/layers' },
+						{ label: 'The layers', slug: 'architecture/layers' },
+						{ label: 'The API', slug: 'architecture/api' },
+						{ label: 'The web frontend', slug: 'architecture/web-frontend' },
 						{ label: 'Database access', slug: 'architecture/database-access' },
-						{ label: 'UI toolkit', slug: 'architecture/ui-toolkit' },
+						{ label: 'Web UI toolkit', slug: 'architecture/ui-toolkit' },
 						{ label: 'Conventions', slug: 'architecture/conventions' },
 					],
 				},
@@ -84,7 +86,7 @@ export default defineConfig({
 				{
 					label: 'Reference',
 					items: [
-						{ label: 'Java class map', slug: 'reference/java-map' },
+						{ label: 'Code map', slug: 'reference/java-map' },
 						{ label: 'Glossary', slug: 'reference/glossary' },
 						{ label: 'Troubleshooting', slug: 'reference/troubleshooting' },
 					],

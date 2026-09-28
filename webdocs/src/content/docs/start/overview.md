@@ -3,7 +3,7 @@ title: Overview
 description: What SysPort-MARJAN does, the domain vocabulary and the mental model.
 ---
 
-SysPort-MARJAN is a desktop application for **Transportes MARJAN**, a fictional trucking company
+SysPort-MARJAN is a web application for **Transportes MARJAN**, a fictional trucking company
 (built from a real requirements interview). It models the **entire service lifecycle** so any
 operation can be reconstructed end to end.
 
@@ -49,11 +49,12 @@ Along the way:
 | Concern | Choice |
 | --- | --- |
 | Language | Java 21 (records, sealed interfaces, pattern matching) |
-| UI | Java Swing + FlatLaf |
+| API | Micronaut 4.10 (Netty, JWT, HikariCP) |
+| Frontend | Vue 3 + Vite + TypeScript + Tailwind + shadcn-vue (Reka UI), PWA |
 | Database | MySQL 8.4 (Docker Compose) |
-| Data access | Plain JDBC (no ORM) |
-| Build | Maven |
-| Tests | JUnit 5 |
+| Data access | Plain JDBC over stored procedures (no ORM) |
+| Build | Maven (core + api), npm (frontend) |
+| Tests | JUnit 5 + Micronaut Test |
 | Docs (this site) | Astro + Starlight |
 
 ## Mental model: where things live
@@ -62,9 +63,10 @@ Along the way:
 | --- | --- | --- |
 | What are the rules? | Stored procedures & functions | `db/init/*.sql` |
 | What does a rule allow? | A `fn_*` function or a `sp_*` procedure | `db/init/` |
-| How does Java talk to the DB? | Repositories calling procedures | `*Repository.java` |
-| Who can do what? | Services check permissions | `*Service.java` |
-| What does the user see? | Swing views | `*View.java` |
+| How does Java talk to the DB? | Repositories calling procedures | `core/…/*Repository.java` |
+| Who can do what? | Services check permissions | `core/…/*Service.java` |
+| How is it exposed? | REST controllers + JWT | `api/…/…Controller.java` |
+| What does the user see? | Vue views and components | `frontend/src/views`, `frontend/src/components` |
 
 ## Glossary (short version)
 

@@ -5,6 +5,15 @@
 | **Version** | 1.0 |
 | **Source material** | Requirements interview (`SISTEMA-DE-GESTION-DE-TRANSPORTES-MARJAN.md`) |
 
+> **Update — UI revamp.** The Java Swing desktop client described below has been
+> replaced by a web client (Vue 3 + Vite + Tailwind + shadcn-vue, installable PWA)
+> over a Micronaut 4.10 REST API. The business rules stay in MySQL and the
+> `core` repositories/services are reused unchanged; the former Swing `view`
+> layer maps to `api/` controllers + `frontend/` Vue views. Where this document
+> says *"Hard: Java Swing UI"*, read **Vue web client**; the rest of the
+> requirements, layered design and milestones still apply. See the developer
+> wiki in `webdocs/` (Architecture → The API / The web frontend).
+
 ---
 
 ## 1. Overview

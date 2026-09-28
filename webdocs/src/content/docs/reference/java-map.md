@@ -1,119 +1,87 @@
 ---
-title: Java class map
-description: Every class by package — records, enums, repositories, services and views.
+title: Code map
+description: Every module, package and kind of class — backend and frontend.
 ---
 
-A quick index of `src/main/java/mx/marjan`. Each feature package follows the same shape:
-`Thing` · `ThingRepository` · `ThingService` · `ThingView`.
+The repository has three source trees: `core` (Java domain), `api` (Micronaut HTTP) and
+`frontend` (Vue). Each feature slice has the same shape: `Thing` · `ThingRepository` · `ThingService`
+· `ThingController` · a Vue view.
 
-## Root
+## `core` (`mx.marjan`)
 
-| Class | Purpose |
-| --- | --- |
-| `App` | entry point: connect, login, open the main window |
-| `MainFrame` | tabbed window; tabs added per permission; session menu |
-
-## `shared`
+### `shared`
 
 | Class | Purpose |
 | --- | --- |
-| `Database` | connection + all `call*` helpers (including `inTransaction` for multi-row units of work) + `translate` + problem/error helpers |
-| `Result` | sealed `Ok` / `Err` outcome type (a list of problems, split from the procedures' `'; '` string) |
-| `DataException` | a JDBC failure already translated for the UI |
-| `Async` | `SwingWorker` wrapper: DB work off the EDT |
-| `BaseView` | screen shell: `load`, `loadRows`, `setStatus`, `selectedRow` |
-| `FormPanel` | labelled forms with hints, live validation, computed fields |
-| `ModalForm` | standard Guardar/Cancelar dialog |
-| `Ui` | dialogs, buttons, layout, table styling, Enter/double-click helpers |
-| `RecordTableModel<T>` | the one generic table model (columns as lambdas) |
-| `RecordTablePanel<T>` | table + selection + action row |
-| `Money` | `BigDecimal` money format/parse |
-| `Numbers` | decimal field parsing/formatting |
-| `Dates` | `LocalDate`/`LocalDateTime` format/parse |
-| `Text` | truncation and labels for table cells |
+| `Database` | connection pool access + all `call*` helpers (including `inTransaction`) + `translate` |
+| `Result` | sealed `Ok` / `Err` outcome type (a list of problems) |
+| `DataException` | a JDBC failure already translated for the user |
+| `Money`, `Numbers`, `Dates`, `Text` | formatting/parsing helpers |
 | `Validators` | username + live date/dateTime/money/number checks |
 
-## `security`
+### `security`
 
 | Class | Kind | Purpose |
 | --- | --- | --- |
-| `User`, `Role`, `CurrentUser` | records | identity and permissions |
-| `UserStatus` | enum | `active`, `disabled` |
+| `Caller` | interface | the acting user: `userId()`, `has(permission)`, plus `Caller.NONE` |
 | `Permissions` | constants | the 33 permission strings |
-| `Session` | static | current user; `has(permission)`, `userId()` |
-| `UserRepository`, `AuditRepository` | repos | security procedures |
-| `AuthService` | service | login, user admin, password changes (BR-23/24) |
-| `LoginView`, `UsersView` | views | login dialog; admin CRUD |
+| `CurrentUser`, `User`, `Role` | records | identity and permissions |
+| `UserStatus` | enum | `active`, `disabled` |
+| `AuthService` | service | login, `byUsername`, user admin, password changes (BR-23/24) |
+| `UserRepository` | repo | security procedures |
 
-## `clients`
+### Feature packages
 
-| Class | Kind |
+| Package | Classes |
 | --- | --- |
-| `Client`, `ClientRate` | records |
-| `ClientStatus`, `ClientType`, `PaymentTerms` | enums |
-| `ClientRepository`, `ClientRateRepository` | repos |
-| `ClientService` | service (clients + rates) |
-| `ClientsView` | view |
+| `clients` | `Client`, `ClientRate`, enums, `ClientRepository`, `ClientRateRepository`, `ClientService` |
+| `routes` | `Route`, `RouteRepository`, `RouteService` |
+| `requests` | `ServiceRequest`, `CargoPackage`, `RequestFilter`, enums, `ServiceRequestRepository`, `CargoPackageRepository`, `ServiceRequestService`, `CargoPackageService` |
+| `trips` | `Trip`, `Delivery`, `Incident`, enums, repositories, `TripService`, `DeliveryService`, `IncidentService` |
+| `fleet` | `Vehicle`, `Maintenance`, `FuelLoad`, `VehicleStatus`, `MaintenanceType`, repositories, `VehicleService`, `MaintenanceService`, `FuelService` |
+| `operators` | `Employee`, `License`, `EmployeeStatus`, `EmployeeRepository`, `EmployeeService` |
+| `finance` | `Expense`, `Advance`, `AdvanceBalance`, `Invoice`, `Payment`, enums, repositories, `ExpenseService`, `AdvanceService`, `InvoiceService` |
+| `reports` | `Report`, `DashboardAlerts`, `ReportRepository`, `DashboardRepository`, `ReportService`, `DashboardService`, `CsvExporter` |
 
-## `routes`
+## `api` (`mx.marjan.api`)
 
-`Route` (record) · `RouteRepository` · `RouteService` · `RoutesView`.
-
-## `requests`
-
-| Class | Kind |
+| Package | Classes |
 | --- | --- |
-| `ServiceRequest`, `RequestFilter`, `CargoPackage` | records |
-| `RequestStatus`, `PackageUnit`, `PackageCondition` | enums |
-| `ServiceRequestRepository`, `CargoPackageRepository` | repos |
-| `ServiceRequestService` | service (lifecycle + packages) |
-| `CargoPackageService` | service (list/replace packages, save receipts) |
-| `ServiceRequestsView`, `ServiceRequestDetailDialog`, `PackageEditorPanel` | views |
+| root | `Application`, `HealthController` |
+| `db` | `DataSourceFactory`, `DatabasePool` |
+| `security` | `SysportAuthenticationProvider`, `Callers`, `SystemCaller`, `InMemoryRefreshTokenPersistence` |
+| `auth` | `AuthController` |
+| `clients` | `ClientController` |
+| `routes` | `RouteController` |
+| `operators` | `OperatorController` |
+| `fleet` | `VehicleController`, `FuelController` |
+| `requests` | `RequestController` |
+| `trips` | `TripController`, `IncidentController`, `DeliveryController` |
+| `finance` | `ExpenseController`, `AdvanceController`, `InvoiceController` |
+| `reports` | `ReportController` |
+| `dashboard` | `DashboardController` |
+| `users` | `UserController` |
+| `json` | `EnumDbModule` (enum ↔ dbValue) |
+| `error` | `ApiProblemException`, `ApiProblemExceptionHandler`, `DataExceptionHandler` |
+| `http` | `Responses` (`Result` → HTTP) |
+| `jobs` | `LifecycleJobs` |
 
-## `trips`
+## `frontend/src`
 
-| Class | Kind |
+| Path | Purpose |
 | --- | --- |
-| `Trip`, `Delivery`, `Incident` | records |
-| `TripStatus`, `DeliveryStatus`, `IncidentType` | enums |
-| `TripRepository`, `DeliveryRepository`, `IncidentRepository` | repos |
-| `TripService`, `DeliveryService`, `IncidentService` | services |
-| `TripsView`, `TripDetailDialog` | views |
-
-## `fleet`
-
-| Class | Kind |
-| --- | --- |
-| `Vehicle`, `Maintenance`, `FuelLoad` | records |
-| `VehicleStatus`, `MaintenanceType` | enums |
-| `VehicleRepository`, `MaintenanceRepository`, `FuelLoadRepository` | repos |
-| `VehicleService`, `MaintenanceService`, `FuelService` | services |
-| `VehiclesView`, `FuelLoadsView` | views |
-
-## `operators`
-
-`Employee`, `License` (records) · `EmployeeStatus` (enum) · `EmployeeRepository` ·
-`EmployeeService` · `OperatorsView`.
-
-## `finance`
-
-| Class | Kind |
-| --- | --- |
-| `Invoice`, `Payment`, `Expense`, `Advance`, `AdvanceBalance` | records |
-| `InvoiceStatus`, `PaymentMethod`, `ExpenseType`, `AdvanceStatus` | enums |
-| `InvoiceRepository`, `PaymentRepository`, `ExpenseRepository`, `AdvanceRepository` | repos |
-| `InvoiceService`, `ExpenseService`, `AdvanceService` | services |
-| `InvoicesView` | view (expenses/advances live in `TripDetailDialog`) |
-
-## `reports`
-
-| Class | Kind |
-| --- | --- |
-| `Report`, `DashboardAlerts` | records |
-| `ReportRepository`, `DashboardRepository` | repos |
-| `ReportService`, `DashboardService` | services |
-| `ReportsView`, `DashboardView` | views |
-| `CsvExporter` | CSV writer |
+| `api/client.ts` | ofetch client: bearer token, one-shot refresh on 401, text/blob support |
+| `api/*.ts` | typed clients per feature |
+| `stores/auth.ts` | Pinia session (access token in memory, refresh persisted) |
+| `router/index.ts` | routes built from `features.ts` + guards |
+| `features.ts` | the single list of screens (path, title, icon, permission, lazy component) |
+| `layouts/AppShell.vue` | sidebar + topbar + animated `RouterView` |
+| `views/*.vue` | one screen per route |
+| `components/FormDialog.vue` | generic validated form dialog |
+| `components/ConfirmDialog.vue`, `PageHeader.vue` | shared chrome |
+| `components/*Dialog.vue` | domain dialogs (assignment, trip detail, request detail, package editor) |
+| `components/ui/**` | shadcn-vue (Reka UI) primitives |
+| `lib/enums.ts`, `lib/format.ts`, `lib/utils.ts` | vocabulary, formatting, `cn()` |
 
 ## Repository → procedure cheat sheet
 
@@ -121,7 +89,6 @@ A quick index of `src/main/java/mx/marjan`. Each feature package follows the sam
 | --- | --- |
 | `ServiceRequestRepository.search` | `sp_requests_search` |
 | `ServiceRequestRepository.authorize` | `sp_authorize_request` |
-| `CargoPackageRepository.listByRequest` | `sp_request_packages` |
 | `CargoPackageRepository.replace` | `sp_package_save` / `sp_package_delete` (one `inTransaction`) |
 | `CargoPackageRepository.saveReceipts` | `sp_package_receipt_save` |
 | `TripRepository.assign` | `sp_assign_trip` |

@@ -1,14 +1,15 @@
 # SysPort - MARJAN
 
-A desktop application to run the full lifecycle of a trucking operation: from a client's service request, through trip assignment, costs, delivery and invoicing, to management reports.
+A web application to run the full lifecycle of a trucking operation: from a client's service request, through trip assignment, costs, delivery and invoicing, to management reports.
 
 Built for the fictional (personal-project) company **Transportes MARJAN**, based on a real requirements-gathering interview.
 
-> Status: in development. See [`PRD.md`](PRD.md) for the full plan and milestones.
+> Status: in development. The original Java Swing client was revamped to a Vue PWA
+> over a Micronaut API; the business rules still live in the MySQL database.
 >
 > 📚 **New to the codebase?** Read the local developer wiki in [`webdocs/`](webdocs/):
-> `cd webdocs && npm install && npm run dev` → <http://localhost:4321>. It covers architecture,
-> the database, the business rules and a per-package guide.
+> `make docs` → <http://localhost:4321>. It covers architecture, the database, the
+> business rules and a per-package guide.
 
 ---
 
@@ -29,56 +30,68 @@ Built for the fictional (personal-project) company **Transportes MARJAN**, based
 | Concern | Choice |
 | --- | --- |
 | Language | Java 21 (LTS) |
-| UI | Java Swing (+ FlatLaf for a modern look, optional) |
+| API | Micronaut 4.10 (Netty, JWT, HikariCP) |
+| Frontend | Vue 3 + Vite + TypeScript + Tailwind + shadcn-vue (Reka UI), PWA |
 | Database | MySQL 8.4 (in Docker Compose) |
-| Data access | Plain JDBC (no ORM) |
-| Build | Maven |
-| Tests | JUnit 5 |
+| Data access | Plain JDBC over stored procedures (no ORM) |
+| Build | Maven (backend), npm (frontend), Docker |
+| Tests | JUnit 5, Micronaut Test (opt-in against MySQL) |
+
+## Architecture
+
+```text
+Browser (Vue PWA)  --JSON/JWT-->  api (Micronaut)  --JDBC-->  core services  -->  MySQL (rules)
+```
+
+- **core/** — UI-free domain: records, enums, repositories (stored-procedure calls) and services. The business rules live in `db/init/*.sql`.
+- **api/** — REST controllers, JWT security, request-scoped identity, scheduled jobs.
+- **frontend/** — Vue single-page app (installable PWA).
+- **db/** — schema, functions, procedures, views and seed data (the single source of truth).
+- **webdocs/** — the Astro/Starlight developer wiki.
 
 ## Quick start
 
-**Prerequisites:** JDK 21, Maven 3.9+, Docker with Compose.
+**Prerequisites:** JDK 21, Maven 3.9+, Node 22+, Docker with Compose.
 
 ```bash
-# 1. Clone
-git clone https://github.com/DevAldrete/sysport-marjan marjan && cd marjan
-
-# 2. Configure environment
-cp .env.example .env
-
-# 3. Start the database (schema and seed data load automatically on first run)
-docker compose up -d
-
-# 4. Run the app
-mvn compile exec:java
+make setup     # create .env and install frontend deps
+make db-up     # start MySQL (schema + seed load on first run)
+make api       # build and run the API on http://localhost:8080
+make web       # in another terminal: Vue dev server on http://localhost:5173
 ```
 
-Default dev login (from seed data): `admin` / `admin123` — **change it, dev only.**
+Then open <http://localhost:5173> and log in with the dev seed user `admin` / `admin123`
+(**change it, dev only**).
+
+Prefer Docker for everything? `make up` builds and starts MySQL, the API and the
+web client (nginx) at <http://localhost:8081>.
+
+Run `make help` for the full task list.
 
 ### Database commands
 
 ```bash
-docker compose up -d          # start
-docker compose logs -f mysql  # view logs
-docker compose down           # stop (data kept)
-docker compose down -v        # stop AND wipe data (re-runs db/init scripts)
+make db-up       # start
+make db-down     # stop (data kept)
+make db-reset    # stop AND wipe the volume (re-runs db/init)
 ```
 
-> Scripts in `db/init/` only run when the data volume is empty. After changing the schema in early development, use `docker compose down -v && docker compose up -d`.
+> Scripts in `db/init/` only run when the data volume is empty. After changing the
+> schema during development, reset with `make db-reset`.
 
 ### Tests
 
 ```bash
-mvn test                              # fast unit tests (no database)
+make test        # fast unit tests (no database)
 
 # Integration tests against the real MySQL rules (opt-in):
-docker compose down -v && docker compose up -d
-SYSPORT_IT=1 mvn test                 # or mvn test -Dtest=SqlRulesTest
+make db-reset
+make test-it     # or: SYSPORT_IT=1 mvn test
 ```
 
 The business rules live in the database, so the integration tests exercise the
-stored procedures directly (`SqlRulesTest`). They are skipped unless
-`SYSPORT_IT=1`, and expect a freshly seeded database.
+stored procedures and the HTTP API directly. They are skipped unless `SYSPORT_IT=1`,
+and expect a freshly seeded database.
 
 ### Connection settings
 
@@ -87,53 +100,44 @@ Read from environment variables, with these defaults:
 | Variable | Default |
 | --- | --- |
 | `DB_URL` | `jdbc:mysql://localhost:3306/sysportdb` |
-| `DB_USER` | `marjan` |
-| `DB_PASSWORD` | `changeme` |
+| `DB_HOST` / `DB_PORT` / `DB_NAME` | `localhost` / `3306` / `sysportdb` |
+| `DB_USER` / `DB_PASSWORD` | `marjan` / `changeme` |
+| `JWT_SECRET` / `JWT_REFRESH_SECRET` | dev defaults (change outside development) |
 
 ## Project structure
 
 ```
 marjan/
+├── Makefile
 ├── docker-compose.yml
 ├── .env.example
-├── pom.xml
+├── pom.xml                     # Maven aggregator (core + api)
 ├── db/
-│   ├── build-bootstrap.sh      # concatenates db/init/*.sql into SYSPORT_MARJAN.sql
-│   └── init/                   # loaded by Docker in filename order
-│       ├── 01-tables.sql       # database and tables
-│       ├── 02-functions.sql    # rule functions + id/folio allocators
-│       ├── 05-views.sql        # shared read projections
-│       ├── 10-security.sql     # users, roles, permissions, audit
-│       ├── 20-clients.sql      # clients, rates, routes
-│       ├── 30-fleet.sql        # vehicles, fuel, maintenance
-│       ├── 40-operators.sql    # employees, licences
-│       ├── 50-requests.sql     # service requests + lifecycle actions
-│       ├── 60-trips.sql        # assignment, trips, deliveries, incidents
-│       ├── 70-costs.sql        # expenses, advances
-│       ├── 80-finance.sql      # invoices, payments
-│       ├── 90-reports.sql      # report and dashboard queries
-│       └── 99-seed.sql         # roles, permissions, admin user, demo rows
-├── PRD.md                      # requirements, architecture, plan
-└── src/
-    ├── main/java/mx/marjan/
-    │   ├── App.java             # entry point
-    │   ├── shared/              # db, Result, UI base classes, utils
-    │   ├── security/            # users, roles, login
-    │   ├── clients/             # clients, rates
-    │   ├── requests/            # service requests
-    │   ├── trips/               # trips, assignment, deliveries, incidents
-    │   ├── fleet/               # vehicles, maintenance, fuel
-    │   ├── operators/           # employees, licenses
-    │   ├── finance/             # expenses, advances, invoices, payments
-    │   └── reports/
-    └── test/java/mx/marjan/
+│   ├── build-bootstrap.sh       # concatenates db/init/*.sql into SYSPORT_MARJAN.sql
+│   └── init/                    # loaded by Docker in filename order
+│       ├── 01-tables.sql        # database and tables
+│       ├── 02-functions.sql     # rule functions + id/folio allocators
+│       ├── 05-views.sql         # shared read projections
+│       ├── 10-security.sql      # users, roles, permissions, audit
+│       └── ... domain scripts and 99-seed.sql
+├── core/                        # records, repositories, services (no UI, no HTTP)
+├── api/                         # Micronaut controllers, security, jobs
+├── frontend/                    # Vue app (views, components, stores, router)
+├── PRD.md                       # requirements, architecture, plan
+└── webdocs/                     # developer wiki (Astro/Starlight)
 ```
 
-Each feature package follows the same shape: `Thing` (record) · `ThingRepository` (stored-procedure calls) · `ThingService` (permissions + use cases) · `ThingView` (Swing).
+Each feature slice follows the same shape: `Thing` (record) · `ThingRepository`
+(stored-procedure calls) · `ThingService` (permissions + use cases) · a REST
+controller in `api/` · a Vue `ThingView`.
 
 ## Design in one paragraph
 
-Data is modeled as **immutable records**; **business rules live in the database** as stored procedures and functions (the single source of truth); **repositories** are thin JDBC wrappers that call those routines; **services** enforce permissions and coordinate; **views** only display and collect input. Simple over clever.
+Data is modeled as **immutable records**; **business rules live in the database**
+as stored procedures and functions (the single source of truth); **repositories**
+are thin JDBC wrappers that call those routines; **services** enforce permissions
+and coordinate; the **API** exposes them over HTTP with JWT; the **Vue app** only
+displays and collects input. Simple over clever.
 
 ## Contributing to your future self
 

@@ -22,9 +22,10 @@ description: Code style, naming, comments and the Git workflow this project expe
 | --- | --- |
 | A business rule, validation or calculation | `db/init/*.sql` (function/procedure) |
 | A read/write use case | repository + service |
-| A permission check | service |
-| Screen layout, labels, dialogs | view |
-| A pure helper reused by views | `shared/` |
+| A permission check | service (and `@Secured` on the controller) |
+| HTTP shape, status codes, DTOs | `api/` controller |
+| Screen layout, labels, dialogs | Vue view/component |
+| A pure helper reused by views | `frontend/src/lib` (or `core/shared`) |
 
 If a rule cannot be expressed in SQL, it becomes a documented exception — and it still needs a test.
 
@@ -95,10 +96,10 @@ feat(clients): add clients table view and form dialog
 ## Definition of done (per feature)
 
 - [ ] Schema change committed (if any) and `SYSPORT_MARJAN.sql` regenerated
-- [ ] Records, repository, service, view implemented following the layer rules
+- [ ] Records, repository, service, controller and Vue view implemented following the layer rules
 - [ ] Business rules covered by tests, each referencing its `BR-xx`
-- [ ] No SQL outside repositories; no DB calls on the EDT
-- [ ] Permission checks in the service layer
+- [ ] No SQL outside repositories; no DB calls in controllers
+- [ ] Permission checks in the service layer (and `@Secured` on the controller)
 - [ ] Manually exercised through the UI with seed data
 - [ ] Atomic commits with conventional messages
 
