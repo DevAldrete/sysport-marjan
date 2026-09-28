@@ -13,7 +13,6 @@
 
   <modules>
     <module>core</module>
-    <module>desktop</module>
     <module>api</module>
   </modules>
 
@@ -23,7 +22,6 @@
 
     <mysql.version>9.1.0</mysql.version>
     <jbcrypt.version>0.4</jbcrypt.version>
-    <flatlaf.version>3.5.4</flatlaf.version>
     <junit.version>5.11.0</junit.version>
   </properties>
 
@@ -47,12 +45,6 @@
         <groupId>org.mindrot</groupId>
         <artifactId>jbcrypt</artifactId>
         <version>${jbcrypt.version}</version>
-      </dependency>
-
-      <dependency>
-        <groupId>com.formdev</groupId>
-        <artifactId>flatlaf</artifactId>
-        <version>${flatlaf.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
