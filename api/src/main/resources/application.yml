@@ -24,3 +24,7 @@ micronaut:
           refresh-token:
             enabled: true
             secret: "${JWT_REFRESH_SECRET:sysport-dev-refresh-secret-please-change-32bytes}"
+
+jackson:
+  serialization:
+    write-dates-as-timestamps: false
