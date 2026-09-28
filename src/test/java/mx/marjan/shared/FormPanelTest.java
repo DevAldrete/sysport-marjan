@@ -1,8 +1,11 @@
 package mx.marjan.shared;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
 
 class FormPanelTest {
@@ -27,5 +30,17 @@ class FormPanelTest {
         assertEquals("Ana", form.text("name"));
         assertEquals("b", form.selected("role"));
         assertTrue(form.checked("enabled"));
+    }
+
+    @Test
+    void readsBackDateAndDateTimeFields() {
+        FormPanel form = new FormPanel()
+                .addDate("date", "Fecha", LocalDate.of(2026, 1, 31))
+                .addDate("optional", "Opcional", null)
+                .addDateTime("when", "Fecha y hora", LocalDateTime.of(2026, 1, 31, 8, 30));
+
+        assertEquals(LocalDate.of(2026, 1, 31), form.date("date"));
+        assertNull(form.date("optional"));
+        assertEquals(LocalDateTime.of(2026, 1, 31, 8, 30), form.dateTime("when"));
     }
 }
