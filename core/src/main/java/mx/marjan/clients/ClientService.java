@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.Optional;
 import mx.marjan.security.Caller;
 import mx.marjan.security.Permissions;
-import mx.marjan.security.SessionCaller;
 import mx.marjan.shared.Result;
 
 /** Use cases for clients and negotiated rates. Permission checks live here, not in the UI. */
@@ -15,10 +14,6 @@ public class ClientService {
     private final ClientRepository clients = new ClientRepository();
     private final ClientRateRepository rates = new ClientRateRepository();
     private final Caller caller;
-
-    public ClientService() {
-        this(SessionCaller.INSTANCE);
-    }
 
     public ClientService(Caller caller) {
         this.caller = caller;

@@ -7,7 +7,6 @@ import java.util.Optional;
 import mx.marjan.requests.ServiceRequest;
 import mx.marjan.security.Caller;
 import mx.marjan.security.Permissions;
-import mx.marjan.security.SessionCaller;
 import mx.marjan.shared.Result;
 
 public class InvoiceService {
@@ -15,10 +14,6 @@ public class InvoiceService {
     private final InvoiceRepository invoices = new InvoiceRepository();
     private final PaymentRepository payments = new PaymentRepository();
     private final Caller caller;
-
-    public InvoiceService() {
-        this(SessionCaller.INSTANCE);
-    }
 
     public InvoiceService(Caller caller) {
         this.caller = caller;

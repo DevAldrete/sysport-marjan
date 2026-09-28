@@ -3,17 +3,12 @@ package mx.marjan.trips;
 import java.util.Optional;
 import mx.marjan.security.Caller;
 import mx.marjan.security.Permissions;
-import mx.marjan.security.SessionCaller;
 import mx.marjan.shared.Result;
 
 public class DeliveryService {
 
     private final DeliveryRepository deliveries = new DeliveryRepository();
     private final Caller caller;
-
-    public DeliveryService() {
-        this(SessionCaller.INSTANCE);
-    }
 
     public DeliveryService(Caller caller) {
         this.caller = caller;

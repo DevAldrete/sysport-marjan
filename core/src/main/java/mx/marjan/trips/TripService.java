@@ -11,7 +11,6 @@ import mx.marjan.operators.EmployeeRepository;
 import mx.marjan.requests.ServiceRequestRepository;
 import mx.marjan.security.Caller;
 import mx.marjan.security.Permissions;
-import mx.marjan.security.SessionCaller;
 import mx.marjan.shared.Result;
 
 /**
@@ -25,10 +24,6 @@ public class TripService {
     private final EmployeeRepository employees = new EmployeeRepository();
     private final ServiceRequestRepository requests = new ServiceRequestRepository();
     private final Caller caller;
-
-    public TripService() {
-        this(SessionCaller.INSTANCE);
-    }
 
     public TripService(Caller caller) {
         this.caller = caller;

@@ -4,17 +4,12 @@ import java.util.List;
 import java.util.Optional;
 import mx.marjan.security.Caller;
 import mx.marjan.security.Permissions;
-import mx.marjan.security.SessionCaller;
 import mx.marjan.shared.Result;
 
 public class RouteService {
 
     private final RouteRepository routes = new RouteRepository();
     private final Caller caller;
-
-    public RouteService() {
-        this(SessionCaller.INSTANCE);
-    }
 
     public RouteService(Caller caller) {
         this.caller = caller;

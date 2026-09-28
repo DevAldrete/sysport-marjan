@@ -11,6 +11,7 @@ import java.util.List;
 import mx.marjan.api.error.ApiProblemException;
 import mx.marjan.api.security.Callers;
 import mx.marjan.security.AuthService;
+import mx.marjan.security.Caller;
 import mx.marjan.security.CurrentUser;
 import mx.marjan.shared.Result;
 
@@ -25,7 +26,7 @@ public class AuthController {
 
     @Get("/me")
     public Me me(Authentication authentication) {
-        CurrentUser user = new AuthService().byUsername(authentication.getName())
+        CurrentUser user = new AuthService(Caller.NONE).byUsername(authentication.getName())
                 .orElseThrow(() -> new ApiProblemException(List.of("Usuario no encontrado")));
         return new Me(user.id(), user.username(), user.roleName(), List.copyOf(user.permissions()));
     }

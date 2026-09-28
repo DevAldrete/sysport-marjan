@@ -3,17 +3,12 @@ package mx.marjan.trips;
 import java.util.List;
 import mx.marjan.security.Caller;
 import mx.marjan.security.Permissions;
-import mx.marjan.security.SessionCaller;
 import mx.marjan.shared.Result;
 
 public class IncidentService {
 
     private final IncidentRepository incidents = new IncidentRepository();
     private final Caller caller;
-
-    public IncidentService() {
-        this(SessionCaller.INSTANCE);
-    }
 
     public IncidentService(Caller caller) {
         this.caller = caller;

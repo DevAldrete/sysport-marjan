@@ -3,17 +3,12 @@ package mx.marjan.fleet;
 import java.util.List;
 import mx.marjan.security.Caller;
 import mx.marjan.security.Permissions;
-import mx.marjan.security.SessionCaller;
 import mx.marjan.shared.Result;
 
 public class FuelService {
 
     private final FuelLoadRepository loads = new FuelLoadRepository();
     private final Caller caller;
-
-    public FuelService() {
-        this(SessionCaller.INSTANCE);
-    }
 
     public FuelService(Caller caller) {
         this.caller = caller;

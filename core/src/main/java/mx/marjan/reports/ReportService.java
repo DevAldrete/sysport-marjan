@@ -4,7 +4,6 @@ import java.time.LocalDate;
 import java.util.function.Supplier;
 import mx.marjan.security.Caller;
 import mx.marjan.security.Permissions;
-import mx.marjan.security.SessionCaller;
 import mx.marjan.shared.Result;
 
 /** FR-RPT-1..7: report use cases. The permission check lives here, not in the view. */
@@ -12,10 +11,6 @@ public class ReportService {
 
     private final ReportRepository reports = new ReportRepository();
     private final Caller caller;
-
-    public ReportService() {
-        this(SessionCaller.INSTANCE);
-    }
 
     public ReportService(Caller caller) {
         this.caller = caller;

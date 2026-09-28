@@ -17,10 +17,6 @@ public class AuthService {
     private final UserRepository users = new UserRepository();
     private final Caller caller;
 
-    public AuthService() {
-        this(SessionCaller.INSTANCE);
-    }
-
     public AuthService(Caller caller) {
         this.caller = caller;
     }

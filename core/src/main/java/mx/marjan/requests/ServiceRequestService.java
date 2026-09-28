@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.Optional;
 import mx.marjan.security.Caller;
 import mx.marjan.security.Permissions;
-import mx.marjan.security.SessionCaller;
 import mx.marjan.shared.Result;
 
 public class ServiceRequestService {
@@ -14,10 +13,6 @@ public class ServiceRequestService {
     private final ServiceRequestRepository requests = new ServiceRequestRepository();
     private final CargoPackageService cargoPackages;
     private final Caller caller;
-
-    public ServiceRequestService() {
-        this(SessionCaller.INSTANCE);
-    }
 
     public ServiceRequestService(Caller caller) {
         this.caller = caller;

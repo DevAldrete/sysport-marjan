@@ -4,17 +4,12 @@ import java.util.List;
 import java.util.Optional;
 import mx.marjan.security.Caller;
 import mx.marjan.security.Permissions;
-import mx.marjan.security.SessionCaller;
 import mx.marjan.shared.Result;
 
 public class VehicleService {
 
     private final VehicleRepository vehicles = new VehicleRepository();
     private final Caller caller;
-
-    public VehicleService() {
-        this(SessionCaller.INSTANCE);
-    }
 
     public VehicleService(Caller caller) {
         this.caller = caller;

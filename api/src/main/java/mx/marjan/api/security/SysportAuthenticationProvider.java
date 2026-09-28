@@ -9,6 +9,7 @@ import jakarta.inject.Singleton;
 import java.util.List;
 import java.util.Map;
 import mx.marjan.security.AuthService;
+import mx.marjan.security.Caller;
 import mx.marjan.security.CurrentUser;
 import mx.marjan.shared.Result;
 import org.reactivestreams.Publisher;
@@ -22,7 +23,7 @@ import reactor.core.publisher.Flux;
 @Singleton
 public class SysportAuthenticationProvider implements AuthenticationProvider<HttpRequest<?>> {
 
-    private final AuthService authService = new AuthService();
+    private final AuthService authService = new AuthService(Caller.NONE);
 
     @Override
     public Publisher<AuthenticationResponse> authenticate(@Nullable HttpRequest<?> request,

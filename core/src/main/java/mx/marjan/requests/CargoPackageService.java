@@ -3,7 +3,6 @@ package mx.marjan.requests;
 import java.util.List;
 import mx.marjan.security.Caller;
 import mx.marjan.security.Permissions;
-import mx.marjan.security.SessionCaller;
 import mx.marjan.shared.Result;
 
 /** Use cases around a request's packages: list, replace the set, record receipts. */
@@ -11,10 +10,6 @@ public class CargoPackageService {
 
     private final CargoPackageRepository packages = new CargoPackageRepository();
     private final Caller caller;
-
-    public CargoPackageService() {
-        this(SessionCaller.INSTANCE);
-    }
 
     public CargoPackageService(Caller caller) {
         this.caller = caller;

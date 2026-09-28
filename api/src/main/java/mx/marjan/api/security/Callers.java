@@ -23,7 +23,7 @@ public final class Callers {
                 if (id instanceof Number number) {
                     return number.longValue();
                 }
-                return new AuthService().byUsername(authentication.getName())
+                return new AuthService(Caller.NONE).byUsername(authentication.getName())
                         .map(mx.marjan.security.CurrentUser::id).orElse(0L);
             }
         };

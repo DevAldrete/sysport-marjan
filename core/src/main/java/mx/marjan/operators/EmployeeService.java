@@ -4,17 +4,12 @@ import java.util.List;
 import java.util.Optional;
 import mx.marjan.security.Caller;
 import mx.marjan.security.Permissions;
-import mx.marjan.security.SessionCaller;
 import mx.marjan.shared.Result;
 
 public class EmployeeService {
 
     private final EmployeeRepository employees = new EmployeeRepository();
     private final Caller caller;
-
-    public EmployeeService() {
-        this(SessionCaller.INSTANCE);
-    }
 
     public EmployeeService(Caller caller) {
         this.caller = caller;

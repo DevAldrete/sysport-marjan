@@ -3,17 +3,12 @@ package mx.marjan.finance;
 import java.util.List;
 import mx.marjan.security.Caller;
 import mx.marjan.security.Permissions;
-import mx.marjan.security.SessionCaller;
 import mx.marjan.shared.Result;
 
 public class ExpenseService {
 
     private final ExpenseRepository expenses = new ExpenseRepository();
     private final Caller caller;
-
-    public ExpenseService() {
-        this(SessionCaller.INSTANCE);
-    }
 
     public ExpenseService(Caller caller) {
         this.caller = caller;

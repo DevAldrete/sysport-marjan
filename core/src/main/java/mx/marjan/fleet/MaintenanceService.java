@@ -3,17 +3,12 @@ package mx.marjan.fleet;
 import java.util.List;
 import mx.marjan.security.Caller;
 import mx.marjan.security.Permissions;
-import mx.marjan.security.SessionCaller;
 import mx.marjan.shared.Result;
 
 public class MaintenanceService {
 
     private final MaintenanceRepository maintenance = new MaintenanceRepository();
     private final Caller caller;
-
-    public MaintenanceService() {
-        this(SessionCaller.INSTANCE);
-    }
 
     public MaintenanceService(Caller caller) {
         this.caller = caller;
