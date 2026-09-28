@@ -1,7 +1,8 @@
-<script setup lang="ts"></script>
+<script setup lang="ts">
+import { Toaster } from '@/components/ui/sonner'
+</script>
 
 <template>
-  <main class="grid min-h-svh place-items-center">
-    <h1 class="text-3xl font-semibold tracking-tight">SysPort MARJAN</h1>
-  </main>
+  <RouterView />
+  <Toaster position="top-right" rich-colors />
 </template>
