@@ -83,7 +83,7 @@ export const features: Feature[] = [
     title: 'Solicitudes',
     icon: ClipboardList,
     permission: 'requests.read',
-    component: () => import('@/views/ComingSoonView.vue'),
+    component: () => import('@/views/RequestsView.vue'),
   },
   {
     path: 'viajes',

@@ -115,3 +115,59 @@ export interface FuelLoad {
   amount: number
   odometerReading: number
 }
+
+export interface ServiceRequest {
+  id: number
+  folio: string
+  clientId: number
+  clientName: string
+  routeId: number
+  routeLabel: string
+  cargoDescription: string
+  estimatedWeight: number | null
+  packageCount: number
+  packageWeight: number | null
+  pickupScheduled: string | null
+  deliveryScheduled: string | null
+  agreedRate: number | null
+  requiresDocuments: boolean
+  status: string
+  notes: string | null
+  createdAt: string | null
+}
+
+export interface CargoPackage {
+  id: number
+  serviceRequestId: number
+  lineNo: number
+  description: string
+  quantity: number | null
+  unit: string
+  unitWeight: number | null
+  receivedQuantity: number | null
+  receiptCondition: string | null
+}
+
+export interface Trip {
+  id: number
+  serviceRequestId: number
+  folio: string
+  clientName: string
+  routeLabel: string
+  vehicleId: number
+  vehicleLabel: string
+  employeeId: number
+  employeeName: string
+  estimatedKm: number | null
+  actualKm: number | null
+  plannedStart: string | null
+  plannedEnd: string | null
+  departure: string | null
+  arrival: string | null
+  status: string
+}
+
+export interface AssignmentOptions {
+  vehicles: Vehicle[]
+  operators: Employee[]
+}

@@ -52,6 +52,31 @@ export const packageUnits: Option[] = [
   { value: 'otro', label: 'Otro' },
 ]
 
+export const requestStatuses: Option[] = [
+  { value: 'requested', label: 'Solicitada' },
+  { value: 'authorized', label: 'Autorizada' },
+  { value: 'scheduled', label: 'Programada' },
+  { value: 'assigned', label: 'Asignada' },
+  { value: 'in_transit', label: 'En transito' },
+  { value: 'delivered', label: 'Entregada' },
+  { value: 'closed', label: 'Cerrada' },
+  { value: 'cancelled', label: 'Cancelada' },
+]
+
+export const packageConditions: Option[] = [
+  { value: 'ok', label: 'Completo' },
+  { value: 'shortage', label: 'Faltante' },
+  { value: 'damaged', label: 'Danado' },
+  { value: 'missing', label: 'No llego' },
+]
+
+export const tripStatuses: Option[] = [
+  { value: 'scheduled', label: 'Programado' },
+  { value: 'in_transit', label: 'En transito' },
+  { value: 'completed', label: 'Completado' },
+  { value: 'cancelled', label: 'Cancelado' },
+]
+
 export function labelOf(options: Option[], value: string | null | undefined): string {
   return options.find((option) => option.value === value)?.label ?? (value ?? '')
 }

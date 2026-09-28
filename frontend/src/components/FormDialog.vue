@@ -56,10 +56,13 @@ const props = withDefaults(
 const emit = defineEmits<{
   'update:open': [value: boolean]
   submit: [values: Record<string, unknown>]
+  change: [values: Record<string, unknown>]
 }>()
 
 const values = reactive<Record<string, any>>({})
 const errors = ref<Record<string, string>>({})
+
+watch(values, () => emit('change', { ...values }), { deep: true })
 
 function blank(field: FormField): unknown {
   switch (field.type) {
@@ -175,6 +178,8 @@ function submit() {
             <p v-else-if="field.hint" class="text-xs text-muted-foreground">{{ field.hint }}</p>
           </div>
         </div>
+
+        <slot />
 
         <DialogFooter>
           <Button type="button" variant="outline" @click="emit('update:open', false)">Cancelar</Button>
