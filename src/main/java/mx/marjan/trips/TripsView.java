@@ -2,12 +2,15 @@ package mx.marjan.trips;
 
 import java.math.BigDecimal;
 import java.util.List;
+import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.VBox;
 import mx.marjan.fleet.Vehicle;
 import mx.marjan.operators.Employee;
+import mx.marjan.security.Permissions;
+import mx.marjan.security.Session;
 import mx.marjan.ui.Async;
 import mx.marjan.shared.Dates;
 import mx.marjan.shared.Numbers;
@@ -35,6 +38,14 @@ public class TripsView extends BaseView {
                     trip -> StatusTones.trip(trip.status()))));
     private final TextField search = new TextField();
     private final ComboBox<Object> statusFilter = new ComboBox<>();
+    private final Button departButton = Ui.button("Salida", "Registrar la salida del viaje", this::depart);
+    private final Button arriveButton = Ui.button("Llegada",
+            "Registrar la llegada y los kilometros reales", this::arrive);
+    private final Button reassignButton = Ui.button("Reasignar",
+            "Cambiar la unidad o el operador", this::reassign);
+    private final Button cancelButton = Ui.button("Cancelar", "Cancelar el viaje", this::cancel);
+    private final Button deleteButton = Ui.button("Eliminar",
+            "Eliminar el viaje y todo lo relacionado", this::deleteTrip);
 
     public TripsView() {
         search.setPromptText("Folio, cliente o unidad");
@@ -50,17 +61,31 @@ public class TripsView extends BaseView {
         var filters = Ui.filters(new Label("Buscar:"), search,
                 new Label("Estado:"), statusFilter,
                 Ui.button("Buscar", this::reload));
-        var actions = Ui.toolbar(
-                Ui.primary("Salida", this::depart),
-                Ui.button("Llegada", this::arrive),
-                Ui.button("Reasignar", this::reassign),
-                Ui.button("Detalle", this::detail),
-                Ui.button("Cancelar", this::cancel),
-                Ui.button("Eliminar", this::deleteTrip),
+        departButton.getStyleClass().add("accent");
+        var actions = Ui.toolbar(departButton, arriveButton, reassignButton,
+                Ui.button("Detalle", "Ver el detalle del viaje", this::detail),
+                cancelButton, deleteButton,
                 Ui.button("Recargar", this::reload));
         setTop(new VBox(4, filters, actions));
         setCenter(table);
+        table.getSelectionModel().selectedItemProperty()
+                .addListener((observable, oldValue, newValue) -> updateActions());
+        updateActions();
         reload();
+    }
+
+    /** Enables each action only when it makes sense for the selected trip's status. */
+    private void updateActions() {
+        Trip trip = table.selected();
+        TripStatus status = trip == null ? null : trip.status();
+        boolean write = Session.has(Permissions.TRIPS_WRITE);
+        boolean assign = Session.has(Permissions.TRIPS_ASSIGN);
+        departButton.setDisable(!(write && status == TripStatus.SCHEDULED));
+        arriveButton.setDisable(!(write && status == TripStatus.IN_TRANSIT));
+        reassignButton.setDisable(!(assign && status == TripStatus.SCHEDULED));
+        cancelButton.setDisable(!(write && status == TripStatus.SCHEDULED));
+        deleteButton.setDisable(!(write
+                && (status == TripStatus.SCHEDULED || status == TripStatus.CANCELLED)));
     }
 
     @Override
@@ -69,7 +94,10 @@ public class TripsView extends BaseView {
         loadRows(() -> {
             service.sweepLifecycle();
             return service.search(search.getText(), status instanceof TripStatus s ? s : null);
-        }, table::setRows);
+        }, rows -> {
+            table.setRows(rows);
+            updateActions();
+        });
     }
 
     private Trip requireSelection() {
@@ -169,7 +197,7 @@ public class TripsView extends BaseView {
 
     private void run(Result<?> result) {
         if (result.isErr()) {
-            Ui.error(Ui.windowOf(this), "Error", result.problems());
+            Ui.error(Ui.windowOf(this), "No se pudo completar la operacion", result.problems());
         } else {
             reload();
         }
