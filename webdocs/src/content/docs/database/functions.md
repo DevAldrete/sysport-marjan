@@ -1,6 +1,6 @@
 ---
 title: Functions
-description: The 24 pure functions in 02-functions.sql — the vocabulary of the business rules.
+description: The 27 pure functions in 02-functions.sql — the vocabulary of the business rules.
 ---
 
 Functions in `db/init/02-functions.sql` are **pure**: no I/O, no side effects, one clear answer.
@@ -33,6 +33,14 @@ reading the domain.
 | --- | --- | --- |
 | `fn_next_folio(p_year)` | `SR-YYYY-NNNNNN` | **BR-01** — max existing number for the year + 1. |
 | `fn_next_invoice_number(p_year)` | `INV-YYYY-NNNNNN` | **BR-20** — max existing number for the year + 1. |
+| `fn_next_license_number()` | `LIC-MRJ-NNNN` | **BR-25** — max existing internal number + 1. |
+
+## Routes
+
+| Function | Returns | Rule |
+| --- | --- | --- |
+| `fn_route_label(p_route_id)` | `A -> B -> C` | **BR-26** — ordered stop list joined for display. |
+| `fn_route_signature(p_route_id)` | `a|b|c` | **BR-26** — case-folded ordered stops, used to reject duplicate routes. |
 
 ## Format validators
 

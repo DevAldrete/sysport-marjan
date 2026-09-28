@@ -100,11 +100,15 @@ CREATE PROCEDURE sp_employee_save(IN p_id BIGINT, IN p_name VARCHAR(150), IN p_a
     OUT p_new_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
   DECLARE v_license_id BIGINT DEFAULT NULL;
+  DECLARE v_has_license TINYINT DEFAULT 0;
   DECLARE EXIT HANDLER FOR SQLEXCEPTION
   BEGIN
     ROLLBACK; SET p_problems = 'Error inesperado al guardar el operador';
   END;
   SET p_problems = NULL;
+  SET v_has_license = (p_license_type IS NOT NULL AND p_license_type <> '')
+                   OR p_license_expiry IS NOT NULL
+                   OR (p_license_number IS NOT NULL AND p_license_number <> '');
   IF p_name IS NULL OR p_name = '' THEN
     SET p_problems = CONCAT_WS('; ', p_problems, 'El nombre es obligatorio');
   END IF;
@@ -125,9 +129,15 @@ p: BEGIN
   IF NOT fn_phone_valid(p_ec_phone) THEN
     SET p_problems = CONCAT_WS('; ', p_problems, 'El telefono de emergencia no tiene un formato valido');
   END IF;
-  IF p_license_number IS NOT NULL AND p_license_number <> '' THEN
-    IF NOT fn_license_number_valid(p_license_number) THEN
+  IF v_has_license THEN
+    IF p_license_number IS NOT NULL AND p_license_number <> ''
+       AND NOT fn_license_number_valid(p_license_number) THEN
       SET p_problems = CONCAT_WS('; ', p_problems, 'El numero de licencia no tiene un formato valido');
+    END IF;
+    IF p_license_type IS NULL OR p_license_type = '' THEN
+      SET p_problems = CONCAT_WS('; ', p_problems, 'El tipo de licencia es obligatorio');
+    ELSEIF p_license_type NOT IN ('Federal A','Federal B','Federal C','Federal D','Federal E','Estatal','Otro') THEN
+      SET p_problems = CONCAT_WS('; ', p_problems, 'El tipo de licencia no es valido');
     END IF;
     IF p_license_expiry IS NULL THEN
       SET p_problems = CONCAT_WS('; ', p_problems, 'La fecha de vencimiento de la licencia es obligatoria');
@@ -148,20 +158,21 @@ p: BEGIN
   IF p_id IS NOT NULL AND p_id <> 0 THEN
     SELECT license_id INTO v_license_id FROM employees WHERE id = p_id;
   END IF;
-  IF p_license_number IS NOT NULL AND p_license_number <> '' THEN
-    IF p_license_id IS NULL OR p_license_id = 0 THEN
+  IF v_has_license THEN
+    IF v_license_id IS NULL OR v_license_id = 0 THEN
+      -- BR-25: the internal number is allocated by the database when blank.
       CALL sp_next_id('licenses', v_license_id);
       INSERT INTO licenses (id, license_number, license_type, issue_date, expiration_date)
-      VALUES (v_license_id, p_license_number, p_license_type, p_license_issue, p_license_expiry);
+      VALUES (v_license_id, COALESCE(NULLIF(p_license_number, ''), fn_next_license_number()),
+              p_license_type, p_license_issue, p_license_expiry);
     ELSE
-      SET v_license_id = p_license_id;
-      UPDATE licenses SET license_number = p_license_number, license_type = p_license_type,
-                          issue_date = p_license_issue, expiration_date = p_license_expiry
-      WHERE id = p_license_id;
+      UPDATE licenses SET
+          license_number = COALESCE(NULLIF(p_license_number, ''), license_number),
+          license_type = p_license_type,
+          issue_date = p_license_issue,
+          expiration_date = p_license_expiry
+      WHERE id = v_license_id;
     END IF;
-  ELSEIF p_license_id IS NOT NULL AND p_license_id <> 0 THEN
-    -- Blank number means "leave the license as it is", not "clear it".
-    SET v_license_id = p_license_id;
   END IF;
 
   IF p_id IS NULL OR p_id = 0 THEN

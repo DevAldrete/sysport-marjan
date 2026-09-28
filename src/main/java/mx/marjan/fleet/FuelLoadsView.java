@@ -84,13 +84,12 @@ public class FuelLoadsView extends BaseView {
                 .addCombo("vehicle", "Unidad", vehicles.toArray(), initial)
                 .addCombo("trip", "Viaje (opcional)", tripOptions.toArray(), "(sin viaje)")
                 .addText("station", "Estacion de servicio", "", "Nombre o numero de la estacion")
-                .addText("date", "Fecha y hora", Dates.format(Dates.now()), "Formato: AAAA-MM-DD HH:MM")
+                .addDateTime("date", "Fecha y hora", Dates.now())
                 .addText("liters", "Litros", "0", "Litros cargados, ej. 45.5")
                 .addText("price", "Precio por litro", "0", "Precio unitario, ej. 24.90");
         form.addComputed("amount", "Importe", () -> Money.format(amountFor(form)));
         form.addText("odometer", "Odometro (km)", Numbers.plain(initial.mileage()),
                 "Lectura del tablero; se propone el ultimo kilometraje de la unidad");
-        form.validate("date", Validators.dateTime());
         form.validate("liters", Validators.number());
         form.validate("price", Validators.number());
         form.validate("odometer", Validators.number());
@@ -104,9 +103,9 @@ public class FuelLoadsView extends BaseView {
             Vehicle vehicle = (Vehicle) form.selected("vehicle");
             Object tripValue = form.selected("trip");
             Long tripId = tripValue instanceof Trip trip ? trip.id() : null;
-            LocalDateTime date = Dates.parseDateTime(form.text("date")).orElse(null);
+            LocalDateTime date = form.dateTime("date");
             if (date == null) {
-                return Result.err("La fecha es obligatoria (AAAA-MM-DD HH:MM)");
+                return Result.err("La fecha es obligatoria");
             }
             BigDecimal liters = Numbers.parseOrZero(form.text("liters"));
             BigDecimal price = Numbers.parseOrZero(form.text("price"));

@@ -1,6 +1,6 @@
 ---
 title: Schema
-description: All 23 tables, grouped by domain, with their key columns and constraints.
+description: All 25 tables, grouped by domain, with their key columns and constraints.
 ---
 
 The schema is defined in **`db/init/01-tables.sql`**. MySQL 8.4, InnoDB, `utf8mb4` /
@@ -24,11 +24,12 @@ The schema is defined in **`db/init/01-tables.sql`**. MySQL 8.4, InnoDB, `utf8mb
 ```text
 roles ─< role_permissions >─ permissions
 roles ─< users >─ employees ─ licenses
-clients ─< client_rates >─ routes
+clients ─< client_rates >─ routes ─< route_stops
 clients ─< service_requests >─ routes
 service_requests ─< request_packages
 service_requests ─1:1─ trips >─ vehicles
                        trips >─ employees
+                       trips ─< trip_stop_arrivals >─ route_stops
 trips ─< expenses        trips ─< advances
 trips ─< incidents       trips ─1:1─ deliveries
 vehicles ─< fuel_loads >─ trips (optional)
@@ -49,7 +50,7 @@ audit_log, sequences
 
 | Table | Key columns / constraints |
 | --- | --- |
-| `licenses` | `license_number` NOT NULL UNIQUE · `license_type` NOT NULL · `expiration_date` NOT NULL · index on `expiration_date` |
+| `licenses` | `license_number` NOT NULL UNIQUE · `license_type` NOT NULL CHECK(`Federal A..E`,`Estatal`,`Otro`) · `expiration_date` NOT NULL · index on `expiration_date` |
 | `employees` | `name` NOT NULL · `phone` NOT NULL UNIQUE · `email`/`rfc`/`curp` UNIQUE · `license_id` UNIQUE FK→`licenses` · `status` CHECK(`available,on_trip,resting,vacation,incapacitated,terminated`) |
 | `users` | `employee_id` UNIQUE FK→`employees` · `username` NOT NULL UNIQUE · `password_hash` NOT NULL · `role_id` FK→`roles` · `status` CHECK(`active,disabled`) |
 
@@ -66,7 +67,8 @@ audit_log, sequences
 | Table | Key columns / constraints |
 | --- | --- |
 | `clients` | `name` NOT NULL · `rfc` NOT NULL UNIQUE · `client_type` CHECK(`occasional`,`frequent`) · `payment_terms` CHECK(`cash`,`credit`) · `credit_limit` ≥0 · `credit_days` ≥0 · `status` CHECK(`active`,`inactive`) |
-| `routes` | `origin`,`destination` NOT NULL · `estimated_km` ≥0 · UNIQUE(`origin`,`destination`) `uq_routes_pair` |
+| `routes` | `origin`,`destination` NOT NULL (first/last stop snapshots) · `estimated_km` ≥0 · `description` |
+| `route_stops` | `route_id` FK · `sequence_no` · `location` NOT NULL · index `(route_id)` — **BR-26**, the ordered path |
 | `client_rates` | `client_id` FK · `route_id` FK · `rate` >0 · `valid_from` NOT NULL · `valid_to` · index `(client_id,route_id,valid_from)` |
 
 ## Requests, trips & operations
@@ -80,6 +82,7 @@ audit_log, sequences
 | `advances` | `trip_id`,`employee_id` FK · `amount_given` >0 · `delivered_date` NOT NULL · `status` CHECK(`pending`,`settled`) · `settled_at`,`settled_by` |
 | `incidents` | `trip_id` FK · `incident_type` CHECK(7 values) · `incident_date` NOT NULL |
 | `deliveries` | `trip_id` NOT NULL **UNIQUE** FK (1:1, BR-12) · `status` CHECK(`pending_documents`,`complete`) · `received_by`, `evidence_reference` |
+| `trip_stop_arrivals` | `trip_id` FK · `route_stop_id` FK · UNIQUE(`trip_id`,`route_stop_id`) · `arrived_at`, `notes` — **BR-26**, the actual stop visits |
 
 ## Finance
 

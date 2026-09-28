@@ -273,6 +273,7 @@ p: BEGIN
   DELETE FROM advances WHERE trip_id = p_trip_id;
   DELETE FROM incidents WHERE trip_id = p_trip_id;
   DELETE FROM deliveries WHERE trip_id = p_trip_id;
+  DELETE FROM trip_stop_arrivals WHERE trip_id = p_trip_id;
   UPDATE fuel_loads SET trip_id = NULL WHERE trip_id = p_trip_id;
   DELETE FROM trips WHERE id = p_trip_id;
 
@@ -282,6 +283,57 @@ p: BEGIN
     UPDATE service_requests SET status = 'scheduled', updated_by = p_user_id WHERE id = v_request;
   END IF;
   COMMIT;
+END$$
+
+-- BR-26: the trip's planned stops with the actual arrival at each one, so the
+-- history proves A -> B -> C was followed. arrived_at is null until recorded.
+CREATE PROCEDURE sp_trip_stops(IN p_trip_id BIGINT)
+p: BEGIN
+  SELECT rs.id AS route_stop_id, rs.sequence_no, rs.location,
+         a.id AS arrival_id, a.arrived_at, a.notes
+  FROM trips t
+  JOIN service_requests sr ON sr.id = t.service_request_id
+  JOIN route_stops rs ON rs.route_id = sr.route_id
+  LEFT JOIN trip_stop_arrivals a
+         ON a.trip_id = t.id AND a.route_stop_id = rs.id
+  WHERE t.id = p_trip_id
+  ORDER BY rs.sequence_no;
+END$$
+
+CREATE PROCEDURE sp_trip_stop_arrival_save(IN p_trip_id BIGINT, IN p_route_stop_id BIGINT,
+    IN p_arrived_at DATETIME, IN p_notes VARCHAR(255), IN p_user_id BIGINT,
+    OUT p_problems TEXT)
+p: BEGIN
+  DECLARE v_stop_route BIGINT DEFAULT NULL;
+  DECLARE v_arrival BIGINT DEFAULT NULL;
+  SET p_problems = NULL;
+  IF p_arrived_at IS NULL THEN
+    SET p_problems = 'La fecha y hora de llegada son obligatorias'; LEAVE p;
+  END IF;
+  SELECT route_id INTO v_stop_route FROM route_stops WHERE id = p_route_stop_id;
+  IF v_stop_route IS NULL THEN
+    SET p_problems = 'La parada no existe'; LEAVE p;
+  END IF;
+  IF (SELECT COUNT(*) FROM trips t
+      JOIN service_requests sr ON sr.id = t.service_request_id
+      WHERE t.id = p_trip_id AND sr.route_id = v_stop_route) = 0 THEN
+    SET p_problems = 'La parada no pertenece a la ruta del viaje'; LEAVE p;
+  END IF;
+  SELECT id INTO v_arrival FROM trip_stop_arrivals
+  WHERE trip_id = p_trip_id AND route_stop_id = p_route_stop_id;
+  IF v_arrival IS NULL THEN
+    CALL sp_next_id('trip_stop_arrivals', v_arrival);
+    INSERT INTO trip_stop_arrivals (id, trip_id, route_stop_id, arrived_at, notes, created_by)
+    VALUES (v_arrival, p_trip_id, p_route_stop_id, p_arrived_at, p_notes, p_user_id);
+  ELSE
+    UPDATE trip_stop_arrivals SET arrived_at = p_arrived_at, notes = p_notes
+    WHERE id = v_arrival;
+  END IF;
+END$$
+
+CREATE PROCEDURE sp_trip_stop_arrival_delete(IN p_id BIGINT)
+p: BEGIN
+  DELETE FROM trip_stop_arrivals WHERE id = p_id;
 END$$
 
 CREATE PROCEDURE sp_sweep_lifecycle(IN p_user_id BIGINT, OUT p_changes INT)

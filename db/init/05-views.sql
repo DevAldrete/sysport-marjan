@@ -11,7 +11,8 @@ SELECT id, name, rfc, address, phone, email, contact_name, client_type,
 FROM clients;
 
 CREATE OR REPLACE VIEW v_route AS
-SELECT id, origin, destination, estimated_km, description
+SELECT id, origin, destination, estimated_km, description,
+       COALESCE(fn_route_label(id), CONCAT(origin, ' -> ', destination)) AS route_label
 FROM routes;
 
 CREATE OR REPLACE VIEW v_vehicle AS
@@ -28,7 +29,7 @@ LEFT JOIN licenses l ON l.id = e.license_id;
 
 CREATE OR REPLACE VIEW v_service_request AS
 SELECT sr.id, sr.folio, sr.client_id, c.name AS client_name, sr.route_id,
-       CONCAT(r.origin, ' -> ', r.destination) AS route_label,
+       COALESCE(fn_route_label(sr.route_id), CONCAT(r.origin, ' -> ', r.destination)) AS route_label,
        sr.cargo_description, sr.estimated_weight,
        (SELECT COUNT(*) FROM request_packages p WHERE p.service_request_id = sr.id) AS package_count,
        (SELECT SUM(p.quantity * p.unit_weight) FROM request_packages p
@@ -42,7 +43,7 @@ JOIN routes r ON r.id = sr.route_id;
 
 CREATE OR REPLACE VIEW v_trip AS
 SELECT t.id, t.service_request_id, sr.folio, c.name AS client_name,
-       CONCAT(r.origin, ' -> ', r.destination) AS route_label,
+       COALESCE(fn_route_label(sr.route_id), CONCAT(r.origin, ' -> ', r.destination)) AS route_label,
        t.vehicle_id, CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label,
        t.employee_id, e.name AS employee_name,
        t.estimated_km, t.actual_km, t.planned_start, t.planned_end,

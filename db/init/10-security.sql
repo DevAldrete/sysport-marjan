@@ -65,8 +65,30 @@ p: BEGIN
   UPDATE users SET password_hash = p_hash WHERE id = p_id;
 END$$
 
-CREATE PROCEDURE sp_user_delete(IN p_id BIGINT)
+-- BR-27: a user cannot delete itself and the last active administrator is
+-- protected, so the system can never be locked out.
+CREATE PROCEDURE sp_user_delete(IN p_id BIGINT, IN p_actor_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
+  DECLARE v_role VARCHAR(50) DEFAULT NULL;
+  DECLARE v_admins INT DEFAULT 0;
+  SET p_problems = NULL;
+  SELECT r.name INTO v_role
+  FROM users u JOIN roles r ON r.id = u.role_id
+  WHERE u.id = p_id;
+  IF v_role IS NULL THEN
+    SET p_problems = 'Usuario no encontrado'; LEAVE p;
+  END IF;
+  IF p_id = p_actor_id THEN
+    SET p_problems = 'No puede eliminar su propio usuario'; LEAVE p;
+  END IF;
+  IF v_role = 'admin' THEN
+    SELECT COUNT(*) INTO v_admins
+    FROM users u JOIN roles r ON r.id = u.role_id
+    WHERE r.name = 'admin' AND u.status = 'active';
+    IF v_admins <= 1 THEN
+      SET p_problems = 'No se puede eliminar el ultimo administrador'; LEAVE p;
+    END IF;
+  END IF;
   DELETE FROM users WHERE id = p_id;
 END$$
 

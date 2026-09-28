@@ -1,6 +1,6 @@
 ---
 title: Business rules
-description: BR-01 to BR-24 — the rules, and exactly where each one is enforced.
+description: BR-01 to BR-27 — the rules, and exactly where each one is enforced.
 ---
 
 Every rule has an ID so code, tests and commits can reference it. **Search the codebase for `BR-xx`
@@ -33,6 +33,9 @@ or function; the table below points at the real implementation.
 | **BR-22** | Key operations store `created_by`/`updated_by`; important actions write an audit row. | procedures + `sp_audit_log` |
 | **BR-23** | Users need a permission per operation; disabled users cannot log in. | service checks + `sp_role_permissions` + `AuthService.login` |
 | **BR-24** | Passwords are stored only as BCrypt hashes, never logged. | `AuthService` |
+| **BR-25** | An operator's licence type is one of the allowed values (`Federal A..E`, `Estatal`, `Otro`); the internal number (`LIC-MRJ-####`) is allocated by the database when blank. | `licenses.license_type` CHECK + `fn_next_license_number` in `sp_employee_save` |
+| **BR-26** | A route is an ordered list of stops (`A -> B -> C`); an identical ordered list is rejected; a trip records the actual arrival at each planned stop. | `route_stops`, `trip_stop_arrivals`, `fn_route_label`, `fn_route_signature`, `sp_route_stop_*`, `sp_trip_stop_arrival_save` |
+| **BR-27** | Hard delete is restricted to untouched records; live records (assigned request, non-pending invoice, cargo after departure, own account, last admin) are refused and must be cancelled. | `sp_request_delete`, `sp_invoice_delete`, `sp_package_delete`, `sp_payment_delete`, `sp_user_delete`, services, views |
 
 ## How rules are enforced
 

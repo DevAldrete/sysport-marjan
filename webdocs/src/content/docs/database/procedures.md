@@ -25,7 +25,7 @@ problems at once.
 | Procedure | Purpose |
 | --- | --- |
 | `sp_user_by_username`, `sp_user_by_id`, `sp_users_list`, `sp_roles_list`, `sp_role_permissions` | Reads for login and admin. |
-| `sp_user_insert` (OUT id), `sp_user_update`, `sp_user_update_password`, `sp_user_delete` | User administration. |
+| `sp_user_insert` (OUT id), `sp_user_update`, `sp_user_update_password`, `sp_user_delete` | User administration. Delete refuses own account / last admin (**BR-27**). |
 | `sp_audit_log` | Appends to `audit_log`. |
 
 ## Clients, rates & routes — `20-clients.sql`
@@ -40,6 +40,7 @@ problems at once.
 | `sp_client_rate_save` | Validate route/rate/dates; **reject overlapping rate** for the same client+route+period (**BR-04**). |
 | `sp_client_rate_delete` | Delete a rate. |
 | `sp_routes_search`, `sp_route_by_id`, `sp_route_save`, `sp_route_delete` | Route CRUD; delete blocked when referenced. |
+| `sp_route_stops`, `sp_route_stop_save`, `sp_route_stop_delete`, `sp_route_duplicate` | Ordered stops of a route (**BR-26**); duplicate path rejected, a visited stop cannot be removed. |
 
 ## Fleet — `30-fleet.sql`
 
@@ -61,7 +62,7 @@ problems at once.
 | `sp_employees_search`, `sp_employee_by_id` | Reads from `v_employee` (joins the license). |
 | `sp_eligible_operators_full(start,end)` | Available operators with a valid license through `end` and no overlapping trip (**FR-TRP-1**). |
 | `sp_validate_operator_assignment` (+ `validate_operator_assignment_into`) | **BR-06 / BR-09 / BR-10** — exists, assignable, licensed through the window, free. |
-| `sp_employee_save` | Validate personal/emergency/license data; writes license **and** employee in one transaction. |
+| `sp_employee_save` | Validate personal/emergency/license data; writes license **and** employee in one transaction. Blank number → `fn_next_license_number` (**BR-25**). |
 | `sp_employee_delete` | Blocked when trips/advances/user exist; deletes employee + license in a transaction. |
 | `sp_employee_set_status` | Manual statuses only; blocked while on an active trip. |
 
@@ -74,7 +75,7 @@ problems at once.
 | `sp_request_update` | Edit data only, never status; sets `updated_by`. |
 | `sp_request_packages` | Read a request's package lines ordered by `line_no`. |
 | `sp_package_save` (OUT id) | Upsert one package line (validation only; no transaction of its own — the repository composes several calls in one `Database.inTransaction`). |
-| `sp_package_delete` | Delete one package line (used to remove lines absent from the submitted set). |
+| `sp_package_delete` | Delete one package line (used to remove lines absent from the submitted set); blocked after departure (**BR-27**). |
 | `sp_package_receipt_save` | Per-unit tracking: set `received_quantity` (≤ declared) and `receipt_condition`. |
 | `sp_request_delete` | **BR-14** cascade: request_packages, payments, invoices, expenses, advances, incidents, deliveries, trips, then the request. Audit rows are kept. |
 | `sp_authorize_request` | **BR-03 / BR-04** — from `requested` only; rate>0; snapshots `agreed_rate`; audit `authorized`. |
@@ -93,7 +94,8 @@ problems at once.
 | `sp_arrive_trip` | Trip `in_transit → completed`; vehicle `available` + **BR-21** `mileage += actual_km`; employee `available`; if the request does not require documents → `delivered`. |
 | `sp_cancel_trip` | Only `scheduled`; reason required; cancels trip + request; audit `cancelled`. |
 | `sp_reassign_trip` | **BR-15** — only a `scheduled` trip whose request is `assigned`; re-validates both resources; audit `reassigned`. |
-| `sp_trip_delete` | **BR-14** — only `scheduled`/`cancelled`; cascades children; reverts the request to `scheduled` when needed. |
+| `sp_trip_delete` | **BR-27** — only `scheduled`/`cancelled`; cascades children; reverts the request to `scheduled` when needed. |
+| `sp_trip_stops`, `sp_trip_stop_arrival_save`, `sp_trip_stop_arrival_delete` | Planned stops with actual arrivals (**BR-26**). |
 | `sp_sweep_lifecycle` (OUT changes) | Batch: promotes `authorized` requests with dates to `scheduled`, and departs scheduled trips whose `planned_start ≤ NOW()`. Called from the UI timer and on reload (**BR-03** automation). |
 | `sp_delivery_by_trip`, `sp_delivery_save`, `sp_delivery_delete` | **BR-12 / BR-13** — one delivery per trip; the trip must be `completed`; a delivery moves the request to `delivered`. |
 | `sp_incidents_by_trip`, `sp_incident_save`, `sp_incident_delete` | Incident log per trip. |
@@ -117,7 +119,7 @@ problems at once.
 | `sp_register_payment` | **BR-19** — lock invoice, block cancelled, amount>0, block overpayment; insert; recompute status. |
 | `sp_refresh_invoice_statuses` (OUT changed) | **BR-19 / FR-INV-3** — bulk recompute for non-cancelled invoices. |
 | `sp_cancel_invoice` | **BR-19** — cannot cancel a paid, already-cancelled, or paid-into invoice. |
-| `sp_invoice_delete`, `sp_payment_delete` | Deletes (invoice delete removes its payments first). |
+| `sp_invoice_delete`, `sp_payment_delete` | Invoice delete only for `pending` with no payments; payment delete re-derives the invoice status (**BR-27** / **BR-19**). |
 
 ## Reports & dashboard — `90-reports.sql`
 

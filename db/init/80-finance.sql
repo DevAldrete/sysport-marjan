@@ -135,18 +135,29 @@ p: BEGIN
   SELECT * FROM v_invoice WHERE service_request_id = p_request_id;
 END$$
 
+-- BR-27: only a pending invoice without payments may be hard-deleted; anything
+-- with history is cancelled instead.
 CREATE PROCEDURE sp_invoice_delete(IN p_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
+  DECLARE v_status VARCHAR(20) DEFAULT NULL;
   DECLARE EXIT HANDLER FOR SQLEXCEPTION
   BEGIN
     ROLLBACK; SET p_problems = 'No se puede eliminar la factura';
   END;
   SET p_problems = NULL;
-  IF (SELECT COUNT(*) FROM invoices WHERE id = p_id) = 0 THEN
+  SELECT status INTO v_status FROM invoices WHERE id = p_id;
+  IF v_status IS NULL THEN
     SET p_problems = 'Factura no encontrada'; LEAVE p;
   END IF;
+  IF v_status <> 'pending' THEN
+    SET p_problems = 'Solo se puede eliminar una factura pendiente; cancelela en su lugar';
+    LEAVE p;
+  END IF;
+  IF (SELECT COUNT(*) FROM payments WHERE invoice_id = p_id) > 0 THEN
+    SET p_problems = 'No se puede eliminar una factura con pagos; cancelela en su lugar';
+    LEAVE p;
+  END IF;
   START TRANSACTION;
-  DELETE FROM payments WHERE invoice_id = p_id;
   DELETE FROM invoices WHERE id = p_id;
   COMMIT;
 END$$
@@ -182,9 +193,35 @@ p: BEGIN
   ORDER BY p.payment_date;
 END$$
 
-CREATE PROCEDURE sp_payment_delete(IN p_id BIGINT)
+-- BR-19: removing a payment re-derives the invoice status so it can never stay
+-- wrongly "paid". Payments of a cancelled invoice are frozen.
+CREATE PROCEDURE sp_payment_delete(IN p_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
+  DECLARE v_invoice BIGINT DEFAULT NULL;
+  DECLARE v_amount DECIMAL(12,2);
+  DECLARE v_due DATE;
+  DECLARE v_status VARCHAR(20);
+  DECLARE v_paid DECIMAL(12,2);
+  DECLARE EXIT HANDLER FOR SQLEXCEPTION
+  BEGIN
+    ROLLBACK; SET p_problems = 'No se puede eliminar el pago';
+  END;
+  SET p_problems = NULL;
+  SELECT invoice_id INTO v_invoice FROM payments WHERE id = p_id;
+  IF v_invoice IS NULL THEN
+    SET p_problems = 'Pago no encontrado'; LEAVE p;
+  END IF;
+  SELECT status INTO v_status FROM invoices WHERE id = v_invoice;
+  IF v_status = 'cancelled' THEN
+    SET p_problems = 'No se puede modificar un pago de una factura cancelada'; LEAVE p;
+  END IF;
+  START TRANSACTION;
   DELETE FROM payments WHERE id = p_id;
+  SELECT amount, due_date, status INTO v_amount, v_due, v_status FROM invoices WHERE id = v_invoice;
+  SELECT COALESCE(SUM(amount),0) INTO v_paid FROM payments WHERE invoice_id = v_invoice;
+  UPDATE invoices SET status = fn_invoice_status(v_status, v_amount, v_paid, v_due, CURDATE())
+  WHERE id = v_invoice;
+  COMMIT;
 END$$
 
 DELIMITER ;

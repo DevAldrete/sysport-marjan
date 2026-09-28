@@ -45,16 +45,18 @@ The suggested rate is only a **default** at authorization — the actual price i
 
 ## Routes
 
-`Route` = origin, destination, estimated km, description. `uq_routes_pair` makes
-`(origin, destination)` unique. Ad-hoc destinations simply create a new route (decision D2);
-`service_requests.route_id` is `NOT NULL`.
+`Route` = an **ordered list of stops** (origin and destination are the first/last snapshots) plus
+estimated km and description. The full path is `fn_route_label` (`A -> B -> C`); `route_stops`
+holds the sequence and `fn_route_signature` rejects a duplicate ordered list (BR-26). Ad-hoc
+destinations simply create a new route (decision D2); `service_requests.route_id` is `NOT NULL`.
 
 | Operation | Service | Permission |
 | --- | --- | --- |
-| Search / list all / find | `RouteService` | none |
-| Save / delete | `RouteService` | `routes.write` |
+| Search / list all / find / stops | `RouteService` | none |
+| Save (header + stops) / delete | `RouteService` | `routes.write` |
 
-Delete is blocked when the route has requests or rates (`sp_route_delete`).
+Save writes the header and replaces the stop list in one transaction. Delete is blocked when the
+route has requests or rates (`sp_route_delete`); a stop already visited by a trip cannot be removed.
 
 ## UI
 

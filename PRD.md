@@ -188,11 +188,12 @@ The ER design in the SQL/PDF is a solid base. It maps well to the interview. Bef
 ```
 roles ─< role_permissions >─ permissions
 roles ─< users >─ employees ─ licenses            (employees = operators + staff)
-clients ─< client_rates >─ routes
+clients ─< client_rates >─ routes ─< route_stops
 clients ─< service_requests >─ routes
 service_requests ─< request_packages
 service_requests ─ 1:1 ─ trips >─ vehicles
                           trips >─ employees
+                          trips ─< trip_stop_arrivals >─ route_stops
 trips ─< expenses          trips ─< advances
 trips ─< incidents         trips ─ 1:1 ─ deliveries
 vehicles ─< fuel_loads >─ trips (optional)
@@ -276,6 +277,9 @@ Each rule gets an ID so code, tests and commits can reference it.
 | BR-22 | Every create/update of key operations stores `created_by`/`updated_by`. | services |
 | BR-23 | Users need a permission for each service operation; disabled users cannot log in. | `AuthService` |
 | BR-24 | Passwords are stored only as BCrypt hashes; never logged. | `AuthService` |
+| BR-25 | An operator's licence type must be one of the allowed values (`Federal A..E`, `Estatal`, `Otro`); the internal licence number (`LIC-MRJ-####`) is allocated by the database when blank. | DB `CHECK`, `fn_next_license_number`, `sp_employee_save` |
+| BR-26 | A route is an **ordered list of stops**; its label is `A -> B -> C`, an identical ordered list is rejected, and a trip records the **actual arrival** at each planned stop. | `route_stops`, `trip_stop_arrivals`, `fn_route_label`, `sp_route_*`, `TripService` |
+| BR-27 | Hard delete is restricted to untouched records: a request with an assigned trip or an invoice, a paid/cancelled invoice, a package after departure, and a user deleting itself or the last administrator are refused; cancel instead. | `sp_*_delete` guards, services, views |
 
 ---
 
@@ -303,7 +307,7 @@ Priority: **P0** = MVP essential · **P1** = important · **P2** = nice to have.
 ### 7.3 Routes
 | ID | Requirement | Pri |
 |---|---|---|
-| FR-RTE-1 | CRUD routes (origin, destination, estimated km, description) | P0 |
+| FR-RTE-1 | CRUD routes as an ordered list of stops (origin, intermediate stops, destination, estimated km, description) | P0 |
 | FR-RTE-2 | Route stats: trips count, avg duration, avg cost, avg profit | P2 |
 
 ### 7.4 Service requests
@@ -330,7 +334,7 @@ Priority: **P0** = MVP essential · **P1** = important · **P2** = nice to have.
 ### 7.6 Operators and licenses
 | ID | Requirement | Pri |
 |---|---|---|
-| FR-OPR-1 | CRUD employees/operators with personal, emergency-contact and license data | P0 |
+| FR-OPR-1 | CRUD employees/operators with personal, emergency-contact and license data (controlled licence type, auto-assigned internal number) | P0 |
 | FR-OPR-2 | Manage operator status (vacation, incapacitated, resting…) | P0 |
 | FR-OPR-3 | Expiring/expired licenses list and dashboard warning | P1 |
 | FR-OPR-4 | Operator history: trips performed | P2 |
@@ -580,6 +584,8 @@ Build in this order, one vertical slice each: **Clients → Routes → Client ra
 | D7 | Soft delete via status for normal lifecycle, plus an explicit confirmed hard delete | Keep history by default; allow cleanup when truly needed (BR-14) |
 | D8 | Invoice `paid`/`overdue` derived from payments and dates | Avoids inconsistent stored state |
 | D9 | Feature-based packages | Changes stay local |
+| D10 | Routes are an ordered `route_stops` list (origin/destination kept as first/last snapshots); trips record per-stop arrivals | Distinguishes A→B→C from A→C without rewriting every existing query |
+| D11 | Hard delete is allowed only for untouched records (BR-27); live records are cancelled | Protects history and avoids accidental cascade losses |
 
 ## 14. Glossary
 

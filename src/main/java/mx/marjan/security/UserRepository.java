@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import mx.marjan.shared.Database;
+import mx.marjan.shared.Result;
 
 /** The only place with SQL for users, roles and permissions (stored procedures). */
 public class UserRepository {
@@ -55,8 +56,8 @@ public class UserRepository {
         return Database.asLong(out[0]);
     }
 
-    public void delete(long id) {
-        Database.callNoOut("{call sp_user_delete(?)}", id);
+    public Result<Void> delete(long id, long actorId) {
+        return Database.callVoid("{call sp_user_delete(?,?,?)}", id, actorId);
     }
 
     public void update(long id, String username, long roleId, Long employeeId, UserStatus status) {

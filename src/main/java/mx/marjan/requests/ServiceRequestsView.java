@@ -199,14 +199,12 @@ public class ServiceRequestsView extends BaseView {
                 .addCombo("route", "Ruta", routes.toArray(), routes.get(0))
                 .addText("cargo", "Descripcion de la mercancia", "", "Resumen; el detalle va en los paquetes")
                 .addText("weight", "Peso manual (kg)", "0", "Solo si no captura paquetes")
-                .addText("pickup", "Recoleccion (opcional)", "", "Formato: AAAA-MM-DD HH:MM")
-                .addText("delivery", "Entrega (opcional)", "", "Formato: AAAA-MM-DD HH:MM")
+                .addDateTime("pickup", "Recoleccion (opcional)", null)
+                .addDateTime("delivery", "Entrega (opcional)", null)
                 .addCheck("documents", "Requiere documentacion", true)
                 .addArea("notes", "Observaciones", "", "Notas internas (opcional)")
                 .addComputed("total", "Peso total (calculado)", () -> weightLabel(packages.totalWeight()));
         form.validate("weight", Validators.number());
-        form.validate("pickup", Validators.dateTime());
-        form.validate("delivery", Validators.dateTime());
         packages.setOnChange(form::refresh);
         form.addSection(packages);
         ModalForm.show(this, "Nueva solicitud", form, () -> {
@@ -215,12 +213,8 @@ public class ServiceRequestsView extends BaseView {
                 return weightResult;
             }
             BigDecimal weight = weightResult.value();
-            LocalDateTime pickup = optionalDateTime(form.text("pickup"));
-            LocalDateTime delivery = optionalDateTime(form.text("delivery"));
-            if (!form.text("pickup").isBlank() && pickup == null
-                    || !form.text("delivery").isBlank() && delivery == null) {
-                return Result.err("Las fechas deben tener el formato AAAA-MM-DD HH:MM");
-            }
+            LocalDateTime pickup = form.dateTime("pickup");
+            LocalDateTime delivery = form.dateTime("delivery");
             Client client = (Client) form.selected("client");
             Route route = (Route) form.selected("route");
             ServiceRequest draft = new ServiceRequest(0, "", client.id(), client.name(), route.id(),
@@ -242,7 +236,8 @@ public class ServiceRequestsView extends BaseView {
     }
 
     private void showEditForm(ServiceRequest request, List<CargoPackage> existingPackages) {
-        PackageEditorPanel packages = new PackageEditorPanel(request.id(), existingPackages);
+        PackageEditorPanel packages = new PackageEditorPanel(request.id(), existingPackages,
+                isCargoLocked(request.status()));
         FormPanel form = new FormPanel()
                 .addText("cargo", "Descripcion de la mercancia", request.cargoDescription(),
                         "Resumen; el detalle va en los paquetes")
@@ -343,15 +338,11 @@ public class ServiceRequestsView extends BaseView {
             return;
         }
         FormPanel form = new FormPanel()
-                .addText("pickup", "Recoleccion", Dates.format(request.pickupScheduled()),
-                        "Formato: AAAA-MM-DD HH:MM")
-                .addText("delivery", "Entrega", Dates.format(request.deliveryScheduled()),
-                        "Formato: AAAA-MM-DD HH:MM");
-        form.validate("pickup", Validators.dateTime());
-        form.validate("delivery", Validators.dateTime());
+                .addDateTime("pickup", "Recoleccion", request.pickupScheduled())
+                .addDateTime("delivery", "Entrega", request.deliveryScheduled());
         ModalForm.show(this, "Programar " + request.folio(), form, () -> {
-            LocalDateTime pickup = Dates.parseDateTime(form.text("pickup")).orElse(null);
-            LocalDateTime delivery = Dates.parseDateTime(form.text("delivery")).orElse(null);
+            LocalDateTime pickup = form.dateTime("pickup");
+            LocalDateTime delivery = form.dateTime("delivery");
             return service.schedule(request.id(), pickup, delivery);
         }, this::reload);
     }
@@ -428,9 +419,21 @@ public class ServiceRequestsView extends BaseView {
         if (request == null) {
             return;
         }
+        if (request.status() == RequestStatus.ASSIGNED || request.status() == RequestStatus.IN_TRANSIT
+                || request.status() == RequestStatus.DELIVERED || request.status() == RequestStatus.CLOSED) {
+            Ui.info(this, "No se puede eliminar una solicitud con viaje asignado o entregada. "
+                    + "Use 'Cancelar' para conservar el historial.");
+            return;
+        }
         Ui.delete(this, "la solicitud " + request.folio()
-                        + " y todo lo relacionado (viaje, gastos, anticipos, incidencias, entrega, factura y pagos)",
+                        + " y todo lo relacionado (viaje, gastos, anticipos, incidencias, entrega y factura)",
                 () -> service.delete(request.id()), this::reload);
+    }
+
+    /** Cargo is frozen once the trip has started (BR-27). */
+    private static boolean isCargoLocked(RequestStatus status) {
+        return status == RequestStatus.IN_TRANSIT || status == RequestStatus.DELIVERED
+                || status == RequestStatus.CLOSED;
     }
 
     private void openDetail() {
@@ -439,9 +442,5 @@ public class ServiceRequestsView extends BaseView {
             return;
         }
         ServiceRequestDetailDialog.show(this, request);
-    }
-
-    private LocalDateTime optionalDateTime(String text) {
-        return text == null || text.isBlank() ? null : Dates.parseDateTime(text).orElse(null);
     }
 }

@@ -71,8 +71,7 @@ public class InvoiceService {
         if (!Session.has(Permissions.PAYMENTS_WRITE)) {
             return Result.err("No tiene permiso para eliminar pagos");
         }
-        payments.delete(id);
-        return Result.ok(null);
+        return payments.delete(id);
     }
 
     /** BR-19 / FR-INV-3: recomputes paid/overdue for every open invoice. Returns how many changed. */

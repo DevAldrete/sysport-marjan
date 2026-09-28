@@ -39,6 +39,7 @@ import mx.marjan.shared.Ui;
 public class TripDetailDialog extends JDialog {
 
     private final Trip trip;
+    private final TripService tripService = new TripService();
     private final ExpenseService expenseService = new ExpenseService();
     private final FuelService fuelService = new FuelService();
     private final AdvanceService advanceService = new AdvanceService();
@@ -56,6 +57,7 @@ public class TripDetailDialog extends JDialog {
         this.trip = trip;
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Resumen", summaryPanel());
+        tabs.addTab("Paradas", stopsPanel());
         tabs.addTab("Gastos", expensesPanel());
         tabs.addTab("Combustible", fuelPanel());
         tabs.addTab("Anticipos", advancesPanel());
@@ -96,6 +98,64 @@ public class TripDetailDialog extends JDialog {
         return panel;
     }
 
+    private JPanel stopsPanel() {
+        RecordTableModel<TripStop> model = new RecordTableModel<>(List.of(
+                RecordTableModel.Column.of("#", TripStop::sequenceNo),
+                RecordTableModel.Column.text("Parada", TripStop::location, 40),
+                RecordTableModel.Column.of("Llegada", stop -> stop.visited()
+                        ? Dates.format(stop.arrivedAt()) : "Pendiente"),
+                RecordTableModel.Column.text("Notas", stop -> stop.notes() == null ? "" : stop.notes(), 40)));
+        RecordTablePanel<TripStop> panel = new RecordTablePanel<>(model);
+        Runnable reload = () -> Async.run(() -> tripService.stops(trip.id()), panel::setRows,
+                failure -> Ui.failure(this, failure));
+        panel.withActions(
+                Ui.button("Marcar llegada", "Registrar la llegada real a la parada",
+                        () -> openStopArrivalForm(panel, reload)),
+                Ui.button("Quitar llegada", "Borrar la llegada registrada en la parada",
+                        () -> removeStopArrival(panel, reload)),
+                Ui.button("Recargar", reload));
+        reload.run();
+        return panel;
+    }
+
+    private void openStopArrivalForm(RecordTablePanel<TripStop> panel, Runnable reload) {
+        TripStop selected = panel.selected();
+        if (selected == null) {
+            Ui.info(this, "Seleccione una parada");
+            return;
+        }
+        java.time.LocalDateTime initial = selected.visited() ? selected.arrivedAt() : Dates.now();
+        FormPanel form = new FormPanel()
+                .addDateTime("arrived", "Llegada", initial)
+                .addText("notes", "Notas", selected.notes() == null ? "" : selected.notes());
+        ModalForm.show(this, "Llegada a " + selected.location(), form, () -> {
+            java.time.LocalDateTime arrived = form.dateTime("arrived");
+            if (arrived == null) {
+                return Result.err("La fecha y hora son obligatorias");
+            }
+            return tripService.saveStopArrival(trip.id(), selected.routeStopId(), arrived,
+                    form.text("notes"));
+        }, reload);
+    }
+
+    private void removeStopArrival(RecordTablePanel<TripStop> panel, Runnable reload) {
+        TripStop selected = panel.selected();
+        if (selected == null || !selected.visited()) {
+            Ui.info(this, "Seleccione una parada con llegada registrada");
+            return;
+        }
+        if (!Ui.confirm(this, "Quitar la llegada a " + selected.location() + "?")) {
+            return;
+        }
+        Async.run(() -> tripService.deleteStopArrival(selected.arrivalId()), result -> {
+            if (result.isErr()) {
+                Ui.error(this, "No se puede quitar la llegada", result.problems());
+            } else {
+                reload.run();
+            }
+        }, failure -> Ui.failure(this, failure));
+    }
+
     private JPanel expensesPanel() {
         RecordTableModel<Expense> model = new RecordTableModel<>(List.of(
                 RecordTableModel.Column.of("Fecha", expense -> Dates.format(expense.expenseDate())),
@@ -124,14 +184,14 @@ public class TripDetailDialog extends JDialog {
         FormPanel form = new FormPanel()
                 .addCombo("type", "Tipo", ExpenseType.values(), ExpenseType.TOLLS)
                 .addText("amount", "Importe", "0")
-                .addText("date", "Fecha (yyyy-MM-dd)", Dates.format(Dates.today()))
+                .addDate("date", "Fecha", Dates.today())
                 .addText("description", "Descripcion", "");
         ModalForm.show(this, "Gasto del viaje " + trip.folio(), form, () -> {
             Result<BigDecimal> amountResult = Money.require(form.text("amount"), "importe");
             if (amountResult.isErr()) {
                 return amountResult;
             }
-            LocalDate date = Dates.parseDate(form.text("date")).orElse(null);
+            LocalDate date = form.date("date");
             Expense expense = new Expense(0, trip.id(), trip.folio(),
                     (ExpenseType) form.selected("type"), amountResult.value(), date, form.text("description"));
             return expenseService.register(expense);
@@ -199,13 +259,13 @@ public class TripDetailDialog extends JDialog {
     private void openAdvanceForm(Runnable onSaved) {
         FormPanel form = new FormPanel()
                 .addText("amount", "Monto entregado", "0")
-                .addText("date", "Fecha de entrega (yyyy-MM-dd)", Dates.format(Dates.today()));
+                .addDate("date", "Fecha de entrega", Dates.today());
         ModalForm.show(this, "Anticipo del viaje " + trip.folio(), form, () -> {
             Result<BigDecimal> amountResult = Money.require(form.text("amount"), "monto entregado");
             if (amountResult.isErr()) {
                 return amountResult;
             }
-            LocalDate date = Dates.parseDate(form.text("date")).orElse(null);
+            LocalDate date = form.date("date");
             Advance advance = new Advance(0, trip.id(), trip.folio(), trip.employeeId(),
                     trip.employeeName(), amountResult.value(), date, AdvanceStatus.PENDING, null);
             return advanceService.register(advance);
@@ -239,22 +299,15 @@ public class TripDetailDialog extends JDialog {
 
     private void openIncidentForm(Runnable onSaved) {
         FormPanel form = new FormPanel()
-                .addText("date", "Fecha (yyyy-MM-dd)", Dates.format(Dates.today()))
-                .addText("time", "Hora (HH:mm)", "")
+                .addDateTime("when", "Fecha y hora", Dates.now())
                 .addCombo("type", "Tipo", IncidentType.values(), IncidentType.OTHER)
                 .addText("location", "Ubicacion", "")
                 .addArea("description", "Descripcion", "")
                 .addArea("actions", "Acciones realizadas", "");
         ModalForm.show(this, "Incidencia del viaje " + trip.folio(), form, () -> {
-            LocalDate date = Dates.parseDate(form.text("date")).orElse(null);
-            java.time.LocalTime time = null;
-            if (!form.text("time").isBlank()) {
-                try {
-                    time = java.time.LocalTime.parse(form.text("time"));
-                } catch (RuntimeException failure) {
-                    return Result.err("La hora debe tener el formato HH:mm");
-                }
-            }
+            java.time.LocalDateTime when = form.dateTime("when");
+            LocalDate date = when == null ? null : when.toLocalDate();
+            java.time.LocalTime time = when == null ? null : when.toLocalTime();
             Incident incident = new Incident(0, trip.id(), trip.folio(), date, time,
                     form.text("location"), (IncidentType) form.selected("type"),
                     form.text("description"), form.text("actions"));
@@ -351,14 +404,14 @@ public class TripDetailDialog extends JDialog {
 
     private void openDeliveryForm(JLabel status) {
         FormPanel form = new FormPanel()
-                .addText("datetime", "Fecha y hora (yyyy-MM-dd HH:mm)", Dates.format(Dates.now()))
+                .addDateTime("datetime", "Fecha y hora", Dates.now())
                 .addText("receivedBy", "Recibio", "")
                 .addText("evidence", "Referencia de evidencia", "")
                 .addCombo("status", "Estado de la entrega", DeliveryStatus.values(), DeliveryStatus.COMPLETE);
         ModalForm.show(this, "Entrega del viaje " + trip.folio(), form, () -> {
-            java.time.LocalDateTime dateTime = Dates.parseDateTime(form.text("datetime")).orElse(null);
+            java.time.LocalDateTime dateTime = form.dateTime("datetime");
             if (dateTime == null) {
-                return Result.err("La fecha y hora son obligatorias (yyyy-MM-dd HH:mm)");
+                return Result.err("La fecha y hora son obligatorias");
             }
             Delivery delivery = new Delivery(0, trip.id(), trip.folio(), dateTime,
                     form.text("receivedBy"), form.text("evidence"),

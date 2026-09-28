@@ -20,6 +20,7 @@ import mx.marjan.shared.Result;
 public class TripService {
 
     private final TripRepository trips = new TripRepository();
+    private final TripStopRepository tripStops = new TripStopRepository();
     private final VehicleRepository vehicles = new VehicleRepository();
     private final EmployeeRepository employees = new EmployeeRepository();
     private final ServiceRequestRepository requests = new ServiceRequestRepository();
@@ -117,6 +118,28 @@ public class TripService {
             return Result.err("No tiene permiso para cerrar solicitudes");
         }
         return requests.close(requestId, Session.userId());
+    }
+
+    /** BR-26: the trip's planned stops with their recorded arrivals. */
+    public List<TripStop> stops(long tripId) {
+        return tripStops.listByTrip(tripId);
+    }
+
+    /** BR-26: records (or corrects) the actual arrival at one of the trip's stops. */
+    public Result<Void> saveStopArrival(long tripId, long routeStopId, LocalDateTime arrivedAt,
+            String notes) {
+        if (!Session.has(Permissions.TRIPS_WRITE)) {
+            return Result.err("No tiene permiso para registrar llegadas a paradas");
+        }
+        return tripStops.saveArrival(tripId, routeStopId, arrivedAt, notes, Session.userId());
+    }
+
+    public Result<Void> deleteStopArrival(long arrivalId) {
+        if (!Session.has(Permissions.TRIPS_WRITE)) {
+            return Result.err("No tiene permiso para quitar llegadas a paradas");
+        }
+        tripStops.deleteArrival(arrivalId);
+        return Result.ok(null);
     }
 
     private Result<Trip> afterMove(Result<Void> moved, long tripId) {

@@ -172,6 +172,7 @@ p: BEGIN
   SELECT * FROM v_route
   WHERE p_term IS NULL OR p_term = ''
      OR origin LIKE CONCAT('%', p_term, '%') OR destination LIKE CONCAT('%', p_term, '%')
+     OR route_label LIKE CONCAT('%', p_term, '%')
   ORDER BY origin, destination;
 END$$
 
@@ -216,9 +217,75 @@ p: BEGIN
     SET p_problems = 'No se puede eliminar: la ruta tiene solicitudes o tarifas';
     LEAVE p;
   END IF;
+  DELETE FROM route_stops WHERE route_id = p_id;
   DELETE FROM routes WHERE id = p_id;
   IF ROW_COUNT() = 0 THEN
     SET p_problems = 'Ruta no encontrada';
+  END IF;
+END$$
+
+-- BR-26: ordered stops of a route. Written row by row by the repository inside
+-- one Java transaction (see RouteRepository), so no transaction here.
+CREATE PROCEDURE sp_route_stops(IN p_route_id BIGINT)
+p: BEGIN
+  SELECT id, route_id, sequence_no, location
+  FROM route_stops WHERE route_id = p_route_id
+  ORDER BY sequence_no;
+END$$
+
+CREATE PROCEDURE sp_route_stop_save(IN p_id BIGINT, IN p_route_id BIGINT, IN p_sequence INT,
+    IN p_location VARCHAR(150), OUT p_new_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  SET p_problems = NULL;
+  SET p_new_id = NULL;
+  IF p_route_id IS NULL OR p_route_id = 0
+     OR (SELECT COUNT(*) FROM routes WHERE id = p_route_id) = 0 THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La ruta de la parada no existe');
+  END IF;
+  IF p_location IS NULL OR p_location = '' THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La parada es obligatoria');
+  END IF;
+  IF p_sequence IS NULL OR p_sequence <= 0 THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'El orden de la parada es invalido');
+  END IF;
+  IF p_problems IS NOT NULL THEN LEAVE p; END IF;
+
+  IF p_id IS NULL OR p_id = 0 THEN
+    CALL sp_next_id('route_stops', p_new_id);
+    INSERT INTO route_stops (id, route_id, sequence_no, location)
+    VALUES (p_new_id, p_route_id, p_sequence, p_location);
+  ELSE
+    SET p_new_id = p_id;
+    UPDATE route_stops SET sequence_no = p_sequence, location = p_location
+    WHERE id = p_id AND route_id = p_route_id;
+    IF (SELECT COUNT(*) FROM route_stops WHERE id = p_id) = 0 THEN
+      SET p_problems = 'Parada no encontrada';
+      SET p_new_id = NULL;
+    END IF;
+  END IF;
+END$$
+
+-- A stop already visited by a trip cannot be removed: the arrival is history.
+CREATE PROCEDURE sp_route_stop_delete(IN p_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  SET p_problems = NULL;
+  IF (SELECT COUNT(*) FROM trip_stop_arrivals WHERE route_stop_id = p_id) > 0 THEN
+    SET p_problems = 'No se puede quitar una parada con llegadas registradas';
+    LEAVE p;
+  END IF;
+  DELETE FROM route_stops WHERE id = p_id;
+END$$
+
+-- BR-26: reject a route whose ordered stops repeat another route's.
+CREATE PROCEDURE sp_route_duplicate(IN p_route_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  DECLARE v_signature VARCHAR(500);
+  SET p_problems = NULL;
+  SET v_signature = fn_route_signature(p_route_id);
+  IF v_signature IS NOT NULL
+     AND (SELECT COUNT(*) FROM routes r
+          WHERE r.id <> p_route_id AND fn_route_signature(r.id) = v_signature) > 0 THEN
+    SET p_problems = 'Ya existe una ruta con el mismo recorrido';
   END IF;
 END$$
 

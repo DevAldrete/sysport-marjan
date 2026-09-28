@@ -22,16 +22,27 @@ public class RouteService {
         return routes.findById(id);
     }
 
-    public Result<Route> save(Route route) {
+    public List<RouteStop> stops(long routeId) {
+        return routes.listStops(routeId);
+    }
+
+    public Result<Route> save(Route route, List<RouteStop> stops) {
         if (!Session.has(Permissions.ROUTES_WRITE)) {
             return Result.err("No tiene permiso para modificar rutas");
         }
-        Result<Long> saved = routes.save(route);
+        if (stops == null || stops.size() < 2) {
+            return Result.err("Una ruta debe tener al menos un origen y un destino");
+        }
+        for (RouteStop stop : stops) {
+            if (stop.location() == null || stop.location().isBlank()) {
+                return Result.err("Todas las paradas deben tener un nombre");
+            }
+        }
+        Result<Long> saved = routes.save(route, stops);
         if (saved.isErr()) {
             return Result.err(saved.problems());
         }
-        return Result.ok(new Route(saved.value(), route.origin(), route.destination(),
-                route.estimatedKm(), route.description()));
+        return routes.findById(saved.value()).map(Result::ok).orElse(Result.err("Ruta no encontrada"));
     }
 
     public Result<Void> delete(long id) {

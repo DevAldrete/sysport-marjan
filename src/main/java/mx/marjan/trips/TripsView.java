@@ -174,6 +174,11 @@ public class TripsView extends BaseView {
             Ui.info(this, "Seleccione un viaje");
             return;
         }
+        if (trip.status() != TripStatus.SCHEDULED && trip.status() != TripStatus.CANCELLED) {
+            Ui.info(this, "Solo se puede eliminar un viaje programado o cancelado. "
+                    + "Use 'Cancelar' para los viajes en curso.");
+            return;
+        }
         Ui.delete(this, "el viaje " + trip.folio()
                         + " y todo lo relacionado (gastos, anticipos, incidencias y entrega)",
                 () -> service.delete(trip.id()), this::reload);

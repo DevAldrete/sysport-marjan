@@ -4,6 +4,8 @@ import java.awt.Color;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -86,6 +88,28 @@ public final class FormPanel {
             refresh();
         });
         put(key, label, combo, null);
+        return this;
+    }
+
+    /** A calendar-backed date field. Blank means "no date" for optional fields. */
+    public FormPanel addDate(String key, String label, LocalDate value) {
+        DateField field = new DateField(value);
+        field.addChangeListener(() -> {
+            touched.add(key);
+            refresh();
+        });
+        put(key, label, field);
+        return this;
+    }
+
+    /** A calendar plus time-of-day field. Blank means "no date-time". */
+    public FormPanel addDateTime(String key, String label, LocalDateTime value) {
+        DateTimeField field = new DateTimeField(value);
+        field.addChangeListener(() -> {
+            touched.add(key);
+            refresh();
+        });
+        put(key, label, field);
         return this;
     }
 
@@ -350,6 +374,18 @@ public final class FormPanel {
 
     public Object selected(String key) {
         return ((JComboBox<?>) fields.get(key)).getSelectedItem();
+    }
+
+    /** The value of an {@link #addDate} field, or null when blank. */
+    public LocalDate date(String key) {
+        JComponent component = fields.get(key);
+        return component instanceof DateField field ? field.date() : null;
+    }
+
+    /** The value of an {@link #addDateTime} field, or null when blank. */
+    public LocalDateTime dateTime(String key) {
+        JComponent component = fields.get(key);
+        return component instanceof DateTimeField field ? field.dateTime() : null;
     }
 
     public boolean checked(String key) {

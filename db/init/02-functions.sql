@@ -176,6 +176,36 @@ BEGIN
       FROM invoices WHERE invoice_number LIKE CONCAT('INV-', p_year, '-%'));
 END$$
 
+-- BR-25: next internal license number, e.g. LIC-MRJ-0001. Assigned by the
+-- database so operators never have to invent or guess the format.
+CREATE FUNCTION fn_next_license_number()
+RETURNS VARCHAR(50)
+READS SQL DATA
+BEGIN
+  RETURN (SELECT CONCAT('LIC-MRJ-',
+      LPAD(COALESCE(MAX(CAST(SUBSTRING(license_number, 9) AS UNSIGNED)), 0) + 1, 4, '0'))
+      FROM licenses WHERE license_number LIKE 'LIC-MRJ-%');
+END$$
+
+-- BR-26: human label of a route's ordered stops, e.g. "A -> B -> C".
+CREATE FUNCTION fn_route_label(p_route_id BIGINT)
+RETURNS VARCHAR(500)
+READS SQL DATA
+BEGIN
+  RETURN (SELECT GROUP_CONCAT(location ORDER BY sequence_no SEPARATOR ' -> ')
+          FROM route_stops WHERE route_id = p_route_id);
+END$$
+
+-- BR-26: canonical signature of a route's ordered stops, used to reject
+-- duplicates that the old (origin, destination) unique key used to catch.
+CREATE FUNCTION fn_route_signature(p_route_id BIGINT)
+RETURNS VARCHAR(500)
+READS SQL DATA
+BEGIN
+  RETURN (SELECT GROUP_CONCAT(LOWER(location) ORDER BY sequence_no SEPARATOR '|')
+          FROM route_stops WHERE route_id = p_route_id);
+END$$
+
 -- Allocates the next id for a table from the sequences row (same policy as
 -- SequenceRepository: no AUTO_INCREMENT, primed from max(id) when missing).
 -- Allocates the next id for a table. The common path is a single atomic

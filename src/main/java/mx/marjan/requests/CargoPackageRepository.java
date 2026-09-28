@@ -54,7 +54,11 @@ public class CargoPackageRepository {
                 }
                 for (Long existing : listIds(connection, requestId)) {
                     if (!kept.contains(existing)) {
-                        Database.callNoOut(connection, "{call sp_package_delete(?)}", existing);
+                        Result<Void> removed = Database.callVoid(connection,
+                                "{call sp_package_delete(?,?)}", existing);
+                        if (removed.isErr()) {
+                            throw new PackageRejected(removed.problems());
+                        }
                     }
                 }
                 return Result.<Void>ok(null);
