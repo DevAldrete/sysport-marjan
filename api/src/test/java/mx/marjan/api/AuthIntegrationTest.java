@@ -10,6 +10,7 @@ import io.micronaut.http.HttpStatus;
 import io.micronaut.http.client.HttpClient;
 import io.micronaut.http.client.annotation.Client;
 import io.micronaut.http.client.exceptions.HttpClientResponseException;
+import io.micronaut.context.annotation.Property;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import jakarta.inject.Inject;
 import java.util.Map;
@@ -22,6 +23,7 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
  * {@code SYSPORT_IT=1 mvn -pl api test}.
  */
 @MicronautTest
+@Property(name = "micronaut.server.port", value = "-1")
 @EnabledIfEnvironmentVariable(named = "SYSPORT_IT", matches = "1")
 class AuthIntegrationTest {
 
