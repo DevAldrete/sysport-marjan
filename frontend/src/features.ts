@@ -115,6 +115,6 @@ export const features: Feature[] = [
     title: 'Usuarios',
     icon: ShieldCheck,
     permission: 'security.users',
-    component: () => import('@/views/ComingSoonView.vue'),
+    component: () => import('@/views/UsersView.vue'),
   },
 ]

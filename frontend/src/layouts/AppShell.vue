@@ -1,8 +1,13 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { RouterLink, RouterView, useRouter } from 'vue-router'
-import { ChevronsUpDown, LogOut } from '@lucide/vue'
+import { ChevronsUpDown, KeyRound, LogOut } from '@lucide/vue'
+import { motion } from 'motion-v'
+import { toast } from 'vue-sonner'
+import { z } from 'zod'
 
+import { problemsOf } from '@/api/errors'
+import FormDialog from '@/components/FormDialog.vue'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -28,6 +33,39 @@ const initials = computed(() => username.value.slice(0, 2).toUpperCase() || '?')
 function logout() {
   auth.clear()
   router.replace({ name: 'login' })
+}
+
+const passwordOpen = ref(false)
+const passwordProblems = ref<string[]>([])
+const passwordSubmitting = ref(false)
+
+const passwordFields = [
+  { key: 'currentPassword', label: 'Contrasena actual', type: 'password' as const, full: true },
+  { key: 'newPassword', label: 'Nueva contrasena', type: 'password' as const, full: true },
+]
+
+const passwordSchema = z.object({
+  currentPassword: z.string().min(1, 'Indique su contrasena actual'),
+  newPassword: z.string().min(6, 'Minimo 6 caracteres'),
+})
+
+function openPassword() {
+  passwordProblems.value = []
+  passwordOpen.value = true
+}
+
+async function savePassword(values: Record<string, unknown>) {
+  passwordProblems.value = []
+  passwordSubmitting.value = true
+  try {
+    await auth.changePassword(values.currentPassword as string, values.newPassword as string)
+    toast.success('Contrasena actualizada')
+    passwordOpen.value = false
+  } catch (failure) {
+    passwordProblems.value = problemsOf(failure)
+  } finally {
+    passwordSubmitting.value = false
+  }
 }
 </script>
 
@@ -68,9 +106,13 @@ function logout() {
             </span>
             <ChevronsUpDown class="size-4 text-muted-foreground" />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" class="w-48">
+          <DropdownMenuContent align="end" class="w-52">
             <DropdownMenuLabel>Mi sesion</DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuItem @select="openPassword">
+              <KeyRound class="size-4" />
+              Cambiar contrasena
+            </DropdownMenuItem>
             <DropdownMenuItem class="text-destructive" @select="logout">
               <LogOut class="size-4" />
               Cerrar sesion
@@ -80,8 +122,27 @@ function logout() {
       </header>
 
       <main class="flex-1 p-6">
-        <RouterView />
+        <RouterView v-slot="{ Component, route }">
+          <motion.div
+            :key="route.path"
+            :initial="{ opacity: 0, y: 8 }"
+            :animate="{ opacity: 1, y: 0 }"
+            :transition="{ duration: 0.18, ease: 'easeOut' }"
+          >
+            <component :is="Component" />
+          </motion.div>
+        </RouterView>
       </main>
     </div>
+
+    <FormDialog
+      v-model:open="passwordOpen"
+      title="Cambiar contrasena"
+      :fields="passwordFields"
+      :schema="passwordSchema"
+      :problems="passwordProblems"
+      :submitting="passwordSubmitting"
+      @submit="savePassword"
+    />
   </div>
 </template>

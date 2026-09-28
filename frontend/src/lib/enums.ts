@@ -123,6 +123,11 @@ export const paymentMethods: Option[] = [
   { value: 'other', label: 'Otro' },
 ]
 
+export const userStatuses: Option[] = [
+  { value: 'active', label: 'Activo' },
+  { value: 'disabled', label: 'Deshabilitado' },
+]
+
 export function labelOf(options: Option[], value: string | null | undefined): string {
   return options.find((option) => option.value === value)?.label ?? (value ?? '')
 }

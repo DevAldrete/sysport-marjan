@@ -252,3 +252,17 @@ export interface Report {
   headers: string[]
   rows: (string | number | null)[][]
 }
+
+export interface UserAccount {
+  id: number
+  employeeId: number | null
+  username: string
+  roleId: number
+  roleName: string
+  status: string
+}
+
+export interface Role {
+  id: number
+  name: string
+}
