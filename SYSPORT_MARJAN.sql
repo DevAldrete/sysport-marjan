@@ -430,6 +430,15 @@ BEGIN
   END;
 END$$
 
+-- BR-03: a request can (re)schedule its dates while it has not started:
+-- authorized (first schedule), scheduled (typo fix) and assigned (before the
+-- trip departs). in_transit and later are frozen.
+CREATE FUNCTION fn_request_reschedulable(p_status VARCHAR(20))
+RETURNS TINYINT DETERMINISTIC
+BEGIN
+  RETURN (p_status IN ('authorized','scheduled','assigned'));
+END$$
+
 -- BR-07 / BR-11: only 'available' vehicles may be assigned.
 CREATE FUNCTION fn_vehicle_assignable(p_status VARCHAR(20))
 RETURNS TINYINT DETERMINISTIC
@@ -1561,7 +1570,13 @@ p: BEGIN
     SET p_problems = 'Solicitud no encontrada';
     LEAVE p;
   END IF;
-  IF v_req_status <> 'scheduled' THEN
+  -- 'assigned' with a still-scheduled trip is the reassignment case: the
+  -- request is ready to be pointed at a different unit/operator.
+  IF v_req_status <> 'scheduled'
+     AND NOT (v_req_status = 'assigned'
+              AND EXISTS (SELECT 1 FROM trips t
+                          WHERE t.service_request_id = p_request_id
+                            AND t.status = 'scheduled')) THEN
     SET p_problems = CONCAT_WS('; ', p_problems,
         'La solicitud debe estar programada para poder asignarle un viaje');
   END IF;
@@ -1632,10 +1647,14 @@ p: BEGIN
 END$$
 
 -- BR-03: schedule only from authorized; delivery must be after pickup.
+-- BR-03: schedule an authorized request, or correct the dates of one that has
+-- not started (scheduled/assigned). Only 'authorized' advances the lifecycle;
+-- rescheduling keeps the status so the assignment and sweep keep working.
 CREATE PROCEDURE sp_schedule_request(IN p_request_id BIGINT, IN p_pickup DATETIME,
     IN p_delivery DATETIME, IN p_user_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
   DECLARE v_status VARCHAR(20) DEFAULT NULL;
+  DECLARE v_trip_status VARCHAR(20) DEFAULT NULL;
   DECLARE EXIT HANDLER FOR SQLEXCEPTION
   BEGIN
     ROLLBACK; SET p_problems = 'Error inesperado al programar la solicitud';
@@ -1647,8 +1666,8 @@ p: BEGIN
   IF v_status IS NULL THEN
     ROLLBACK; SET p_problems = 'Solicitud no encontrada'; LEAVE p;
   END IF;
-  IF NOT fn_request_can_transition(v_status, 'scheduled') THEN
-    ROLLBACK; SET p_problems = CONCAT('No se puede pasar de ', v_status, ' a scheduled'); LEAVE p;
+  IF NOT fn_request_reschedulable(v_status) THEN
+    ROLLBACK; SET p_problems = CONCAT('No se puede programar una solicitud en estado ', v_status); LEAVE p;
   END IF;
   IF p_pickup IS NULL OR p_delivery IS NULL THEN
     ROLLBACK; SET p_problems = 'Las fechas programadas de recoleccion y entrega son obligatorias'; LEAVE p;
@@ -1656,10 +1675,22 @@ p: BEGIN
   IF p_delivery <= p_pickup THEN
     ROLLBACK; SET p_problems = 'La fecha de entrega debe ser posterior a la de recoleccion'; LEAVE p;
   END IF;
+  -- Rescheduling an assigned request must not touch a trip already on the road.
+  IF v_status = 'assigned' THEN
+    SELECT status INTO v_trip_status FROM trips
+      WHERE service_request_id = p_request_id FOR UPDATE;
+    IF v_trip_status IS NULL OR v_trip_status <> 'scheduled' THEN
+      ROLLBACK; SET p_problems = 'No se puede reprogramar: el viaje ya inicio'; LEAVE p;
+    END IF;
+  END IF;
   UPDATE service_requests
     SET pickup_date_scheduled = p_pickup, delivery_date_scheduled = p_delivery,
-        status = 'scheduled', updated_by = p_user_id
+        status = IF(v_status = 'authorized', 'scheduled', v_status), updated_by = p_user_id
     WHERE id = p_request_id;
+  IF v_status = 'assigned' THEN
+    UPDATE trips SET planned_start = p_pickup, planned_end = p_delivery, updated_by = p_user_id
+      WHERE service_request_id = p_request_id;
+  END IF;
   COMMIT;
 END$$
 
@@ -1772,11 +1803,13 @@ p: BEGIN
   ORDER BY pickup_date_scheduled;
 END$$
 
+-- FR-INV-1: only delivered/closed requests can be invoiced (matches
+-- sp_create_invoice_from_request), so this list never offers unbillable rows.
 CREATE PROCEDURE sp_requests_pending_billing()
 p: BEGIN
   SELECT * FROM v_service_request
   WHERE agreed_rate IS NOT NULL AND agreed_rate > 0
-    AND status <> 'cancelled'
+    AND status IN ('delivered','closed')
     AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.service_request_id = v_service_request.id)
   ORDER BY created_at DESC;
 END$$
@@ -1899,6 +1932,7 @@ p: BEGIN
   DECLARE v_req_status VARCHAR(20) DEFAULT NULL;
   DECLARE v_start DATETIME DEFAULT NULL;
   DECLARE v_end DATETIME DEFAULT NULL;
+  DECLARE v_est_km DECIMAL(10,1) DEFAULT NULL;
   DECLARE v_audit_id BIGINT;
   DECLARE EXIT HANDLER FOR SQLEXCEPTION
   BEGIN
@@ -1912,9 +1946,10 @@ p: BEGIN
   SELECT id INTO @lock_v FROM vehicles WHERE id = p_vehicle_id FOR UPDATE;
   SELECT id INTO @lock_e FROM employees WHERE id = p_operator_id FOR UPDATE;
 
-  SELECT status, pickup_date_scheduled, delivery_date_scheduled
-    INTO v_req_status, v_start, v_end
-    FROM service_requests WHERE id = p_request_id FOR UPDATE;
+  SELECT sr.status, sr.pickup_date_scheduled, sr.delivery_date_scheduled, r.estimated_km
+    INTO v_req_status, v_start, v_end, v_est_km
+    FROM service_requests sr JOIN routes r ON r.id = sr.route_id
+    WHERE sr.id = p_request_id FOR UPDATE;
   IF v_req_status IS NULL THEN
     ROLLBACK; SET p_problems = 'Solicitud no encontrada'; LEAVE p;
   END IF;
@@ -1926,9 +1961,9 @@ p: BEGIN
   END IF;
 
   CALL sp_next_id('trips', p_trip_id);
-  INSERT INTO trips (id, service_request_id, vehicle_id, employee_id,
+  INSERT INTO trips (id, service_request_id, vehicle_id, employee_id, estimated_km,
                      planned_start, planned_end, status, created_by, updated_by)
-    VALUES (p_trip_id, p_request_id, p_vehicle_id, p_operator_id,
+    VALUES (p_trip_id, p_request_id, p_vehicle_id, p_operator_id, v_est_km,
             v_start, v_end, 'scheduled', p_user_id, p_user_id);
   UPDATE service_requests SET status = 'assigned', updated_by = p_user_id WHERE id = p_request_id;
   CALL sp_next_id('audit_log', v_audit_id);
@@ -2073,6 +2108,12 @@ p: BEGIN
   SELECT * FROM v_trip WHERE service_request_id = p_request_id;
 END$$
 
+-- The vehicle that ran a given trip (used when registering a fuel load).
+CREATE PROCEDURE sp_trip_vehicle(IN p_trip_id BIGINT)
+p: BEGIN
+  SELECT vehicle_id FROM trips WHERE id = p_trip_id;
+END$$
+
 -- BR-15: reassign before departure, validated like a new assignment and audited.
 -- The validators intentionally ignore the request's own trip, so they can be
 -- reused here without flagging the current trip as a conflict.
@@ -2098,9 +2139,11 @@ p: BEGIN
   IF v_status <> 'scheduled' THEN
     ROLLBACK; SET p_problems = 'Solo se puede reasignar un viaje programado (aun no inicia)'; LEAVE p;
   END IF;
+  -- After assignment the request is 'assigned' (sp_assign_trip); reassignment
+  -- happens while its trip is still 'scheduled'. BR-15 = reassign before transit.
   SELECT status INTO v_req_status FROM service_requests WHERE id = v_request FOR UPDATE;
-  IF v_req_status <> 'scheduled' THEN
-    ROLLBACK; SET p_problems = 'La solicitud debe estar programada para reasignar el viaje'; LEAVE p;
+  IF v_req_status <> 'assigned' THEN
+    ROLLBACK; SET p_problems = 'La solicitud debe estar asignada para reasignar el viaje'; LEAVE p;
   END IF;
 
   -- Lock the candidate resources before checking overlaps, like a new assignment.

@@ -52,6 +52,8 @@ public class ServiceRequestsView extends BaseView {
     private final JTextField toField = new JTextField(10);
     private final JComboBox<Object> clientFilter = new JComboBox<>();
     private final JComboBox<Object> statusFilter = new JComboBox<>();
+    // Keep the lifecycle moving while the screen is open (BR-03 automation).
+    private final javax.swing.Timer sweepTimer = new javax.swing.Timer(60_000, event -> sweep());
 
     public ServiceRequestsView() {
         Ui.onEnter(folioField, this::reload);
@@ -60,8 +62,13 @@ public class ServiceRequestsView extends BaseView {
         add(Ui.scroll(table), BorderLayout.CENTER);
         reloadClients();
         reload();
-        // Keep the lifecycle moving while the screen is open (BR-03 automation).
-        new javax.swing.Timer(60_000, event -> sweep()).start();
+        sweepTimer.start();
+    }
+
+    @Override
+    public void removeNotify() {
+        sweepTimer.stop();
+        super.removeNotify();
     }
 
     private void sweep() {
@@ -210,19 +217,34 @@ public class ServiceRequestsView extends BaseView {
                 .addText("cargo", "Descripcion de la mercancia", request.cargoDescription(), "Que se va a transportar")
                 .addText("weight", "Peso aproximado (kg)",
                         request.estimatedWeight() == null ? "0" : request.estimatedWeight().toPlainString(),
-                        "En kilogramos, ej. 1200")
-                .addCheck("documents", "Requiere documentacion", request.requiresDocuments())
-                .addArea("notes", "Observaciones", request.notes(), "Notas internas (opcional)");
+                        "En kilogramos, ej. 1200");
         form.validate("weight", Validators.number());
+        // The agreed rate exists only after authorization; let it be corrected.
+        boolean editRate = request.agreedRate() != null;
+        if (editRate) {
+            form.addText("rate", "Tarifa acordada", request.agreedRate().toPlainString(),
+                    "Importe sin IVA; se corrige aqui si hubo un error");
+            form.validate("rate", Validators.money());
+        }
+        form.addCheck("documents", "Requiere documentacion", request.requiresDocuments())
+                .addArea("notes", "Observaciones", request.notes(), "Notas internas (opcional)");
         ModalForm.show(this, "Editar solicitud " + request.folio(), form, () -> {
             Result<BigDecimal> weightResult = Money.require(form.text("weight"), "peso aproximado");
             if (weightResult.isErr()) {
                 return weightResult;
             }
+            BigDecimal rate = request.agreedRate();
+            if (editRate) {
+                Result<BigDecimal> rateResult = Money.require(form.text("rate"), "tarifa acordada");
+                if (rateResult.isErr()) {
+                    return rateResult;
+                }
+                rate = rateResult.value();
+            }
             ServiceRequest updated = new ServiceRequest(request.id(), request.folio(),
                     request.clientId(), request.clientName(), request.routeId(), request.routeLabel(),
                     form.text("cargo"), weightResult.value(), request.pickupScheduled(),
-                    request.deliveryScheduled(), request.agreedRate(), form.checked("documents"),
+                    request.deliveryScheduled(), rate, form.checked("documents"),
                     request.status(), form.text("notes"), request.createdAt());
             return service.update(updated);
         }, this::reload);
@@ -275,8 +297,12 @@ public class ServiceRequestsView extends BaseView {
         if (request == null) {
             return;
         }
+        if (request.status() != RequestStatus.SCHEDULED) {
+            Ui.info(this, "La solicitud debe estar programada (autorizada y con fechas) para asignarle un viaje");
+            return;
+        }
         if (request.pickupScheduled() == null || request.deliveryScheduled() == null) {
-            Ui.info(this, "La solicitud debe estar programada");
+            Ui.info(this, "La solicitud debe tener recoleccion y entrega programadas");
             return;
         }
         Async.run(

@@ -46,6 +46,15 @@ BEGIN
   END;
 END$$
 
+-- BR-03: a request can (re)schedule its dates while it has not started:
+-- authorized (first schedule), scheduled (typo fix) and assigned (before the
+-- trip departs). in_transit and later are frozen.
+CREATE FUNCTION fn_request_reschedulable(p_status VARCHAR(20))
+RETURNS TINYINT DETERMINISTIC
+BEGIN
+  RETURN (p_status IN ('authorized','scheduled','assigned'));
+END$$
+
 -- BR-07 / BR-11: only 'available' vehicles may be assigned.
 CREATE FUNCTION fn_vehicle_assignable(p_status VARCHAR(20))
 RETURNS TINYINT DETERMINISTIC

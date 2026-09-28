@@ -27,7 +27,13 @@ p: BEGIN
     SET p_problems = 'Solicitud no encontrada';
     LEAVE p;
   END IF;
-  IF v_req_status <> 'scheduled' THEN
+  -- 'assigned' with a still-scheduled trip is the reassignment case: the
+  -- request is ready to be pointed at a different unit/operator.
+  IF v_req_status <> 'scheduled'
+     AND NOT (v_req_status = 'assigned'
+              AND EXISTS (SELECT 1 FROM trips t
+                          WHERE t.service_request_id = p_request_id
+                            AND t.status = 'scheduled')) THEN
     SET p_problems = CONCAT_WS('; ', p_problems,
         'La solicitud debe estar programada para poder asignarle un viaje');
   END IF;
@@ -98,10 +104,14 @@ p: BEGIN
 END$$
 
 -- BR-03: schedule only from authorized; delivery must be after pickup.
+-- BR-03: schedule an authorized request, or correct the dates of one that has
+-- not started (scheduled/assigned). Only 'authorized' advances the lifecycle;
+-- rescheduling keeps the status so the assignment and sweep keep working.
 CREATE PROCEDURE sp_schedule_request(IN p_request_id BIGINT, IN p_pickup DATETIME,
     IN p_delivery DATETIME, IN p_user_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
   DECLARE v_status VARCHAR(20) DEFAULT NULL;
+  DECLARE v_trip_status VARCHAR(20) DEFAULT NULL;
   DECLARE EXIT HANDLER FOR SQLEXCEPTION
   BEGIN
     ROLLBACK; SET p_problems = 'Error inesperado al programar la solicitud';
@@ -113,8 +123,8 @@ p: BEGIN
   IF v_status IS NULL THEN
     ROLLBACK; SET p_problems = 'Solicitud no encontrada'; LEAVE p;
   END IF;
-  IF NOT fn_request_can_transition(v_status, 'scheduled') THEN
-    ROLLBACK; SET p_problems = CONCAT('No se puede pasar de ', v_status, ' a scheduled'); LEAVE p;
+  IF NOT fn_request_reschedulable(v_status) THEN
+    ROLLBACK; SET p_problems = CONCAT('No se puede programar una solicitud en estado ', v_status); LEAVE p;
   END IF;
   IF p_pickup IS NULL OR p_delivery IS NULL THEN
     ROLLBACK; SET p_problems = 'Las fechas programadas de recoleccion y entrega son obligatorias'; LEAVE p;
@@ -122,10 +132,22 @@ p: BEGIN
   IF p_delivery <= p_pickup THEN
     ROLLBACK; SET p_problems = 'La fecha de entrega debe ser posterior a la de recoleccion'; LEAVE p;
   END IF;
+  -- Rescheduling an assigned request must not touch a trip already on the road.
+  IF v_status = 'assigned' THEN
+    SELECT status INTO v_trip_status FROM trips
+      WHERE service_request_id = p_request_id FOR UPDATE;
+    IF v_trip_status IS NULL OR v_trip_status <> 'scheduled' THEN
+      ROLLBACK; SET p_problems = 'No se puede reprogramar: el viaje ya inicio'; LEAVE p;
+    END IF;
+  END IF;
   UPDATE service_requests
     SET pickup_date_scheduled = p_pickup, delivery_date_scheduled = p_delivery,
-        status = 'scheduled', updated_by = p_user_id
+        status = IF(v_status = 'authorized', 'scheduled', v_status), updated_by = p_user_id
     WHERE id = p_request_id;
+  IF v_status = 'assigned' THEN
+    UPDATE trips SET planned_start = p_pickup, planned_end = p_delivery, updated_by = p_user_id
+      WHERE service_request_id = p_request_id;
+  END IF;
   COMMIT;
 END$$
 
@@ -238,11 +260,13 @@ p: BEGIN
   ORDER BY pickup_date_scheduled;
 END$$
 
+-- FR-INV-1: only delivered/closed requests can be invoiced (matches
+-- sp_create_invoice_from_request), so this list never offers unbillable rows.
 CREATE PROCEDURE sp_requests_pending_billing()
 p: BEGIN
   SELECT * FROM v_service_request
   WHERE agreed_rate IS NOT NULL AND agreed_rate > 0
-    AND status <> 'cancelled'
+    AND status IN ('delivered','closed')
     AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.service_request_id = v_service_request.id)
   ORDER BY created_at DESC;
 END$$

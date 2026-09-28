@@ -259,7 +259,7 @@ public class TripDetailDialog extends JDialog {
         JLabel status = new JLabel("Cargando...");
         JPanel panel = new JPanel(new BorderLayout(8, 8));
         panel.add(Ui.titled("Entrega registrada", status), BorderLayout.CENTER);
-        panel.add(Ui.row(Ui.button("Registrar / actualizar entrega", () -> openDeliveryForm()),
+        panel.add(Ui.row(Ui.button("Registrar / actualizar entrega", () -> openDeliveryForm(status)),
                 Ui.button("Recargar", () -> loadDelivery(status))), BorderLayout.SOUTH);
         loadDelivery(status);
         return panel;
@@ -279,19 +279,21 @@ public class TripDetailDialog extends JDialog {
         }, failure -> status.setText("Error al cargar"));
     }
 
-    private void openDeliveryForm() {
+    private void openDeliveryForm(JLabel status) {
         FormPanel form = new FormPanel()
                 .addText("datetime", "Fecha y hora (yyyy-MM-dd HH:mm)", Dates.format(Dates.now()))
                 .addText("receivedBy", "Recibio", "")
-                .addText("evidence", "Referencia de evidencia", "");
+                .addText("evidence", "Referencia de evidencia", "")
+                .addCombo("status", "Estado de la entrega", DeliveryStatus.values(), DeliveryStatus.COMPLETE);
         ModalForm.show(this, "Entrega del viaje " + trip.folio(), form, () -> {
             java.time.LocalDateTime dateTime = Dates.parseDateTime(form.text("datetime")).orElse(null);
             if (dateTime == null) {
                 return Result.err("La fecha y hora son obligatorias (yyyy-MM-dd HH:mm)");
             }
             Delivery delivery = new Delivery(0, trip.id(), trip.folio(), dateTime,
-                    form.text("receivedBy"), form.text("evidence"), DeliveryStatus.COMPLETE);
+                    form.text("receivedBy"), form.text("evidence"),
+                    (DeliveryStatus) form.selected("status"));
             return deliveryService.register(delivery);
-        });
+        }, () -> loadDelivery(status));
     }
 }

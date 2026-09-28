@@ -133,6 +133,20 @@ class SqlRulesTest {
     }
 
     @Test
+    void reassignmentWorksWhileTripIsScheduled() throws Exception {
+        long request = createRequest(2, 4, "2027-08-05 08:00:00", "2027-08-06 18:00:00",
+                new BigDecimal("1000"), true);
+        authorize(request, new BigDecimal("1000"));
+        schedule(request, "2027-08-05 08:00:00", "2027-08-06 18:00:00");
+        long trip = assign(request, 5, 7);
+        assertEquals("assigned", requestStatus(request), "BR-15: assignment marks the request assigned");
+
+        assertNull(reassign(trip, 6, 10), "BR-15: reassign before departure must succeed");
+        assertEquals(6L, scalarLong("SELECT vehicle_id FROM trips WHERE id=" + trip),
+                "the trip must point at the new vehicle");
+    }
+
+    @Test
     void foliosAreSequential() throws Exception {
         long a = createRequest(2, 4, "2027-05-05 08:00:00", "2027-05-06 18:00:00",
                 new BigDecimal("1000"), true);
@@ -179,6 +193,11 @@ class SqlRulesTest {
                 request, vehicle, operator, 1L);
         assertNull(out[0], "assignment should succeed");
         return ((Number) out[1]).longValue();
+    }
+
+    private String reassign(long trip, long vehicle, long operator) throws Exception {
+        return (String) call("{call sp_reassign_trip(?,?,?,?,?)}", new int[] { Types.VARCHAR },
+                trip, vehicle, operator, 1L)[0];
     }
 
     private String depart(long trip) throws Exception {
@@ -254,6 +273,12 @@ class SqlRulesTest {
     private double scalarDouble(String sql) throws Exception {
         try (Statement st = connection.createStatement(); ResultSet rs = st.executeQuery(sql)) {
             return rs.next() ? rs.getDouble(1) : 0;
+        }
+    }
+
+    private long scalarLong(String sql) throws Exception {
+        try (Statement st = connection.createStatement(); ResultSet rs = st.executeQuery(sql)) {
+            return rs.next() ? rs.getLong(1) : 0;
         }
     }
 
