@@ -1,6 +1,6 @@
 ---
 title: Functions
-description: The 22 pure functions in 02-functions.sql — the vocabulary of the business rules.
+description: The 24 pure functions in 02-functions.sql — the vocabulary of the business rules.
 ---
 
 Functions in `db/init/02-functions.sql` are **pure**: no I/O, no side effects, one clear answer.
@@ -12,8 +12,10 @@ reading the domain.
 | Function | Returns | Rule |
 | --- | --- | --- |
 | `fn_request_can_transition(p_from, p_to)` | 1/0 | **BR-03** — the request state machine. Allowed: forward moves (`requested→authorized→scheduled→assigned→in_transit→delivered→closed`) and `→cancelled` from any pre-transit state. |
+| `fn_request_reschedulable(p_status)` | 1/0 | **BR-03** — true for `authorized`, `scheduled`, `assigned`, so a date typo is fixable before transit. |
 | `fn_vehicle_assignable(p_status)` | 1/0 | **BR-07 / BR-11** — true only for `available`. |
 | `fn_employee_assignable(p_status)` | 1/0 | **BR-09** — true only for `available`. |
+| `fn_request_weight(p_request_id)` | decimal | **BR-08** — effective weight: `SUM(quantity × unit_weight)` over `request_packages`, else the manual `estimated_weight`. |
 | `fn_capacity_ok(p_capacity, p_weight)` | 1/0 | **BR-08** — `capacity ≥ weight` (either null → true). |
 
 ## Money & finance

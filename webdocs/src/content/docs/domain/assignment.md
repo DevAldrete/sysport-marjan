@@ -48,7 +48,7 @@ START TRANSACTION;
 
   IF p_problems IS NOT NULL THEN ROLLBACK; LEAVE p; END IF;
 
-  -- allocate id, INSERT trip (status 'scheduled'),
+  -- allocate id, INSERT trip (status 'scheduled', estimated_km from the route),
   -- UPDATE request status = 'assigned',
   -- INSERT audit row ('assigned')
 COMMIT;
@@ -62,9 +62,9 @@ returned together (they accumulate into `p_problems`).
 
 | Check | Rule | Function |
 | --- | --- | --- |
-| Request exists and is `scheduled` | — | `sp_validate_vehicle_assignment` |
+| Request is ready to assign: `scheduled`, or `assigned` with a still-`scheduled` trip (reassignment) | — | `sp_validate_vehicle_assignment` |
 | Vehicle assignable | BR-07 / BR-11 | `fn_vehicle_assignable` |
-| Capacity ≥ weight | BR-08 | `fn_capacity_ok` |
+| Capacity ≥ effective weight | BR-08 | `fn_request_weight` + `fn_capacity_ok` |
 | Vehicle free in the window | BR-05 | overlap query |
 | Operator assignable | BR-09 | `fn_employee_assignable` |
 | License valid through `planned_end` | BR-09 / BR-10 | `sp_validate_operator_assignment` |
@@ -89,9 +89,11 @@ public Result<Trip> assign(long requestId, long vehicleId, long operatorId) {
 
 ## Reassignment — BR-15
 
-`sp_reassign_trip` is allowed **only** while the trip is `scheduled` and the request is still
-`scheduled` (before departure). It re-runs both validators and writes a `reassigned` audit row. After
-`in_transit` the resources are frozen — changing history is not allowed.
+`sp_reassign_trip` is allowed **only** while the trip is `scheduled` (before departure). Because
+`sp_assign_trip` sets the request to `assigned`, the request check expects `assigned` (not
+`scheduled`); the vehicle validator accepts an `assigned` request when its trip is still
+`scheduled`. It re-runs both validators and writes a `reassigned` audit row. After `in_transit` the
+resources are frozen — changing history is not allowed.
 
 ## Departure & arrival
 

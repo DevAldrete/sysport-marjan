@@ -1,6 +1,6 @@
 ---
 title: Schema
-description: All 22 tables, grouped by domain, with their key columns and constraints.
+description: All 23 tables, grouped by domain, with their key columns and constraints.
 ---
 
 The schema is defined in **`db/init/01-tables.sql`**. MySQL 8.4, InnoDB, `utf8mb4` /
@@ -26,6 +26,7 @@ roles ─< role_permissions >─ permissions
 roles ─< users >─ employees ─ licenses
 clients ─< client_rates >─ routes
 clients ─< service_requests >─ routes
+service_requests ─< request_packages
 service_requests ─1:1─ trips >─ vehicles
                        trips >─ employees
 trips ─< expenses        trips ─< advances
@@ -72,7 +73,8 @@ audit_log, sequences
 
 | Table | Key columns / constraints |
 | --- | --- |
-| `service_requests` | `folio` NOT NULL UNIQUE · `client_id`,`route_id` NOT NULL FK · `estimated_weight` ≥0 · `agreed_rate` >0 · `requires_documents` NOT NULL DEFAULT TRUE · `status` CHECK(`requested,authorized,scheduled,assigned,in_transit,delivered,closed,cancelled`) · `ck_sr_dates` (delivery > pickup) · `created_by`,`updated_by` FK→`users` |
+| `service_requests` | `folio` NOT NULL UNIQUE · `client_id`,`route_id` NOT NULL FK · `cargo_description` · `estimated_weight` ≥0 (manual **fallback**) · `agreed_rate` >0 · `requires_documents` NOT NULL DEFAULT TRUE · `status` CHECK(`requested,authorized,scheduled,assigned,in_transit,delivered,closed,cancelled`) · `ck_sr_dates` (delivery > pickup) · `created_by`,`updated_by` FK→`users` |
+| `request_packages` | `service_request_id` FK · `line_no` · `description` NOT NULL · `quantity` >0 · `unit` CHECK(`caja,paleta,saco,bulto,pieza,contenedor,otro`) · `unit_weight` ≥0 (line weight = quantity × unit_weight) · `received_quantity` ≥0 + `receipt_condition` CHECK(`ok,shortage,damaged,missing`) filled at delivery |
 | `trips` | `service_request_id` NOT NULL **UNIQUE** FK (1:1) · `vehicle_id`,`employee_id` NOT NULL FK · `planned_start`/`planned_end` NOT NULL · `ck_trip_window` (end > start) · `status` CHECK(`scheduled,in_transit,completed,cancelled`) |
 | `expenses` | `trip_id` FK · `expense_type` CHECK(8 values) · `amount` >0 · `expense_date` NOT NULL |
 | `advances` | `trip_id`,`employee_id` FK · `amount_given` >0 · `delivered_date` NOT NULL · `status` CHECK(`pending`,`settled`) · `settled_at`,`settled_by` |

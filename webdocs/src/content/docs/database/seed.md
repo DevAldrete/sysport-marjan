@@ -53,6 +53,7 @@ The Java mirror is `mx.marjan.security.Permissions` — **keep the two in sync**
 | `client_rates` | 10 | valid from 2026-01-01 |
 | `vehicles` | 10 | `ECO-01`…; one maintenance, one out_of_service, one decommissioned |
 | `service_requests` | 10 | `SR-2026-000001`… across all statuses |
+| `request_packages` | 11 | one or more lines per request; request 2 has two, request 8 a delivered shortage |
 | `trips` | 6 | completed, in_transit, scheduled |
 | `deliveries` | 4 | complete, with evidence references |
 | `expenses` | 10 | tolls/food/lodging/repairs |
@@ -71,7 +72,7 @@ use) in the same commit.
 
 ## Sequences are primed
 
-The seed ends by inserting `next_value = COALESCE(MAX(id),0)` for all 18 id-allocated tables, so the
+The seed ends by inserting `next_value = COALESCE(MAX(id),0)` for all 19 id-allocated tables, so the
 first `sp_next_id` call returns `MAX(id)+1`. See
 [Database access](/architecture/database-access/#id-allocation-no-auto_increment).
 
