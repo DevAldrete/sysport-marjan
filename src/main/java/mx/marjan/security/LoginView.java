@@ -104,7 +104,7 @@ public final class LoginView {
                         user = result.value();
                         stage.close();
                     } else {
-                        messageLabel.setText(result.problems().get(0));
+                        messageLabel.setText(String.join(" ", result.problems()));
                     }
                 },
                 failure -> {

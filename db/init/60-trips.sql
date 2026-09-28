@@ -14,6 +14,7 @@ p: BEGIN
   DECLARE v_req_status VARCHAR(20) DEFAULT NULL;
   DECLARE v_start DATETIME DEFAULT NULL;
   DECLARE v_end DATETIME DEFAULT NULL;
+  DECLARE v_est_km DECIMAL(10,1) DEFAULT NULL;
   DECLARE v_audit_id BIGINT;
   DECLARE EXIT HANDLER FOR SQLEXCEPTION
   BEGIN
@@ -27,9 +28,10 @@ p: BEGIN
   SELECT id INTO @lock_v FROM vehicles WHERE id = p_vehicle_id FOR UPDATE;
   SELECT id INTO @lock_e FROM employees WHERE id = p_operator_id FOR UPDATE;
 
-  SELECT status, pickup_date_scheduled, delivery_date_scheduled
-    INTO v_req_status, v_start, v_end
-    FROM service_requests WHERE id = p_request_id FOR UPDATE;
+  SELECT sr.status, sr.pickup_date_scheduled, sr.delivery_date_scheduled, r.estimated_km
+    INTO v_req_status, v_start, v_end, v_est_km
+    FROM service_requests sr JOIN routes r ON r.id = sr.route_id
+    WHERE sr.id = p_request_id FOR UPDATE;
   IF v_req_status IS NULL THEN
     ROLLBACK; SET p_problems = 'Solicitud no encontrada'; LEAVE p;
   END IF;
@@ -41,9 +43,9 @@ p: BEGIN
   END IF;
 
   CALL sp_next_id('trips', p_trip_id);
-  INSERT INTO trips (id, service_request_id, vehicle_id, employee_id,
+  INSERT INTO trips (id, service_request_id, vehicle_id, employee_id, estimated_km,
                      planned_start, planned_end, status, created_by, updated_by)
-    VALUES (p_trip_id, p_request_id, p_vehicle_id, p_operator_id,
+    VALUES (p_trip_id, p_request_id, p_vehicle_id, p_operator_id, v_est_km,
             v_start, v_end, 'scheduled', p_user_id, p_user_id);
   UPDATE service_requests SET status = 'assigned', updated_by = p_user_id WHERE id = p_request_id;
   CALL sp_next_id('audit_log', v_audit_id);
@@ -188,6 +190,12 @@ p: BEGIN
   SELECT * FROM v_trip WHERE service_request_id = p_request_id;
 END$$
 
+-- The vehicle that ran a given trip (used when registering a fuel load).
+CREATE PROCEDURE sp_trip_vehicle(IN p_trip_id BIGINT)
+p: BEGIN
+  SELECT vehicle_id FROM trips WHERE id = p_trip_id;
+END$$
+
 -- BR-15: reassign before departure, validated like a new assignment and audited.
 -- The validators intentionally ignore the request's own trip, so they can be
 -- reused here without flagging the current trip as a conflict.
@@ -213,9 +221,11 @@ p: BEGIN
   IF v_status <> 'scheduled' THEN
     ROLLBACK; SET p_problems = 'Solo se puede reasignar un viaje programado (aun no inicia)'; LEAVE p;
   END IF;
+  -- After assignment the request is 'assigned' (sp_assign_trip); reassignment
+  -- happens while its trip is still 'scheduled'. BR-15 = reassign before transit.
   SELECT status INTO v_req_status FROM service_requests WHERE id = v_request FOR UPDATE;
-  IF v_req_status <> 'scheduled' THEN
-    ROLLBACK; SET p_problems = 'La solicitud debe estar programada para reasignar el viaje'; LEAVE p;
+  IF v_req_status <> 'assigned' THEN
+    ROLLBACK; SET p_problems = 'La solicitud debe estar asignada para reasignar el viaje'; LEAVE p;
   END IF;
 
   -- Lock the candidate resources before checking overlaps, like a new assignment.

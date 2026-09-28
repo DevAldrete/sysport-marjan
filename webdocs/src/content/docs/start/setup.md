@@ -41,7 +41,7 @@ docker compose up -d
 
 On the **first** start, MySQL runs every script in `db/init/` in filename order (tables, functions,
 views, security, domains, reports, then seed data). This creates the `sysportdb` database, the
-`marjan` user, 22 tables, 22 functions, 107 procedures, 8 views and demo rows.
+`marjan` user, 23 tables, 24 functions, 112 procedures, 8 views and demo rows.
 
 ```bash
 docker compose logs -f mysql   # watch it come up

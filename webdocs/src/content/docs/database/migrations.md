@@ -17,14 +17,14 @@ numeric prefixes define the order, and each file starts with `USE sysportdb;` so
 loaded manually.
 
 ```text
-01-tables.sql       database + 22 tables
-02-functions.sql    22 rule functions + sp_next_id
+01-tables.sql       database + 23 tables
+02-functions.sql    24 rule functions + sp_next_id
 05-views.sql        8 views
 10-security.sql     users, roles, permissions, audit
 20-clients.sql      clients, rates, routes
 30-fleet.sql        vehicles, fuel, maintenance
 40-operators.sql    employees, licenses
-50-requests.sql     service requests + lifecycle
+50-requests.sql     service requests + lifecycle + packages
 60-trips.sql        assignment, trips, deliveries, incidents
 70-costs.sql        expenses, advances
 80-finance.sql      invoices, payments

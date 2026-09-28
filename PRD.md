@@ -199,6 +199,7 @@ roles ─< role_permissions >─ permissions
 roles ─< users >─ employees ─ licenses            (employees = operators + staff)
 clients ─< client_rates >─ routes
 clients ─< service_requests >─ routes
+service_requests ─< request_packages
 service_requests ─ 1:1 ─ trips >─ vehicles
                           trips >─ employees
 trips ─< expenses          trips ─< advances
@@ -226,6 +227,7 @@ requested ─► authorized ─► scheduled ─► assigned ─► in_transit �
 |---|---|---|
 | requested → authorized | User authorizes | `agreed_rate` is set and > 0 |
 | authorized → scheduled | Pickup/delivery dates confirmed | Both scheduled dates present, delivery after pickup |
+| scheduled/assigned → scheduled/assigned | Reschedule dates | Allowed before transit (`fn_request_reschedulable`); keeps status and syncs the trip window |
 | scheduled → assigned | Trip created | Passes assignment validation (BR-05…BR-09) |
 | assigned → in_transit | Departure recorded | `departure_datetime` set |
 | in_transit → delivered | Delivery registered | Delivery record exists |
@@ -261,19 +263,19 @@ Each rule gets an ID so code, tests and commits can reference it.
 |---|---|---|
 | BR-01 | Every service request gets a unique folio (e.g. `SR-2026-000123`). | DB `UNIQUE` + `FolioGenerator` |
 | BR-02 | Client RFC is unique; RFC format validated. | DB + `ClientRules` |
-| BR-03 | Service request follows the state machine in §5.1; invalid transitions are rejected. | `RequestStatus`, service |
+| BR-03 | Service request follows the state machine in §5.1; invalid transitions are rejected. Dates may be rescheduled while the request has not started. | `fn_request_can_transition`, `fn_request_reschedulable`, service |
 | BR-04 | `agreed_rate` is a snapshot set at authorization and never recalculated from general tariffs. Suggested from `client_rates` (valid on the date) but editable at authorization. | `RateRules` |
 | BR-05 | A **vehicle** cannot be in two trips with overlapping planned windows (`scheduled`/`in_transit`). | `AssignmentRules` + tx |
 | BR-06 | An **operator** cannot be in two trips with overlapping planned windows. | `AssignmentRules` + tx |
 | BR-07 | Vehicle must be assignable: not `maintenance`, `out_of_service`, `decommissioned`. | `AssignmentRules` |
-| BR-08 | Vehicle load capacity ≥ request's estimated weight. | `AssignmentRules` |
+| BR-08 | Vehicle load capacity ≥ request's **effective weight**: the sum of its packages (`quantity × unit_weight`), or the manual `estimated_weight` when it has none. | `fn_request_weight` + `fn_capacity_ok` |
 | BR-09 | Operator must be assignable (`available`, not on vacation/incapacitated/terminated) and have a license valid **through the planned end date**. | `AssignmentRules`, `LicenseRules` |
 | BR-10 | Licenses expiring within 30 days raise a warning; expired ones block assignment. | `LicenseRules` |
 | BR-11 | A vehicle marked `out_of_service` cannot be assigned until returned to `available`. | `AssignmentRules` |
 | BR-12 | Each trip has at most one delivery. | DB `UNIQUE(trip_id)` |
 | BR-13 | A request requiring documents cannot move to `closed` until its delivery is `complete` (has `received_by` and `evidence_reference`). | `ClosingRules` |
 | BR-14 | The normal lifecycle uses status (`cancelled`, `terminated`, `decommissioned`, `disabled`) to keep history. An explicit, confirmed **hard delete** is also available; the database still refuses to delete a parent that has related rows. | Repos expose `delete(id)`; services check permission and the UI asks for confirmation |
-| BR-15 | Changing the vehicle/operator on an already-created trip is allowed only before `in_transit`, is validated like a new assignment, and is logged in the audit trail. | `TripService` |
+| BR-15 | Changing the vehicle/operator on an already-created trip is allowed only before `in_transit` (trip `scheduled`, request `assigned`), is validated like a new assignment, and is logged in the audit trail. | `sp_reassign_trip`, `TripService` |
 | BR-16 | Advance balance = `amount_given − Σ expenses (+ fuel, see D3)` of that trip: positive → operator returns money; negative → company reimburses; zero → settled. | `AdvanceRules` |
 | BR-17 | Expense type must be one of the allowed values; amount > 0. | `ExpenseRules` + CHECK |
 | BR-18 | Fuel load: `amount ≈ liters × price_per_liter` (tolerance ±0.05); odometer never decreases for a vehicle; the trip's vehicle must match the load's vehicle. | `FuelRules` |
@@ -316,7 +318,8 @@ Priority: **P0** = MVP essential · **P1** = important · **P2** = nice to have.
 ### 7.4 Service requests
 | ID | Requirement | Pri |
 |---|---|---|
-| FR-REQ-1 | Create request with auto folio, client, route, cargo, weight, dates, notes | P0 |
+| FR-REQ-1 | Create request with auto folio, client, route, **one or many packages** (description, quantity, unit, per-unit weight), dates, notes | P0 |
+| FR-REQ-1b | Track packages per unit at delivery (received quantity + condition) | P1 |
 | FR-REQ-2 | Suggest rate from `client_rates`; authorize with `agreed_rate` snapshot | P0 |
 | FR-REQ-3 | Move through lifecycle with only valid transitions; cancel with reason | P0 |
 | FR-REQ-4 | List with filters: folio, client, status, date range | P0 |
@@ -457,9 +460,9 @@ The app is a JavaFX desktop app: a permission-aware **sidebar** (`AppShell` + `N
 | Dashboard (Inicio) | clickable KPI cards (expiring licenses, overdue invoices, maintenance due, pending assignments) that navigate to the matching screen |
 | Clients | table + form dialog + rates sub-window |
 | Routes | table + form |
-| Service Requests | filter bar, table with status badges, lifecycle actions (authorize, schedule, assign, cancel, close), structured detail view |
-| Assign Trip (dialog) | eligible vehicles + operators, validation result panel |
-| Trips | table; detail dialog with tabs (summary, costs, fuel, advances, incidents, delivery) |
+| Service Requests | filter bar, table with status badges (package count + effective weight), lifecycle actions (authorize, schedule/reschedule, assign, cancel, close), package line editor, structured detail view |
+| Assign Trip (dialog) | eligible vehicles + operators, live capacity-vs-cargo hint, validation result panel |
+| Trips | table; detail dialog with tabs (summary, costs, fuel, advances, incidents, packages with per-unit receipts, delivery) |
 | Delivery | form, evidence reference |
 | Vehicles | table + status actions + maintenance sub-window |
 | Operators | table + form with license section, expiry highlighted as a status badge |

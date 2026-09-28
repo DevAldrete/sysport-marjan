@@ -46,6 +46,30 @@ BEGIN
   END;
 END$$
 
+-- BR-03: a request can (re)schedule its dates while it has not started:
+-- authorized (first schedule), scheduled (typo fix) and assigned (before the
+-- trip departs). in_transit and later are frozen.
+CREATE FUNCTION fn_request_reschedulable(p_status VARCHAR(20))
+RETURNS TINYINT DETERMINISTIC
+BEGIN
+  RETURN (p_status IN ('authorized','scheduled','assigned'));
+END$$
+
+-- BR-08: effective weight of a request = sum of its packages
+-- (quantity x unit weight) or, when it has none, the manually estimated weight.
+CREATE FUNCTION fn_request_weight(p_request_id BIGINT)
+RETURNS DECIMAL(10,1)
+READS SQL DATA
+BEGIN
+  DECLARE v_packages DECIMAL(12,2) DEFAULT NULL;
+  SELECT SUM(p.quantity * p.unit_weight) INTO v_packages
+    FROM request_packages p WHERE p.service_request_id = p_request_id;
+  IF v_packages IS NOT NULL THEN
+    RETURN v_packages;
+  END IF;
+  RETURN (SELECT estimated_weight FROM service_requests WHERE id = p_request_id);
+END$$
+
 -- BR-07 / BR-11: only 'available' vehicles may be assigned.
 CREATE FUNCTION fn_vehicle_assignable(p_status VARCHAR(20))
 RETURNS TINYINT DETERMINISTIC

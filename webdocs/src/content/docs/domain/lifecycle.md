@@ -18,6 +18,7 @@ requested ─► authorized ─► scheduled ─► assigned ─► in_transit �
 | --- | --- | --- | --- |
 | requested → authorized | authorize | `agreed_rate > 0` | `sp_authorize_request` + `fn_request_can_transition` |
 | authorized → scheduled | schedule | both dates present, delivery > pickup | `sp_schedule_request` |
+| scheduled/assigned → same | reschedule | not yet `in_transit` (`fn_request_reschedulable`); keeps status, syncs the trip window | `sp_schedule_request` |
 | scheduled → assigned | assign trip | passes BR-05…BR-11 | `sp_assign_trip` |
 | assigned → in_transit | depart | — | `sp_depart_trip` |
 | in_transit → delivered | delivery recorded | delivery exists (or no documents required → arrival) | `sp_delivery_save` / `sp_arrive_trip` |

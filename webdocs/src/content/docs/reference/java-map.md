@@ -33,8 +33,8 @@ A quick index of `src/main/java/mx/marjan`. Each feature package follows the sam
 
 | Class | Purpose |
 | --- | --- |
-| `Database` | connection + all `call*` helpers + `translate` + id/error helpers |
-| `Result` | sealed `Ok` / `Err` outcome type |
+| `Database` | connection + all `call*` helpers (including `inTransaction` for multi-row units of work) + `translate` + problem/error helpers |
+| `Result` | sealed `Ok` / `Err` outcome type (a list of problems, split from the procedures' `'; '` string) |
 | `DataException` | a JDBC failure already translated for the UI |
 | `FormModel` | pure form state: values, live validation, computed fields (no toolkit) |
 | `Money` | `BigDecimal` money format/parse |
@@ -73,11 +73,12 @@ A quick index of `src/main/java/mx/marjan`. Each feature package follows the sam
 
 | Class | Kind |
 | --- | --- |
-| `ServiceRequest`, `RequestFilter` | records |
-| `RequestStatus` | enum |
-| `ServiceRequestRepository` | repo |
-| `ServiceRequestService` | service (lifecycle) |
-| `ServiceRequestsView`, `ServiceRequestDetailDialog` | views |
+| `ServiceRequest`, `RequestFilter`, `CargoPackage` | records |
+| `RequestStatus`, `PackageUnit`, `PackageCondition` | enums |
+| `ServiceRequestRepository`, `CargoPackageRepository` | repos |
+| `ServiceRequestService` | service (lifecycle + packages) |
+| `CargoPackageService` | service (list/replace packages, save receipts) |
+| `ServiceRequestsView`, `ServiceRequestDetailDialog`, `PackageEditorPanel` | views |
 
 ## `trips`
 
@@ -130,6 +131,9 @@ A quick index of `src/main/java/mx/marjan`. Each feature package follows the sam
 | --- | --- |
 | `ServiceRequestRepository.search` | `sp_requests_search` |
 | `ServiceRequestRepository.authorize` | `sp_authorize_request` |
+| `CargoPackageRepository.listByRequest` | `sp_request_packages` |
+| `CargoPackageRepository.replace` | `sp_package_save` / `sp_package_delete` (one `inTransaction`) |
+| `CargoPackageRepository.saveReceipts` | `sp_package_receipt_save` |
 | `TripRepository.assign` | `sp_assign_trip` |
 | `TripRepository.arrive` | `sp_arrive_trip` |
 | `InvoiceRepository.createFromRequest` | `sp_create_invoice_from_request` |
