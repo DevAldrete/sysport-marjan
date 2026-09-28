@@ -10,6 +10,7 @@ import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import javax.sql.DataSource;
 
 /**
  * The single place that knows how to reach the database.
@@ -44,7 +45,23 @@ public final class Database {
   }
 
   public static Connection getConnection() throws SQLException {
+    DataSource source = dataSource;
+    if (source != null) {
+      return source.getConnection();
+    }
     return DriverManager.getConnection(url(), user(), password());
+  }
+
+  /** The connection pool, when one has been installed (see {@link #useDataSource}). */
+  private static volatile DataSource dataSource;
+
+  /**
+   * Points every helper at a connection pool. The API installs a Hikari pool at
+   * startup; the desktop app and tests leave it unset and use {@link DriverManager}.
+   * Repositories are untouched: they keep calling the static helpers.
+   */
+  public static void useDataSource(DataSource source) {
+    dataSource = source;
   }
 
   public static boolean testConnection() {
