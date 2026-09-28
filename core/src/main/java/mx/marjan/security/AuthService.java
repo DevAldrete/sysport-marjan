@@ -40,8 +40,21 @@ public class AuthService {
         if (!BCrypt.checkpw(password, user.passwordHash())) {
             return Result.err("Usuario o contrasena incorrectos");
         }
-        return Result.ok(new CurrentUser(
-                user.id(), user.username(), user.roleName(), users.permissionsForRole(user.roleId())));
+        return Result.ok(identityOf(user));
+    }
+
+    /**
+     * Rebuilds the caller identity from a username, without a password check.
+     * Used by the API to rehydrate a session from a token.
+     */
+    public Optional<CurrentUser> byUsername(String username) {
+        return username == null ? Optional.empty()
+                : users.findByUsername(username.trim()).map(this::identityOf);
+    }
+
+    private CurrentUser identityOf(User user) {
+        return new CurrentUser(
+                user.id(), user.username(), user.roleName(), users.permissionsForRole(user.roleId()));
     }
 
     public List<User> listUsers() {
