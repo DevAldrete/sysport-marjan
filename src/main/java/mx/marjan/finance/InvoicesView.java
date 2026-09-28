@@ -159,15 +159,14 @@ public class InvoicesView extends BaseView {
             }
             FormPanel form = new FormPanel()
                     .addCombo("request", "Solicitud", requests.toArray(), requests.get(0))
-                    .addText("issueDate", "Fecha de emision", Dates.format(Dates.today()), "Formato: AAAA-MM-DD")
+                    .addDate("issueDate", "Fecha de emision", Dates.today())
                     .addText("amount", "Importe", "", "Deje vacio para usar la tarifa autorizada");
-            form.validate("issueDate", Validators.date());
             form.validate("amount", Validators.money());
             ModalForm.show(this, "Nueva factura", form, () -> {
                 ServiceRequest request = (ServiceRequest) form.selected("request");
-                LocalDate issue = Dates.parseDate(form.text("issueDate")).orElse(null);
+                LocalDate issue = form.date("issueDate");
                 if (issue == null) {
-                    return Result.err("La fecha de emision es obligatoria (AAAA-MM-DD)");
+                    return Result.err("La fecha de emision es obligatoria");
                 }
                 BigDecimal amount;
                 if (form.text("amount").isBlank()) {
@@ -192,16 +191,18 @@ public class InvoicesView extends BaseView {
         FormPanel form = new FormPanel()
                 .addText("amount", "Monto del pago", Money.zeroIfNull(invoice.balance()).toPlainString(),
                         "No puede exceder el saldo pendiente")
-                .addText("date", "Fecha", Dates.format(Dates.today()), "Formato: AAAA-MM-DD")
+                .addDate("date", "Fecha", Dates.today())
                 .addCombo("method", "Forma de pago", PaymentMethod.values(), PaymentMethod.CASH);
         form.validate("amount", Validators.money());
-        form.validate("date", Validators.date());
         ModalForm.show(this, "Pago de " + invoice.invoiceNumber(), form, () -> {
             Result<BigDecimal> amountResult = Money.require(form.text("amount"), "monto del pago");
             if (amountResult.isErr()) {
                 return amountResult;
             }
-            LocalDate date = Dates.parseDate(form.text("date")).orElse(null);
+            LocalDate date = form.date("date");
+            if (date == null) {
+                return Result.err("La fecha del pago es obligatoria");
+            }
             return service.registerPayment(invoice.id(), amountResult.value(), date,
                     (PaymentMethod) form.selected("method"));
         }, this::reload);

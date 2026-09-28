@@ -89,15 +89,14 @@ public class OperatorsView extends BaseView {
                 .addText("ecPhone", "Telefono de emergencia", employee.emergencyContactPhone())
                 .addText("licenseNumber", "No. de licencia", license.licenseNumber())
                 .addText("licenseType", "Tipo de licencia", license.licenseType())
-                .addText("licenseIssue", "Expedicion (yyyy-MM-dd)", Dates.format(license.issueDate()))
-                .addText("licenseExpiry", "Vencimiento (yyyy-MM-dd)", Dates.format(license.expirationDate()));
+                .addDate("licenseIssue", "Expedicion", license.issueDate())
+                .addDate("licenseExpiry", "Vencimiento", license.expirationDate());
         ModalForm.show(this, isNew ? "Nuevo operador" : "Editar operador", form, () -> {
             License builtLicense = null;
             String number = form.text("licenseNumber");
             if (!number.isBlank()) {
-                LocalDate issue = form.text("licenseIssue").isBlank() ? null
-                        : Dates.parseDate(form.text("licenseIssue")).orElse(null);
-                LocalDate expiry = Dates.parseDate(form.text("licenseExpiry")).orElse(null);
+                LocalDate issue = form.date("licenseIssue");
+                LocalDate expiry = form.date("licenseExpiry");
                 builtLicense = new License(license.id(), number, form.text("licenseType"),
                         issue, expiry);
             }

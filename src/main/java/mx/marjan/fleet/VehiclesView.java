@@ -183,28 +183,25 @@ public class VehiclesView extends BaseView {
 
     private void openMaintenanceForm(Vehicle vehicle, Runnable onSaved) {
         FormPanel form = new FormPanel()
-                .addText("date", "Fecha", Dates.format(Dates.today()), "Formato: AAAA-MM-DD")
+                .addDate("date", "Fecha", Dates.today())
                 .addText("odometer", "Odometro", Numbers.plain(vehicle.mileage()), "Lectura del tablero en km")
                 .addCombo("type", "Tipo", MaintenanceType.values(), MaintenanceType.PREVENTIVE)
                 .addArea("work", "Trabajos realizados", "", "Descripcion de lo realizado")
                 .addText("provider", "Proveedor / taller", "")
                 .addText("cost", "Costo", "0", "Importe del mantenimiento")
-                .addText("nextDate", "Proxima fecha (opcional)", "", "Formato: AAAA-MM-DD")
+                .addDate("nextDate", "Proxima fecha (opcional)", null)
                 .addText("nextKm", "Proximo km (opcional)", "", "Kilometraje del proximo servicio");
-        form.validate("date", Validators.date());
         form.validate("odometer", Validators.number());
         form.validate("cost", Validators.money());
-        form.validate("nextDate", Validators.date());
         form.validate("nextKm", Validators.number());
         ModalForm.show(this, "Mantenimiento de " + vehicle.label(), form, () -> {
-            LocalDate date = Dates.parseDate(form.text("date")).orElse(null);
+            LocalDate date = form.date("date");
             if (date == null) {
-                return Result.err("La fecha es obligatoria (yyyy-MM-dd)");
+                return Result.err("La fecha es obligatoria");
             }
             BigDecimal odometer = Numbers.parseOrZero(form.text("odometer"));
             BigDecimal cost = Money.parse(form.text("cost")).orElse(BigDecimal.ZERO);
-            LocalDate nextDate = form.text("nextDate").isBlank() ? null
-                    : Dates.parseDate(form.text("nextDate")).orElse(null);
+            LocalDate nextDate = form.date("nextDate");
             BigDecimal nextKm = form.text("nextKm").isBlank() ? null : Numbers.parseOrZero(form.text("nextKm"));
             Maintenance record = new Maintenance(0, vehicle.id(), vehicle.label(), date, odometer,
                     (MaintenanceType) form.selected("type"), form.text("work"), form.text("provider"),

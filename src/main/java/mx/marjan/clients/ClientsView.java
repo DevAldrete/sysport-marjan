@@ -199,11 +199,9 @@ public class ClientsView extends BaseView {
         FormPanel form = new FormPanel()
                 .addCombo("route", "Ruta", routes.toArray(), routeById(routes, editing.routeId()))
                 .addText("rate", "Tarifa", Numbers.plain(editing.rate()), "Importe por viaje")
-                .addText("from", "Vigente desde", Dates.format(editing.validFrom()), "Formato: AAAA-MM-DD")
-                .addText("to", "Vigente hasta (opcional)", Dates.format(editing.validTo()), "Formato: AAAA-MM-DD");
+                .addDate("from", "Vigente desde", editing.validFrom())
+                .addDate("to", "Vigente hasta (opcional)", editing.validTo());
         form.validate("rate", Validators.money());
-        form.validate("from", Validators.date());
-        form.validate("to", Validators.date());
         ModalForm.show(this, rate == null ? "Nueva tarifa" : "Editar tarifa", form, () -> {
             Object routeValue = form.selected("route");
             if (!(routeValue instanceof Route route)) {
@@ -214,12 +212,11 @@ public class ClientsView extends BaseView {
                 return rateResult;
             }
             BigDecimal amount = rateResult.value();
-            java.time.LocalDate from = Dates.parseDate(form.text("from")).orElse(null);
+            java.time.LocalDate from = form.date("from");
             if (from == null) {
-                return Result.err("La fecha de vigencia inicial es obligatoria (yyyy-MM-dd)");
+                return Result.err("La fecha de vigencia inicial es obligatoria");
             }
-            java.time.LocalDate to = form.text("to").isBlank() ? null
-                    : Dates.parseDate(form.text("to")).orElse(null);
+            java.time.LocalDate to = form.date("to");
             ClientRate built = new ClientRate(editing.id(), client.id(), route.id(), route.label(),
                     amount, from, to);
             return service.saveRate(built);
