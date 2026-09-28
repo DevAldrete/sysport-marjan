@@ -5,6 +5,7 @@ import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.List;
 import mx.marjan.shared.Database;
+import mx.marjan.shared.Result;
 
 /** Thin JDBC wrapper over the payment stored procedures. */
 public class PaymentRepository {
@@ -23,7 +24,7 @@ public class PaymentRepository {
         return Database.callList("{call sp_payments_by_invoice(?)}", this::map, invoiceId);
     }
 
-    public void delete(long id) {
-        Database.callNoOut("{call sp_payment_delete(?)}", id);
+    public Result<Void> delete(long id) {
+        return Database.callVoid("{call sp_payment_delete(?,?)}", id);
     }
 }

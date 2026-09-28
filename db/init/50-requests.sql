@@ -402,8 +402,23 @@ p: BEGIN
   END IF;
 END$$
 
-CREATE PROCEDURE sp_package_delete(IN p_id BIGINT)
+-- BR-26: a package line can be edited until the request is in transit; after
+-- that the cargo is history (receipts are recorded, not rewritten).
+CREATE PROCEDURE sp_package_delete(IN p_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
+  DECLARE v_status VARCHAR(20) DEFAULT NULL;
+  SET p_problems = NULL;
+  SELECT sr.status INTO v_status
+  FROM request_packages pkg
+  JOIN service_requests sr ON sr.id = pkg.service_request_id
+  WHERE pkg.id = p_id;
+  IF v_status IS NULL THEN
+    SET p_problems = 'Paquete no encontrado'; LEAVE p;
+  END IF;
+  IF v_status IN ('in_transit','delivered','closed') THEN
+    SET p_problems = 'No se puede modificar la carga de una solicitud en transito o entregada';
+    LEAVE p;
+  END IF;
   DELETE FROM request_packages WHERE id = p_id;
 END$$
 
@@ -428,16 +443,27 @@ p: BEGIN
 END$$
 
 -- BR-14: careful cascade in one transaction. Audit rows are intentionally kept
--- (BR-22), even for a hard delete.
+-- (BR-22), even for a hard delete. BR-26: a request with a trip or an invoice
+-- is history, so it must be cancelled instead of deleted.
 CREATE PROCEDURE sp_request_delete(IN p_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
+  DECLARE v_status VARCHAR(20) DEFAULT NULL;
   DECLARE EXIT HANDLER FOR SQLEXCEPTION
   BEGIN
     ROLLBACK; SET p_problems = 'No se puede eliminar la solicitud: tiene registros relacionados';
   END;
   SET p_problems = NULL;
-  IF (SELECT COUNT(*) FROM service_requests WHERE id = p_id) = 0 THEN
+  SELECT status INTO v_status FROM service_requests WHERE id = p_id;
+  IF v_status IS NULL THEN
     SET p_problems = 'Solicitud no encontrada'; LEAVE p;
+  END IF;
+  IF v_status IN ('assigned','in_transit','delivered','closed') THEN
+    SET p_problems = 'Solo se puede eliminar una solicitud sin viaje asignado; cancelela en su lugar';
+    LEAVE p;
+  END IF;
+  IF (SELECT COUNT(*) FROM invoices WHERE service_request_id = p_id) > 0 THEN
+    SET p_problems = 'No se puede eliminar una solicitud con factura; cancelela en su lugar';
+    LEAVE p;
   END IF;
   START TRANSACTION;
   DELETE FROM request_packages WHERE service_request_id = p_id;
