@@ -91,7 +91,7 @@ export const features: Feature[] = [
     title: 'Viajes',
     icon: Navigation,
     permission: 'trips.read',
-    component: () => import('@/views/ComingSoonView.vue'),
+    component: () => import('@/views/TripsView.vue'),
   },
   {
     path: 'facturas',
@@ -99,7 +99,7 @@ export const features: Feature[] = [
     title: 'Facturas',
     icon: Receipt,
     permission: 'invoices.read',
-    component: () => import('@/views/ComingSoonView.vue'),
+    component: () => import('@/views/InvoicesView.vue'),
   },
   {
     path: 'reportes',
@@ -107,7 +107,7 @@ export const features: Feature[] = [
     title: 'Reportes',
     icon: BarChart3,
     permission: 'reports.view',
-    component: () => import('@/views/ComingSoonView.vue'),
+    component: () => import('@/views/ReportsView.vue'),
   },
   {
     path: 'usuarios',
