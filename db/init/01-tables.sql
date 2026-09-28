@@ -35,7 +35,8 @@ CREATE TABLE role_permissions (
 CREATE TABLE licenses (
   id              BIGINT PRIMARY KEY,
   license_number  VARCHAR(50)  NOT NULL UNIQUE,
-  license_type    VARCHAR(50)  NOT NULL,
+  license_type    VARCHAR(50)  NOT NULL
+                  CHECK (license_type IN ('Federal A','Federal B','Federal C','Federal D','Federal E','Estatal','Otro')),
   issue_date      DATE,
   expiration_date DATE         NOT NULL,
   created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,

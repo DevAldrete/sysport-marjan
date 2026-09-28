@@ -176,6 +176,17 @@ BEGIN
       FROM invoices WHERE invoice_number LIKE CONCAT('INV-', p_year, '-%'));
 END$$
 
+-- BR-25: next internal license number, e.g. LIC-MRJ-0001. Assigned by the
+-- database so operators never have to invent or guess the format.
+CREATE FUNCTION fn_next_license_number()
+RETURNS VARCHAR(50)
+READS SQL DATA
+BEGIN
+  RETURN (SELECT CONCAT('LIC-MRJ-',
+      LPAD(COALESCE(MAX(CAST(SUBSTRING(license_number, 9) AS UNSIGNED)), 0) + 1, 4, '0'))
+      FROM licenses WHERE license_number LIKE 'LIC-MRJ-%');
+END$$
+
 -- Allocates the next id for a table from the sequences row (same policy as
 -- SequenceRepository: no AUTO_INCREMENT, primed from max(id) when missing).
 -- Allocates the next id for a table. The common path is a single atomic
