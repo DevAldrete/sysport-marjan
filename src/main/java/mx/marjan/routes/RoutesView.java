@@ -8,6 +8,7 @@ import java.util.List;
 import javax.swing.JLabel;
 import javax.swing.JTable;
 import javax.swing.JTextField;
+import mx.marjan.shared.Async;
 import mx.marjan.shared.BaseView;
 import mx.marjan.shared.FormPanel;
 import mx.marjan.shared.ModalForm;
@@ -20,8 +21,7 @@ public class RoutesView extends BaseView {
 
     private final RouteService service = new RouteService();
     private final RecordTableModel<Route> model = new RecordTableModel<>(List.of(
-            RecordTableModel.Column.of("Origen", Route::origin),
-            RecordTableModel.Column.of("Destino", Route::destination),
+            RecordTableModel.Column.text("Ruta", Route::label, 80),
             RecordTableModel.Column.of("Km estimados", Route::estimatedKm),
             RecordTableModel.Column.text("Descripcion", Route::description, 60)));
     private final JTable table = Ui.table(model);
@@ -61,7 +61,7 @@ public class RoutesView extends BaseView {
     }
 
     private void openNew() {
-        openForm(Route.empty());
+        openForm(Route.empty(), List.of());
     }
 
     private void openEdit() {
@@ -70,26 +70,27 @@ public class RoutesView extends BaseView {
             Ui.info(this, "Seleccione una ruta");
             return;
         }
-        openForm(route);
+        Async.run(() -> service.stops(route.id()),
+                stops -> openForm(route, stops),
+                failure -> Ui.failure(this, failure));
     }
 
-    private void openForm(Route route) {
+    private void openForm(Route route, List<RouteStop> stops) {
         boolean isNew = route.id() == 0;
+        RouteStopEditorPanel routeStops = new RouteStopEditorPanel(route.id(), stops);
         FormPanel form = new FormPanel()
-                .addText("origin", "Origen", route.origin(), "Ciudad o punto de salida")
-                .addText("destination", "Destino", route.destination(), "Ciudad o punto de entrega")
                 .addText("km", "Km estimados", route.estimatedKm() == null ? "0" : route.estimatedKm().toPlainString(),
                         "Distancia aproximada en kilometros")
                 .addArea("description", "Descripcion", route.description(), "Notas de la ruta (opcional)");
         form.validate("km", Validators.number());
+        form.addSection(routeStops);
         ModalForm.show(this, isNew ? "Nueva ruta" : "Editar ruta", form, () -> {
             BigDecimal km = Numbers.parseOrZero(form.text("km"));
             if (km == null) {
                 return Result.err("Los km estimados deben ser un numero");
             }
-            Route built = new Route(route.id(), form.text("origin"), form.text("destination"),
-                    km, form.text("description"));
-            return service.save(built);
+            Route built = new Route(route.id(), "", "", km, form.text("description"), "");
+            return service.save(built, routeStops.stops());
         }, this::reload);
     }
 }
