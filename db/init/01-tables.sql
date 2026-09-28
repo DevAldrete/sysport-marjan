@@ -126,8 +126,19 @@ CREATE TABLE routes (
   destination  VARCHAR(150) NOT NULL,
   estimated_km DECIMAL(10,1) CHECK (estimated_km IS NULL OR estimated_km >= 0),
   description  VARCHAR(255),
-  created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY uq_routes_pair (origin, destination)
+  created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- BR-25: a route is an ordered list of stops, so A -> B -> C is different from
+-- A -> C. origin/destination above stay as the first/last stop snapshots.
+CREATE TABLE route_stops (
+  id          BIGINT PRIMARY KEY,
+  route_id    BIGINT NOT NULL,
+  sequence_no INT NOT NULL,
+  location    VARCHAR(150) NOT NULL,
+  created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_route_stop_route FOREIGN KEY (route_id) REFERENCES routes (id),
+  INDEX idx_route_stops_route (route_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE client_rates (
@@ -332,6 +343,23 @@ CREATE TABLE deliveries (
   created_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_delivery_trip    FOREIGN KEY (trip_id)    REFERENCES trips (id),
   CONSTRAINT fk_delivery_creator FOREIGN KEY (created_by) REFERENCES users (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- BR-25: actual arrival at each planned stop, so the record shows B was visited
+-- and not just that the truck went from A to C.
+CREATE TABLE trip_stop_arrivals (
+  id            BIGINT PRIMARY KEY,
+  trip_id       BIGINT NOT NULL,
+  route_stop_id BIGINT NOT NULL,
+  arrived_at    DATETIME,
+  notes         VARCHAR(255),
+  created_by    BIGINT,
+  created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_tsa_trip    FOREIGN KEY (trip_id)       REFERENCES trips (id),
+  CONSTRAINT fk_tsa_stop    FOREIGN KEY (route_stop_id) REFERENCES route_stops (id),
+  CONSTRAINT fk_tsa_creator FOREIGN KEY (created_by)    REFERENCES users (id),
+  UNIQUE KEY uq_trip_stop (trip_id, route_stop_id),
+  INDEX idx_tsa_trip (trip_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- ---------------------------------------------------------------- finance

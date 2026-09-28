@@ -140,6 +140,39 @@ INSERT INTO routes (id, origin, destination, estimated_km, description) VALUES
   (9, 'Monterrey, NL', 'Saltillo, COAH', 90.0, 'Ruta regional'),
   (10, 'CDMX', 'Puebla, PUE', 130.0, 'Ruta metropolitana');
 
+-- BR-25: ordered stops. Routes 1, 2, 5 and 6 include intermediate stops, so the
+-- record distinguishes "CDMX -> Monterrey" from "CDMX -> Queretaro -> SLP -> Monterrey".
+INSERT INTO route_stops (id, route_id, sequence_no, location) VALUES
+  (1, 1, 1, 'CDMX'),
+  (2, 1, 2, 'Queretaro, QRO'),
+  (3, 1, 3, 'San Luis Potosi, SLP'),
+  (4, 1, 4, 'Monterrey, NL'),
+  (5, 2, 1, 'CDMX'),
+  (6, 2, 2, 'Morelia, MICH'),
+  (7, 2, 3, 'Guadalajara, JAL'),
+  (8, 3, 1, 'Monterrey, NL'),
+  (9, 3, 2, 'Puebla, PUE'),
+  (10, 4, 1, 'Leon, GTO'),
+  (11, 4, 2, 'CDMX'),
+  (12, 5, 1, 'CDMX'),
+  (13, 5, 2, 'Puebla, PUE'),
+  (14, 5, 3, 'Veracruz, VER'),
+  (15, 5, 4, 'Villahermosa, TAB'),
+  (16, 5, 5, 'Campeche, CAM'),
+  (17, 5, 6, 'Merida, YUC'),
+  (18, 6, 1, 'Guadalajara, JAL'),
+  (19, 6, 2, 'Zacatecas, ZAC'),
+  (20, 6, 3, 'Saltillo, COAH'),
+  (21, 6, 4, 'Monterrey, NL'),
+  (22, 7, 1, 'Puebla, PUE'),
+  (23, 7, 2, 'Veracruz, VER'),
+  (24, 8, 1, 'CDMX'),
+  (25, 8, 2, 'Queretaro, QRO'),
+  (26, 9, 1, 'Monterrey, NL'),
+  (27, 9, 2, 'Saltillo, COAH'),
+  (28, 10, 1, 'CDMX'),
+  (29, 10, 2, 'Puebla, PUE');
+
 INSERT INTO client_rates (id, client_id, route_id, rate, valid_from, valid_to) VALUES
   (1, 1, 1, 42000.00, '2026-01-01', NULL),
   (2, 1, 3, 46000.00, '2026-01-01', NULL),
@@ -236,6 +269,21 @@ INSERT INTO deliveries (id, trip_id, actual_datetime, received_by, evidence_refe
   (3, 4, '2026-07-07 19:30:00', 'Diego Luna', 'PO-88233', 'complete', 1),
   (4, 5, '2026-09-13 21:20:00', 'Paola Cruz', 'PO-88234', 'complete', 1);
 
+-- BR-25: actual arrivals at the planned stops of two finished trips and one
+-- in-progress trip (its second stop is still pending).
+INSERT INTO trip_stop_arrivals (id, trip_id, route_stop_id, arrived_at, notes, created_by) VALUES
+  (1, 1, 1, '2026-05-02 08:20:00', 'Salida de patio', 1),
+  (2, 1, 2, '2026-05-02 13:00:00', 'Parada de descanso', 1),
+  (3, 1, 3, '2026-05-03 09:30:00', 'Carga de combustible', 1),
+  (4, 1, 4, '2026-05-04 17:30:00', 'Entrega', 1),
+  (5, 5, 12, '2026-09-10 05:45:00', 'Salida', 1),
+  (6, 5, 13, '2026-09-10 09:00:00', 'Paso', 1),
+  (7, 5, 14, '2026-09-10 15:00:00', 'Descanso', 1),
+  (8, 5, 15, '2026-09-11 10:00:00', 'Pernocta', 1),
+  (9, 5, 16, '2026-09-12 08:00:00', 'Paso', 1),
+  (10, 5, 17, '2026-09-13 21:20:00', 'Entrega', 1),
+  (11, 3, 8, '2026-09-20 05:30:00', 'Salida de Monterrey', 1);
+
 -- ---------------------------------------------------------------- costs
 
 INSERT INTO expenses (id, trip_id, expense_type, amount, expense_date, description, created_by) VALUES
@@ -328,6 +376,7 @@ INSERT INTO payments (id, invoice_id, amount, payment_date, payment_method, crea
 INSERT INTO sequences (name, next_value)
 SELECT 'clients', COALESCE(MAX(id), 0) FROM clients
 UNION ALL SELECT 'routes', COALESCE(MAX(id), 0) FROM routes
+UNION ALL SELECT 'route_stops', COALESCE(MAX(id), 0) FROM route_stops
 UNION ALL SELECT 'client_rates', COALESCE(MAX(id), 0) FROM client_rates
 UNION ALL SELECT 'licenses', COALESCE(MAX(id), 0) FROM licenses
 UNION ALL SELECT 'employees', COALESCE(MAX(id), 0) FROM employees
@@ -337,6 +386,7 @@ UNION ALL SELECT 'service_requests', COALESCE(MAX(id), 0) FROM service_requests
 UNION ALL SELECT 'request_packages', COALESCE(MAX(id), 0) FROM request_packages
 UNION ALL SELECT 'trips', COALESCE(MAX(id), 0) FROM trips
 UNION ALL SELECT 'deliveries', COALESCE(MAX(id), 0) FROM deliveries
+UNION ALL SELECT 'trip_stop_arrivals', COALESCE(MAX(id), 0) FROM trip_stop_arrivals
 UNION ALL SELECT 'expenses', COALESCE(MAX(id), 0) FROM expenses
 UNION ALL SELECT 'advances', COALESCE(MAX(id), 0) FROM advances
 UNION ALL SELECT 'fuel_loads', COALESCE(MAX(id), 0) FROM fuel_loads

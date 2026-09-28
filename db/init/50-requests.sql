@@ -473,6 +473,7 @@ p: BEGIN
   DELETE FROM advances WHERE trip_id IN (SELECT id FROM trips WHERE service_request_id = p_id);
   DELETE FROM incidents WHERE trip_id IN (SELECT id FROM trips WHERE service_request_id = p_id);
   DELETE FROM deliveries WHERE trip_id IN (SELECT id FROM trips WHERE service_request_id = p_id);
+  DELETE FROM trip_stop_arrivals WHERE trip_id IN (SELECT id FROM trips WHERE service_request_id = p_id);
   UPDATE fuel_loads SET trip_id = NULL WHERE trip_id IN (SELECT id FROM trips WHERE service_request_id = p_id);
   DELETE FROM trips WHERE service_request_id = p_id;
   DELETE FROM service_requests WHERE id = p_id;

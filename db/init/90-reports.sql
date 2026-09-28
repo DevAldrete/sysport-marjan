@@ -28,7 +28,7 @@ END$$
 -- FR-RPT-2: route usage.
 CREATE PROCEDURE sp_route_usage(IN p_from DATE, IN p_to DATE)
 p: BEGIN
-  SELECT CONCAT(r.origin, ' -> ', r.destination) AS ruta,
+  SELECT COALESCE(fn_route_label(r.id), CONCAT(r.origin, ' -> ', r.destination)) AS ruta,
          COUNT(t.id) AS viajes,
          COALESCE(SUM(sr.agreed_rate), 0) AS ingresos
   FROM routes r

@@ -74,7 +74,7 @@ public final class Database {
       java.util.Map.entry("invoice_number", "Ese numero de factura ya existe"),
       java.util.Map.entry("service_request_id", "Esa solicitud ya tiene un viaje o una factura asociada"),
       java.util.Map.entry("trip_id", "Ese viaje ya tiene una entrega registrada"),
-      java.util.Map.entry("uq_routes_pair", "Ya existe una ruta con ese origen y destino"));
+      java.util.Map.entry("uq_trip_stop", "Esa parada ya tiene una llegada registrada"));
 
   /** Friendly text for the foreign key that could not be satisfied. */
   private static final java.util.Map<String, String> FOREIGN_KEY_MESSAGES = java.util.Map.ofEntries(
