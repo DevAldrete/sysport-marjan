@@ -76,8 +76,8 @@ public class AuthService {
         if (id == Session.userId()) {
             return Result.err("No puede eliminar su propio usuario");
         }
-        users.delete(id);
-        return Result.ok(null);
+        Result<Void> deleted = users.delete(id, Session.userId());
+        return deleted.isErr() ? Result.err(deleted.problems()) : Result.ok(null);
     }
 
     public Result<Void> updateUser(long id, String username, long roleId, Long employeeId, UserStatus status) {
