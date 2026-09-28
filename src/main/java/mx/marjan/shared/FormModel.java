@@ -143,6 +143,21 @@ public final class FormModel {
         touched.add(key);
     }
 
+    /** Marks every validated field as edited, so a submit can check the whole form. */
+    public void markAllTouched() {
+        touched.addAll(validators.keySet());
+    }
+
+    /** True when no validated field currently has a problem. */
+    public boolean isValid() {
+        for (Map.Entry<String, Function<String, String>> entry : validators.entrySet()) {
+            if (entry.getValue().apply(text(entry.getKey())) != null) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /** Validation messages for touched fields, keyed by field. Empty when all are valid. */
     public Map<String, String> validate() {
         Map<String, String> messages = new LinkedHashMap<>();

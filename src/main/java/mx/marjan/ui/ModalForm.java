@@ -55,6 +55,11 @@ public final class ModalForm {
 
         save.addEventFilter(ActionEvent.ACTION, event -> {
             event.consume();
+            // Block submit while a live-validated field is still red.
+            if (!form.isValid()) {
+                form.focusFirstInvalid();
+                return;
+            }
             save.setDisable(true);
             showProblems(problems, null, false);
             Async.run(onSubmit,

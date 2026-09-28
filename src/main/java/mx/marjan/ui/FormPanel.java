@@ -16,6 +16,7 @@ import javafx.scene.control.PasswordField;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextInputControl;
+import javafx.scene.control.Tooltip;
 import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.Priority;
@@ -137,6 +138,35 @@ public final class FormPanel {
         return this;
     }
 
+    /** Adds a full-width custom node on its own row (e.g. a child-list editor). */
+    public FormPanel addSection(Node node) {
+        grid.add(node, 0, row, 2, 1);
+        GridPane.setHgrow(node, Priority.ALWAYS);
+        row += 2;
+        return this;
+    }
+
+    /** Marks every validated field touched and reports whether the whole form is valid. */
+    public boolean isValid() {
+        model.markAllTouched();
+        refresh();
+        return model.isValid();
+    }
+
+    /** Focuses the first field whose live validator is failing. */
+    public void focusFirstInvalid() {
+        model.markAllTouched();
+        refresh();
+        Map<String, String> problems = model.validate();
+        for (String key : controls.keySet()) {
+            if (problems.containsKey(key)) {
+                Control control = controls.get(key);
+                Platform.runLater(control::requestFocus);
+                return;
+            }
+        }
+    }
+
     /** A read-only field whose value is recomputed from the others on every change. */
     public FormPanel addComputed(String key, String label, java.util.function.Supplier<String> supplier) {
         model.addComputed(key, label, supplier);
@@ -230,6 +260,9 @@ public final class FormPanel {
 
     private void place(String key, Control control, String hint) {
         control.getStyleClass().add("form-control");
+        if (hint != null) {
+            control.setTooltip(new Tooltip(hint));
+        }
         controls.put(key, control);
         grid.add(new Label(model.label(key)), 0, row);
         GridPane.setValignment(control, javafx.geometry.VPos.CENTER);

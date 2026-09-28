@@ -94,6 +94,16 @@ public final class Ui {
         return button;
     }
 
+    /** A tooltip button that starts disabled when the user lacks the permission. */
+    public static Button button(String text, String tooltip, Runnable action, boolean enabled) {
+        Button button = button(text, tooltip, action);
+        button.setDisable(!enabled);
+        if (!enabled) {
+            button.setTooltip(new javafx.scene.control.Tooltip("No tiene permiso para esta accion"));
+        }
+        return button;
+    }
+
     public static Button primary(String text, Runnable action) {
         Button button = button(text, action);
         button.getStyleClass().add("accent");
