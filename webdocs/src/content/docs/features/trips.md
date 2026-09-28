@@ -15,7 +15,7 @@ assignment and owns costs, incidents and the delivery.
 | Arrive | `sp_arrive_trip` | `trips.write` | BR-21 mileage |
 | Reassign | `sp_reassign_trip` | `trips.assign` | BR-15 (before departure) |
 | Cancel | `sp_cancel_trip` | `trips.write` | only `scheduled` |
-| Delete | `sp_trip_delete` | `trips.write` | BR-14 |
+| Delete | `sp_trip_delete` | `trips.write` | BR-27 (only `scheduled`/`cancelled`) |
 | Sweep | `sp_sweep_lifecycle` | `trips.write` | time-driven transitions |
 | Register delivery | `sp_delivery_save` | `deliveries.write` | BR-12 / BR-13 |
 | Register incident | `sp_incident_save` | `incidents.write` | — |
@@ -29,6 +29,7 @@ See [Assignment](/domain/assignment/) for the assignment transaction in detail.
 | Tab | Contents |
 | --- | --- |
 | **Resumen** | expenses total, fuel total, advance settlement |
+| **Paradas** | the route's ordered stops + actual arrival (BR-26): Marcar llegada / Quitar llegada |
 | **Gastos** | expenses table + Nuevo / Eliminar |
 | **Combustible** | fuel loads for the trip |
 | **Anticipos** | advances table + Registrar / Comprobar (settle) / Eliminar |
@@ -38,6 +39,13 @@ See [Assignment](/domain/assignment/) for the assignment transaction in detail.
 
 The **Resumen** total is computed from `ExpenseService` + `FuelService`; the advance outcome comes
 from `AdvanceService.balanceForTrip` (BR-16).
+
+## Stops (BR-26)
+
+The trip inherits its route's ordered stops. The **Paradas** tab lists them (`sp_trip_stops`) and
+lets the user record the actual arrival at each one (`sp_trip_stop_arrival_save`), so the history
+shows the truck went through every intermediate point and not just from origin to destination. A
+stop already visited cannot be removed from the route.
 
 ## Packages & per-unit tracking
 

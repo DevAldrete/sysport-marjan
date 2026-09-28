@@ -46,7 +46,8 @@ CREATE TABLE role_permissions (
 CREATE TABLE licenses (
   id              BIGINT PRIMARY KEY,
   license_number  VARCHAR(50)  NOT NULL UNIQUE,
-  license_type    VARCHAR(50)  NOT NULL,
+  license_type    VARCHAR(50)  NOT NULL
+                  CHECK (license_type IN ('Federal A','Federal B','Federal C','Federal D','Federal E','Estatal','Otro')),
   issue_date      DATE,
   expiration_date DATE         NOT NULL,
   created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -136,8 +137,19 @@ CREATE TABLE routes (
   destination  VARCHAR(150) NOT NULL,
   estimated_km DECIMAL(10,1) CHECK (estimated_km IS NULL OR estimated_km >= 0),
   description  VARCHAR(255),
-  created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY uq_routes_pair (origin, destination)
+  created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- BR-26: a route is an ordered list of stops, so A -> B -> C is different from
+-- A -> C. origin/destination above stay as the first/last stop snapshots.
+CREATE TABLE route_stops (
+  id          BIGINT PRIMARY KEY,
+  route_id    BIGINT NOT NULL,
+  sequence_no INT NOT NULL,
+  location    VARCHAR(150) NOT NULL,
+  created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_route_stop_route FOREIGN KEY (route_id) REFERENCES routes (id),
+  INDEX idx_route_stops_route (route_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE client_rates (
@@ -342,6 +354,23 @@ CREATE TABLE deliveries (
   created_at         TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_delivery_trip    FOREIGN KEY (trip_id)    REFERENCES trips (id),
   CONSTRAINT fk_delivery_creator FOREIGN KEY (created_by) REFERENCES users (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- BR-26: actual arrival at each planned stop, so the record shows B was visited
+-- and not just that the truck went from A to C.
+CREATE TABLE trip_stop_arrivals (
+  id            BIGINT PRIMARY KEY,
+  trip_id       BIGINT NOT NULL,
+  route_stop_id BIGINT NOT NULL,
+  arrived_at    DATETIME,
+  notes         VARCHAR(255),
+  created_by    BIGINT,
+  created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_tsa_trip    FOREIGN KEY (trip_id)       REFERENCES trips (id),
+  CONSTRAINT fk_tsa_stop    FOREIGN KEY (route_stop_id) REFERENCES route_stops (id),
+  CONSTRAINT fk_tsa_creator FOREIGN KEY (created_by)    REFERENCES users (id),
+  UNIQUE KEY uq_trip_stop (trip_id, route_stop_id),
+  INDEX idx_tsa_trip (trip_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- ---------------------------------------------------------------- finance
@@ -582,6 +611,36 @@ BEGIN
       FROM invoices WHERE invoice_number LIKE CONCAT('INV-', p_year, '-%'));
 END$$
 
+-- BR-25: next internal license number, e.g. LIC-MRJ-0001. Assigned by the
+-- database so operators never have to invent or guess the format.
+CREATE FUNCTION fn_next_license_number()
+RETURNS VARCHAR(50)
+READS SQL DATA
+BEGIN
+  RETURN (SELECT CONCAT('LIC-MRJ-',
+      LPAD(COALESCE(MAX(CAST(SUBSTRING(license_number, 9) AS UNSIGNED)), 0) + 1, 4, '0'))
+      FROM licenses WHERE license_number LIKE 'LIC-MRJ-%');
+END$$
+
+-- BR-26: human label of a route's ordered stops, e.g. "A -> B -> C".
+CREATE FUNCTION fn_route_label(p_route_id BIGINT)
+RETURNS VARCHAR(500)
+READS SQL DATA
+BEGIN
+  RETURN (SELECT GROUP_CONCAT(location ORDER BY sequence_no SEPARATOR ' -> ')
+          FROM route_stops WHERE route_id = p_route_id);
+END$$
+
+-- BR-26: canonical signature of a route's ordered stops, used to reject
+-- duplicates that the old (origin, destination) unique key used to catch.
+CREATE FUNCTION fn_route_signature(p_route_id BIGINT)
+RETURNS VARCHAR(500)
+READS SQL DATA
+BEGIN
+  RETURN (SELECT GROUP_CONCAT(LOWER(location) ORDER BY sequence_no SEPARATOR '|')
+          FROM route_stops WHERE route_id = p_route_id);
+END$$
+
 -- Allocates the next id for a table from the sequences row (same policy as
 -- SequenceRepository: no AUTO_INCREMENT, primed from max(id) when missing).
 -- Allocates the next id for a table. The common path is a single atomic
@@ -687,7 +746,8 @@ SELECT id, name, rfc, address, phone, email, contact_name, client_type,
 FROM clients;
 
 CREATE OR REPLACE VIEW v_route AS
-SELECT id, origin, destination, estimated_km, description
+SELECT id, origin, destination, estimated_km, description,
+       COALESCE(fn_route_label(id), CONCAT(origin, ' -> ', destination)) AS route_label
 FROM routes;
 
 CREATE OR REPLACE VIEW v_vehicle AS
@@ -704,7 +764,7 @@ LEFT JOIN licenses l ON l.id = e.license_id;
 
 CREATE OR REPLACE VIEW v_service_request AS
 SELECT sr.id, sr.folio, sr.client_id, c.name AS client_name, sr.route_id,
-       CONCAT(r.origin, ' -> ', r.destination) AS route_label,
+       COALESCE(fn_route_label(sr.route_id), CONCAT(r.origin, ' -> ', r.destination)) AS route_label,
        sr.cargo_description, sr.estimated_weight,
        (SELECT COUNT(*) FROM request_packages p WHERE p.service_request_id = sr.id) AS package_count,
        (SELECT SUM(p.quantity * p.unit_weight) FROM request_packages p
@@ -718,7 +778,7 @@ JOIN routes r ON r.id = sr.route_id;
 
 CREATE OR REPLACE VIEW v_trip AS
 SELECT t.id, t.service_request_id, sr.folio, c.name AS client_name,
-       CONCAT(r.origin, ' -> ', r.destination) AS route_label,
+       COALESCE(fn_route_label(sr.route_id), CONCAT(r.origin, ' -> ', r.destination)) AS route_label,
        t.vehicle_id, CONCAT(v.internal_code, ' (', v.plates, ')') AS vehicle_label,
        t.employee_id, e.name AS employee_name,
        t.estimated_km, t.actual_km, t.planned_start, t.planned_end,
@@ -815,8 +875,30 @@ p: BEGIN
   UPDATE users SET password_hash = p_hash WHERE id = p_id;
 END$$
 
-CREATE PROCEDURE sp_user_delete(IN p_id BIGINT)
+-- BR-27: a user cannot delete itself and the last active administrator is
+-- protected, so the system can never be locked out.
+CREATE PROCEDURE sp_user_delete(IN p_id BIGINT, IN p_actor_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
+  DECLARE v_role VARCHAR(50) DEFAULT NULL;
+  DECLARE v_admins INT DEFAULT 0;
+  SET p_problems = NULL;
+  SELECT r.name INTO v_role
+  FROM users u JOIN roles r ON r.id = u.role_id
+  WHERE u.id = p_id;
+  IF v_role IS NULL THEN
+    SET p_problems = 'Usuario no encontrado'; LEAVE p;
+  END IF;
+  IF p_id = p_actor_id THEN
+    SET p_problems = 'No puede eliminar su propio usuario'; LEAVE p;
+  END IF;
+  IF v_role = 'admin' THEN
+    SELECT COUNT(*) INTO v_admins
+    FROM users u JOIN roles r ON r.id = u.role_id
+    WHERE r.name = 'admin' AND u.status = 'active';
+    IF v_admins <= 1 THEN
+      SET p_problems = 'No se puede eliminar el ultimo administrador'; LEAVE p;
+    END IF;
+  END IF;
   DELETE FROM users WHERE id = p_id;
 END$$
 
@@ -1006,6 +1088,7 @@ p: BEGIN
   SELECT * FROM v_route
   WHERE p_term IS NULL OR p_term = ''
      OR origin LIKE CONCAT('%', p_term, '%') OR destination LIKE CONCAT('%', p_term, '%')
+     OR route_label LIKE CONCAT('%', p_term, '%')
   ORDER BY origin, destination;
 END$$
 
@@ -1050,9 +1133,75 @@ p: BEGIN
     SET p_problems = 'No se puede eliminar: la ruta tiene solicitudes o tarifas';
     LEAVE p;
   END IF;
+  DELETE FROM route_stops WHERE route_id = p_id;
   DELETE FROM routes WHERE id = p_id;
   IF ROW_COUNT() = 0 THEN
     SET p_problems = 'Ruta no encontrada';
+  END IF;
+END$$
+
+-- BR-26: ordered stops of a route. Written row by row by the repository inside
+-- one Java transaction (see RouteRepository), so no transaction here.
+CREATE PROCEDURE sp_route_stops(IN p_route_id BIGINT)
+p: BEGIN
+  SELECT id, route_id, sequence_no, location
+  FROM route_stops WHERE route_id = p_route_id
+  ORDER BY sequence_no;
+END$$
+
+CREATE PROCEDURE sp_route_stop_save(IN p_id BIGINT, IN p_route_id BIGINT, IN p_sequence INT,
+    IN p_location VARCHAR(150), OUT p_new_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  SET p_problems = NULL;
+  SET p_new_id = NULL;
+  IF p_route_id IS NULL OR p_route_id = 0
+     OR (SELECT COUNT(*) FROM routes WHERE id = p_route_id) = 0 THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La ruta de la parada no existe');
+  END IF;
+  IF p_location IS NULL OR p_location = '' THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'La parada es obligatoria');
+  END IF;
+  IF p_sequence IS NULL OR p_sequence <= 0 THEN
+    SET p_problems = CONCAT_WS('; ', p_problems, 'El orden de la parada es invalido');
+  END IF;
+  IF p_problems IS NOT NULL THEN LEAVE p; END IF;
+
+  IF p_id IS NULL OR p_id = 0 THEN
+    CALL sp_next_id('route_stops', p_new_id);
+    INSERT INTO route_stops (id, route_id, sequence_no, location)
+    VALUES (p_new_id, p_route_id, p_sequence, p_location);
+  ELSE
+    SET p_new_id = p_id;
+    UPDATE route_stops SET sequence_no = p_sequence, location = p_location
+    WHERE id = p_id AND route_id = p_route_id;
+    IF (SELECT COUNT(*) FROM route_stops WHERE id = p_id) = 0 THEN
+      SET p_problems = 'Parada no encontrada';
+      SET p_new_id = NULL;
+    END IF;
+  END IF;
+END$$
+
+-- A stop already visited by a trip cannot be removed: the arrival is history.
+CREATE PROCEDURE sp_route_stop_delete(IN p_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  SET p_problems = NULL;
+  IF (SELECT COUNT(*) FROM trip_stop_arrivals WHERE route_stop_id = p_id) > 0 THEN
+    SET p_problems = 'No se puede quitar una parada con llegadas registradas';
+    LEAVE p;
+  END IF;
+  DELETE FROM route_stops WHERE id = p_id;
+END$$
+
+-- BR-26: reject a route whose ordered stops repeat another route's.
+CREATE PROCEDURE sp_route_duplicate(IN p_route_id BIGINT, OUT p_problems TEXT)
+p: BEGIN
+  DECLARE v_signature VARCHAR(500);
+  SET p_problems = NULL;
+  SET v_signature = fn_route_signature(p_route_id);
+  IF v_signature IS NOT NULL
+     AND (SELECT COUNT(*) FROM routes r
+          WHERE r.id <> p_route_id AND fn_route_signature(r.id) = v_signature) > 0 THEN
+    SET p_problems = 'Ya existe una ruta con el mismo recorrido';
   END IF;
 END$$
 
@@ -1455,11 +1604,15 @@ CREATE PROCEDURE sp_employee_save(IN p_id BIGINT, IN p_name VARCHAR(150), IN p_a
     OUT p_new_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
   DECLARE v_license_id BIGINT DEFAULT NULL;
+  DECLARE v_has_license TINYINT DEFAULT 0;
   DECLARE EXIT HANDLER FOR SQLEXCEPTION
   BEGIN
     ROLLBACK; SET p_problems = 'Error inesperado al guardar el operador';
   END;
   SET p_problems = NULL;
+  SET v_has_license = (p_license_type IS NOT NULL AND p_license_type <> '')
+                   OR p_license_expiry IS NOT NULL
+                   OR (p_license_number IS NOT NULL AND p_license_number <> '');
   IF p_name IS NULL OR p_name = '' THEN
     SET p_problems = CONCAT_WS('; ', p_problems, 'El nombre es obligatorio');
   END IF;
@@ -1480,9 +1633,15 @@ p: BEGIN
   IF NOT fn_phone_valid(p_ec_phone) THEN
     SET p_problems = CONCAT_WS('; ', p_problems, 'El telefono de emergencia no tiene un formato valido');
   END IF;
-  IF p_license_number IS NOT NULL AND p_license_number <> '' THEN
-    IF NOT fn_license_number_valid(p_license_number) THEN
+  IF v_has_license THEN
+    IF p_license_number IS NOT NULL AND p_license_number <> ''
+       AND NOT fn_license_number_valid(p_license_number) THEN
       SET p_problems = CONCAT_WS('; ', p_problems, 'El numero de licencia no tiene un formato valido');
+    END IF;
+    IF p_license_type IS NULL OR p_license_type = '' THEN
+      SET p_problems = CONCAT_WS('; ', p_problems, 'El tipo de licencia es obligatorio');
+    ELSEIF p_license_type NOT IN ('Federal A','Federal B','Federal C','Federal D','Federal E','Estatal','Otro') THEN
+      SET p_problems = CONCAT_WS('; ', p_problems, 'El tipo de licencia no es valido');
     END IF;
     IF p_license_expiry IS NULL THEN
       SET p_problems = CONCAT_WS('; ', p_problems, 'La fecha de vencimiento de la licencia es obligatoria');
@@ -1503,20 +1662,21 @@ p: BEGIN
   IF p_id IS NOT NULL AND p_id <> 0 THEN
     SELECT license_id INTO v_license_id FROM employees WHERE id = p_id;
   END IF;
-  IF p_license_number IS NOT NULL AND p_license_number <> '' THEN
-    IF p_license_id IS NULL OR p_license_id = 0 THEN
+  IF v_has_license THEN
+    IF v_license_id IS NULL OR v_license_id = 0 THEN
+      -- BR-25: the internal number is allocated by the database when blank.
       CALL sp_next_id('licenses', v_license_id);
       INSERT INTO licenses (id, license_number, license_type, issue_date, expiration_date)
-      VALUES (v_license_id, p_license_number, p_license_type, p_license_issue, p_license_expiry);
+      VALUES (v_license_id, COALESCE(NULLIF(p_license_number, ''), fn_next_license_number()),
+              p_license_type, p_license_issue, p_license_expiry);
     ELSE
-      SET v_license_id = p_license_id;
-      UPDATE licenses SET license_number = p_license_number, license_type = p_license_type,
-                          issue_date = p_license_issue, expiration_date = p_license_expiry
-      WHERE id = p_license_id;
+      UPDATE licenses SET
+          license_number = COALESCE(NULLIF(p_license_number, ''), license_number),
+          license_type = p_license_type,
+          issue_date = p_license_issue,
+          expiration_date = p_license_expiry
+      WHERE id = v_license_id;
     END IF;
-  ELSEIF p_license_id IS NOT NULL AND p_license_id <> 0 THEN
-    -- Blank number means "leave the license as it is", not "clear it".
-    SET v_license_id = p_license_id;
   END IF;
 
   IF p_id IS NULL OR p_id = 0 THEN
@@ -1986,8 +2146,23 @@ p: BEGIN
   END IF;
 END$$
 
-CREATE PROCEDURE sp_package_delete(IN p_id BIGINT)
+-- BR-27: a package line can be edited until the request is in transit; after
+-- that the cargo is history (receipts are recorded, not rewritten).
+CREATE PROCEDURE sp_package_delete(IN p_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
+  DECLARE v_status VARCHAR(20) DEFAULT NULL;
+  SET p_problems = NULL;
+  SELECT sr.status INTO v_status
+  FROM request_packages pkg
+  JOIN service_requests sr ON sr.id = pkg.service_request_id
+  WHERE pkg.id = p_id;
+  IF v_status IS NULL THEN
+    SET p_problems = 'Paquete no encontrado'; LEAVE p;
+  END IF;
+  IF v_status IN ('in_transit','delivered','closed') THEN
+    SET p_problems = 'No se puede modificar la carga de una solicitud en transito o entregada';
+    LEAVE p;
+  END IF;
   DELETE FROM request_packages WHERE id = p_id;
 END$$
 
@@ -2012,16 +2187,27 @@ p: BEGIN
 END$$
 
 -- BR-14: careful cascade in one transaction. Audit rows are intentionally kept
--- (BR-22), even for a hard delete.
+-- (BR-22), even for a hard delete. BR-27: a request with a trip or an invoice
+-- is history, so it must be cancelled instead of deleted.
 CREATE PROCEDURE sp_request_delete(IN p_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
+  DECLARE v_status VARCHAR(20) DEFAULT NULL;
   DECLARE EXIT HANDLER FOR SQLEXCEPTION
   BEGIN
     ROLLBACK; SET p_problems = 'No se puede eliminar la solicitud: tiene registros relacionados';
   END;
   SET p_problems = NULL;
-  IF (SELECT COUNT(*) FROM service_requests WHERE id = p_id) = 0 THEN
+  SELECT status INTO v_status FROM service_requests WHERE id = p_id;
+  IF v_status IS NULL THEN
     SET p_problems = 'Solicitud no encontrada'; LEAVE p;
+  END IF;
+  IF v_status IN ('assigned','in_transit','delivered','closed') THEN
+    SET p_problems = 'Solo se puede eliminar una solicitud sin viaje asignado; cancelela en su lugar';
+    LEAVE p;
+  END IF;
+  IF (SELECT COUNT(*) FROM invoices WHERE service_request_id = p_id) > 0 THEN
+    SET p_problems = 'No se puede eliminar una solicitud con factura; cancelela en su lugar';
+    LEAVE p;
   END IF;
   START TRANSACTION;
   DELETE FROM request_packages WHERE service_request_id = p_id;
@@ -2031,6 +2217,7 @@ p: BEGIN
   DELETE FROM advances WHERE trip_id IN (SELECT id FROM trips WHERE service_request_id = p_id);
   DELETE FROM incidents WHERE trip_id IN (SELECT id FROM trips WHERE service_request_id = p_id);
   DELETE FROM deliveries WHERE trip_id IN (SELECT id FROM trips WHERE service_request_id = p_id);
+  DELETE FROM trip_stop_arrivals WHERE trip_id IN (SELECT id FROM trips WHERE service_request_id = p_id);
   UPDATE fuel_loads SET trip_id = NULL WHERE trip_id IN (SELECT id FROM trips WHERE service_request_id = p_id);
   DELETE FROM trips WHERE service_request_id = p_id;
   DELETE FROM service_requests WHERE id = p_id;
@@ -2315,6 +2502,7 @@ p: BEGIN
   DELETE FROM advances WHERE trip_id = p_trip_id;
   DELETE FROM incidents WHERE trip_id = p_trip_id;
   DELETE FROM deliveries WHERE trip_id = p_trip_id;
+  DELETE FROM trip_stop_arrivals WHERE trip_id = p_trip_id;
   UPDATE fuel_loads SET trip_id = NULL WHERE trip_id = p_trip_id;
   DELETE FROM trips WHERE id = p_trip_id;
 
@@ -2324,6 +2512,57 @@ p: BEGIN
     UPDATE service_requests SET status = 'scheduled', updated_by = p_user_id WHERE id = v_request;
   END IF;
   COMMIT;
+END$$
+
+-- BR-26: the trip's planned stops with the actual arrival at each one, so the
+-- history proves A -> B -> C was followed. arrived_at is null until recorded.
+CREATE PROCEDURE sp_trip_stops(IN p_trip_id BIGINT)
+p: BEGIN
+  SELECT rs.id AS route_stop_id, rs.sequence_no, rs.location,
+         a.id AS arrival_id, a.arrived_at, a.notes
+  FROM trips t
+  JOIN service_requests sr ON sr.id = t.service_request_id
+  JOIN route_stops rs ON rs.route_id = sr.route_id
+  LEFT JOIN trip_stop_arrivals a
+         ON a.trip_id = t.id AND a.route_stop_id = rs.id
+  WHERE t.id = p_trip_id
+  ORDER BY rs.sequence_no;
+END$$
+
+CREATE PROCEDURE sp_trip_stop_arrival_save(IN p_trip_id BIGINT, IN p_route_stop_id BIGINT,
+    IN p_arrived_at DATETIME, IN p_notes VARCHAR(255), IN p_user_id BIGINT,
+    OUT p_problems TEXT)
+p: BEGIN
+  DECLARE v_stop_route BIGINT DEFAULT NULL;
+  DECLARE v_arrival BIGINT DEFAULT NULL;
+  SET p_problems = NULL;
+  IF p_arrived_at IS NULL THEN
+    SET p_problems = 'La fecha y hora de llegada son obligatorias'; LEAVE p;
+  END IF;
+  SELECT route_id INTO v_stop_route FROM route_stops WHERE id = p_route_stop_id;
+  IF v_stop_route IS NULL THEN
+    SET p_problems = 'La parada no existe'; LEAVE p;
+  END IF;
+  IF (SELECT COUNT(*) FROM trips t
+      JOIN service_requests sr ON sr.id = t.service_request_id
+      WHERE t.id = p_trip_id AND sr.route_id = v_stop_route) = 0 THEN
+    SET p_problems = 'La parada no pertenece a la ruta del viaje'; LEAVE p;
+  END IF;
+  SELECT id INTO v_arrival FROM trip_stop_arrivals
+  WHERE trip_id = p_trip_id AND route_stop_id = p_route_stop_id;
+  IF v_arrival IS NULL THEN
+    CALL sp_next_id('trip_stop_arrivals', v_arrival);
+    INSERT INTO trip_stop_arrivals (id, trip_id, route_stop_id, arrived_at, notes, created_by)
+    VALUES (v_arrival, p_trip_id, p_route_stop_id, p_arrived_at, p_notes, p_user_id);
+  ELSE
+    UPDATE trip_stop_arrivals SET arrived_at = p_arrived_at, notes = p_notes
+    WHERE id = v_arrival;
+  END IF;
+END$$
+
+CREATE PROCEDURE sp_trip_stop_arrival_delete(IN p_id BIGINT)
+p: BEGIN
+  DELETE FROM trip_stop_arrivals WHERE id = p_id;
 END$$
 
 CREATE PROCEDURE sp_sweep_lifecycle(IN p_user_id BIGINT, OUT p_changes INT)
@@ -2772,18 +3011,29 @@ p: BEGIN
   SELECT * FROM v_invoice WHERE service_request_id = p_request_id;
 END$$
 
+-- BR-27: only a pending invoice without payments may be hard-deleted; anything
+-- with history is cancelled instead.
 CREATE PROCEDURE sp_invoice_delete(IN p_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
+  DECLARE v_status VARCHAR(20) DEFAULT NULL;
   DECLARE EXIT HANDLER FOR SQLEXCEPTION
   BEGIN
     ROLLBACK; SET p_problems = 'No se puede eliminar la factura';
   END;
   SET p_problems = NULL;
-  IF (SELECT COUNT(*) FROM invoices WHERE id = p_id) = 0 THEN
+  SELECT status INTO v_status FROM invoices WHERE id = p_id;
+  IF v_status IS NULL THEN
     SET p_problems = 'Factura no encontrada'; LEAVE p;
   END IF;
+  IF v_status <> 'pending' THEN
+    SET p_problems = 'Solo se puede eliminar una factura pendiente; cancelela en su lugar';
+    LEAVE p;
+  END IF;
+  IF (SELECT COUNT(*) FROM payments WHERE invoice_id = p_id) > 0 THEN
+    SET p_problems = 'No se puede eliminar una factura con pagos; cancelela en su lugar';
+    LEAVE p;
+  END IF;
   START TRANSACTION;
-  DELETE FROM payments WHERE invoice_id = p_id;
   DELETE FROM invoices WHERE id = p_id;
   COMMIT;
 END$$
@@ -2819,9 +3069,35 @@ p: BEGIN
   ORDER BY p.payment_date;
 END$$
 
-CREATE PROCEDURE sp_payment_delete(IN p_id BIGINT)
+-- BR-19: removing a payment re-derives the invoice status so it can never stay
+-- wrongly "paid". Payments of a cancelled invoice are frozen.
+CREATE PROCEDURE sp_payment_delete(IN p_id BIGINT, OUT p_problems TEXT)
 p: BEGIN
+  DECLARE v_invoice BIGINT DEFAULT NULL;
+  DECLARE v_amount DECIMAL(12,2);
+  DECLARE v_due DATE;
+  DECLARE v_status VARCHAR(20);
+  DECLARE v_paid DECIMAL(12,2);
+  DECLARE EXIT HANDLER FOR SQLEXCEPTION
+  BEGIN
+    ROLLBACK; SET p_problems = 'No se puede eliminar el pago';
+  END;
+  SET p_problems = NULL;
+  SELECT invoice_id INTO v_invoice FROM payments WHERE id = p_id;
+  IF v_invoice IS NULL THEN
+    SET p_problems = 'Pago no encontrado'; LEAVE p;
+  END IF;
+  SELECT status INTO v_status FROM invoices WHERE id = v_invoice;
+  IF v_status = 'cancelled' THEN
+    SET p_problems = 'No se puede modificar un pago de una factura cancelada'; LEAVE p;
+  END IF;
+  START TRANSACTION;
   DELETE FROM payments WHERE id = p_id;
+  SELECT amount, due_date, status INTO v_amount, v_due, v_status FROM invoices WHERE id = v_invoice;
+  SELECT COALESCE(SUM(amount),0) INTO v_paid FROM payments WHERE invoice_id = v_invoice;
+  UPDATE invoices SET status = fn_invoice_status(v_status, v_amount, v_paid, v_due, CURDATE())
+  WHERE id = v_invoice;
+  COMMIT;
 END$$
 
 DELIMITER ;
@@ -2857,7 +3133,7 @@ END$$
 -- FR-RPT-2: route usage.
 CREATE PROCEDURE sp_route_usage(IN p_from DATE, IN p_to DATE)
 p: BEGIN
-  SELECT CONCAT(r.origin, ' -> ', r.destination) AS ruta,
+  SELECT COALESCE(fn_route_label(r.id), CONCAT(r.origin, ' -> ', r.destination)) AS ruta,
          COUNT(t.id) AS viajes,
          COALESCE(SUM(sr.agreed_rate), 0) AS ingresos
   FROM routes r
@@ -3123,6 +3399,39 @@ INSERT INTO routes (id, origin, destination, estimated_km, description) VALUES
   (9, 'Monterrey, NL', 'Saltillo, COAH', 90.0, 'Ruta regional'),
   (10, 'CDMX', 'Puebla, PUE', 130.0, 'Ruta metropolitana');
 
+-- BR-26: ordered stops. Routes 1, 2, 5 and 6 include intermediate stops, so the
+-- record distinguishes "CDMX -> Monterrey" from "CDMX -> Queretaro -> SLP -> Monterrey".
+INSERT INTO route_stops (id, route_id, sequence_no, location) VALUES
+  (1, 1, 1, 'CDMX'),
+  (2, 1, 2, 'Queretaro, QRO'),
+  (3, 1, 3, 'San Luis Potosi, SLP'),
+  (4, 1, 4, 'Monterrey, NL'),
+  (5, 2, 1, 'CDMX'),
+  (6, 2, 2, 'Morelia, MICH'),
+  (7, 2, 3, 'Guadalajara, JAL'),
+  (8, 3, 1, 'Monterrey, NL'),
+  (9, 3, 2, 'Puebla, PUE'),
+  (10, 4, 1, 'Leon, GTO'),
+  (11, 4, 2, 'CDMX'),
+  (12, 5, 1, 'CDMX'),
+  (13, 5, 2, 'Puebla, PUE'),
+  (14, 5, 3, 'Veracruz, VER'),
+  (15, 5, 4, 'Villahermosa, TAB'),
+  (16, 5, 5, 'Campeche, CAM'),
+  (17, 5, 6, 'Merida, YUC'),
+  (18, 6, 1, 'Guadalajara, JAL'),
+  (19, 6, 2, 'Zacatecas, ZAC'),
+  (20, 6, 3, 'Saltillo, COAH'),
+  (21, 6, 4, 'Monterrey, NL'),
+  (22, 7, 1, 'Puebla, PUE'),
+  (23, 7, 2, 'Veracruz, VER'),
+  (24, 8, 1, 'CDMX'),
+  (25, 8, 2, 'Queretaro, QRO'),
+  (26, 9, 1, 'Monterrey, NL'),
+  (27, 9, 2, 'Saltillo, COAH'),
+  (28, 10, 1, 'CDMX'),
+  (29, 10, 2, 'Puebla, PUE');
+
 INSERT INTO client_rates (id, client_id, route_id, rate, valid_from, valid_to) VALUES
   (1, 1, 1, 42000.00, '2026-01-01', NULL),
   (2, 1, 3, 46000.00, '2026-01-01', NULL),
@@ -3219,6 +3528,21 @@ INSERT INTO deliveries (id, trip_id, actual_datetime, received_by, evidence_refe
   (3, 4, '2026-07-07 19:30:00', 'Diego Luna', 'PO-88233', 'complete', 1),
   (4, 5, '2026-09-13 21:20:00', 'Paola Cruz', 'PO-88234', 'complete', 1);
 
+-- BR-26: actual arrivals at the planned stops of two finished trips and one
+-- in-progress trip (its second stop is still pending).
+INSERT INTO trip_stop_arrivals (id, trip_id, route_stop_id, arrived_at, notes, created_by) VALUES
+  (1, 1, 1, '2026-05-02 08:20:00', 'Salida de patio', 1),
+  (2, 1, 2, '2026-05-02 13:00:00', 'Parada de descanso', 1),
+  (3, 1, 3, '2026-05-03 09:30:00', 'Carga de combustible', 1),
+  (4, 1, 4, '2026-05-04 17:30:00', 'Entrega', 1),
+  (5, 5, 12, '2026-09-10 05:45:00', 'Salida', 1),
+  (6, 5, 13, '2026-09-10 09:00:00', 'Paso', 1),
+  (7, 5, 14, '2026-09-10 15:00:00', 'Descanso', 1),
+  (8, 5, 15, '2026-09-11 10:00:00', 'Pernocta', 1),
+  (9, 5, 16, '2026-09-12 08:00:00', 'Paso', 1),
+  (10, 5, 17, '2026-09-13 21:20:00', 'Entrega', 1),
+  (11, 3, 8, '2026-09-20 05:30:00', 'Salida de Monterrey', 1);
+
 -- ---------------------------------------------------------------- costs
 
 INSERT INTO expenses (id, trip_id, expense_type, amount, expense_date, description, created_by) VALUES
@@ -3311,6 +3635,7 @@ INSERT INTO payments (id, invoice_id, amount, payment_date, payment_method, crea
 INSERT INTO sequences (name, next_value)
 SELECT 'clients', COALESCE(MAX(id), 0) FROM clients
 UNION ALL SELECT 'routes', COALESCE(MAX(id), 0) FROM routes
+UNION ALL SELECT 'route_stops', COALESCE(MAX(id), 0) FROM route_stops
 UNION ALL SELECT 'client_rates', COALESCE(MAX(id), 0) FROM client_rates
 UNION ALL SELECT 'licenses', COALESCE(MAX(id), 0) FROM licenses
 UNION ALL SELECT 'employees', COALESCE(MAX(id), 0) FROM employees
@@ -3320,6 +3645,7 @@ UNION ALL SELECT 'service_requests', COALESCE(MAX(id), 0) FROM service_requests
 UNION ALL SELECT 'request_packages', COALESCE(MAX(id), 0) FROM request_packages
 UNION ALL SELECT 'trips', COALESCE(MAX(id), 0) FROM trips
 UNION ALL SELECT 'deliveries', COALESCE(MAX(id), 0) FROM deliveries
+UNION ALL SELECT 'trip_stop_arrivals', COALESCE(MAX(id), 0) FROM trip_stop_arrivals
 UNION ALL SELECT 'expenses', COALESCE(MAX(id), 0) FROM expenses
 UNION ALL SELECT 'advances', COALESCE(MAX(id), 0) FROM advances
 UNION ALL SELECT 'fuel_loads', COALESCE(MAX(id), 0) FROM fuel_loads

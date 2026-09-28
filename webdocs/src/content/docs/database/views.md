@@ -14,7 +14,9 @@ client_type, payment_terms, credit_limit, credit_days, status`.
 
 ## `v_route`
 
-`id, origin, destination, estimated_km, description`.
+`id, origin, destination, estimated_km, description, route_label`, where `route_label` is
+`fn_route_label(id)` (the ordered stops, e.g. `A -> B -> C`) falling back to
+`origin -> destination` (BR-26).
 
 ## `v_vehicle`
 
@@ -32,7 +34,7 @@ employee without a license still appears.
 `service_requests JOIN clients JOIN routes`, adding:
 
 - `client_name` (from `clients.name`)
-- `route_label` = `CONCAT(r.origin, ' -> ', r.destination)`
+- `route_label` = `COALESCE(fn_route_label(sr.route_id), CONCAT(r.origin, ' -> ', r.destination))`
 - `package_count` and `package_weight` (= `SUM(quantity × unit_weight)` over `request_packages`)
 
 Used by every request search/by-id/status/pending-billing procedure. `estimated_weight` stays the

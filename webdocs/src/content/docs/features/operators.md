@@ -19,7 +19,9 @@ the license, so an employee without one still lists.
 | Delete | `EmployeeService.delete` | `operators.write` | blocked if trips/advances/user exist |
 
 `sp_employee_save` validates name, phone, email, RFC, CURP, emergency phone and the license
-(format + dates). A blank license number keeps the existing license; a new employee starts
+(format + dates). The **licence type** comes from a controlled list (`LicenseType` mirroring the DB
+`CHECK`) and the **internal number** is assigned by the database (`fn_next_license_number`,
+`LIC-MRJ-####`) when blank, so it is never typed by hand (BR-25). A new employee starts
 `available`. `sp_employee_delete` removes the employee and its license together.
 
 ## Status
@@ -42,7 +44,7 @@ date.
 | Layer | Class |
 | --- | --- |
 | Records | `Employee`, `License` |
-| Enum | `EmployeeStatus` |
+| Enum | `EmployeeStatus`, `LicenseType` |
 | Repository | `EmployeeRepository` |
 | Service | `EmployeeService` |
 | View | `OperatorsView` |
