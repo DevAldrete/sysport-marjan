@@ -382,6 +382,11 @@ Priority: **P0** = MVP essential · **P1** = important · **P2** = nice to have.
 | FR-RPT-6 | Available vehicles, vehicles near maintenance, licenses near expiry | P1 |
 | FR-RPT-7 | Export any report to CSV | P1 |
 | FR-DSH-1 | Home dashboard with alert counters (expiring licenses, overdue invoices, maintenance due, requests awaiting assignment) | P2 |
+| FR-DSH-2 | Dashboard KPIs: month revenue, collected, receivable, overdue, active trips, available vehicles | P2 |
+| FR-DSH-3 | Dashboard lists the upcoming departures (client, route, vehicle, operator) | P2 |
+| FR-DSH-4 | Dashboard lists the clients with the largest outstanding balances | P2 |
+| FR-DSH-5 | Dashboard chart: revenue and margin per month | P2 |
+| FR-DSH-6 | Dashboard chart: vehicles by status | P2 |
 
 ---
 

@@ -110,6 +110,7 @@ ModalForm.show(this, "Nueva ruta", form, () -> service.save(built), this::reload
 | `Ui.delete(parent, what, action, onDone)` | confirm + async delete + uniform reporting |
 | `Ui.failure(parent, throwable)` | report an unexpected exception |
 | `Ui.button(text[, tooltip], action[, enabled])` | a button wired to a `Runnable`; disabled when the user lacks the permission |
+| `Ui.button(text, tooltip, icon, action)` | the same button with a leading `Icon` |
 | `Ui.onEnter(field, action)` | Enter in a search field |
 | `Ui.onDoubleClick(table, action)` | open a row on double-click |
 | `Ui.row(…)`, `Ui.column(…)`, `Ui.titled(…)` | layout helpers |
@@ -150,6 +151,23 @@ panel.selected();   // current row or null
 | `Dates` | `format`, `parseDate`, `parseDateTime` (lenient), `today`, `now` |
 | `Text` | `truncate` / `label` for compact table cells |
 | `Validators` | `isValidUsername` + live `date`/`dateTime`/`money`/`number` checks |
+
+## Dashboard widgets
+
+The [dashboard](/features/reports/) uses a few more shared building blocks:
+
+| Class | Purpose |
+| --- | --- |
+| `Theme` | the shared colors (`BACKGROUND`, `CARD`, `PRIMARY`, …) and fonts (`title`, `value`, `caption`) |
+| `Icons` | dependency-free Java2D vector icons (`home`, `truck`, `invoice`, `refresh`, …) drawn on a 0–100 grid |
+| `KpiCard` | a clickable summary card (icon badge, big value, caption); `.onClick(run)` makes it navigate |
+| `Cards` | `Cards.section(title, icon, body)` — a rounded, titled white panel; `Cards.RoundedPanel` paints the card |
+| `Charts` | JFreeChart factories styled to `Theme`: `barLine`, `bar`, `pie` |
+
+```java
+add(new KpiCard("Facturas vencidas", Icons.invoice(24, Theme.DANGER), Theme.DANGER)
+        .onClick(() -> navigator.accept("Facturas")));
+```
 
 ## Screen anatomy
 

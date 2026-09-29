@@ -25,6 +25,11 @@ A quick index of `src/main/java/mx/marjan`. Each feature package follows the sam
 | `FormPanel` | labelled forms with hints, live validation, computed fields |
 | `ModalForm` | standard Guardar/Cancelar dialog |
 | `Ui` | dialogs, buttons, layout, table styling, Enter/double-click helpers |
+| `Theme` | shared dashboard colors and fonts |
+| `Icons` | dependency-free Java2D vector icons |
+| `KpiCard` | clickable dashboard summary card |
+| `Cards` | rounded section containers (`Cards.RoundedPanel`) |
+| `Charts` | JFreeChart bar/line/pie factories styled to `Theme` |
 | `RecordTableModel<T>` | the one generic table model (columns as lambdas) |
 | `RecordTablePanel<T>` | table + selection + action row |
 | `Money` | `BigDecimal` money format/parse |
@@ -109,11 +114,13 @@ A quick index of `src/main/java/mx/marjan`. Each feature package follows the sam
 
 | Class | Kind |
 | --- | --- |
-| `Report`, `DashboardAlerts` | records |
+| `Report`, `DashboardAlerts`, `DashboardFinance`, `DashboardOperations`, `UpcomingTrip`, `Debtor`, `MonthlyRevenue`, `FleetStatusCount` | records |
 | `ReportRepository`, `DashboardRepository` | repos |
 | `ReportService`, `DashboardService` | services |
 | `ReportsView`, `DashboardView` | views |
 | `CsvExporter` | CSV writer |
+
+The dashboard also uses the shared widgets `Theme`, `Icons`, `KpiCard` and `Charts`.
 
 ## Repository → procedure cheat sheet
 
