@@ -285,6 +285,58 @@ class SqlRulesTest {
         assertTrue(duplicate.isErr(), "BR-26: the duplicate route rolls back the whole transaction");
     }
 
+    @Test
+    void dashboardQueriesReturnConsistentAggregates() throws Exception {
+        java.util.List<Object[]> finance = reportRows("{call sp_dashboard_finance(?)}", localToday());
+        assertEquals(1, finance.size(), "FR-DSH-2: finance summary is a single row");
+        BigDecimal receivable = (BigDecimal) finance.get(0)[2];
+        BigDecimal overdue = (BigDecimal) finance.get(0)[3];
+        assertTrue(receivable.signum() >= 0, "receivable is never negative");
+        assertTrue(overdue.compareTo(receivable) <= 0, "overdue cannot exceed total receivable");
+
+        Object[] operations = call("{call sp_dashboard_operations(?,?,?)}",
+                new int[] { Types.INTEGER, Types.INTEGER }, localToday());
+        assertEquals(scalarLong("SELECT COUNT(*) FROM trips WHERE status IN ('scheduled','in_transit')"),
+                ((Number) operations[0]).longValue(), "FR-DSH-2: active trips match the table");
+        assertEquals(scalarLong("SELECT COUNT(*) FROM vehicles WHERE status='available'"),
+                ((Number) operations[1]).longValue(), "FR-DSH-2: available vehicles match the table");
+
+        java.util.List<Object[]> trips = reportRows("{call sp_dashboard_upcoming_trips(?,?)}",
+                localToday(), 7);
+        assertTrue(trips.size() <= 20, "FR-DSH-3: upcoming trips are capped");
+        for (Object[] row : trips) {
+            assertTrue(java.util.List.of("scheduled", "in_transit").contains(row[7]),
+                    "FR-DSH-3: only active trips appear");
+        }
+
+        java.util.List<Object[]> debtors = reportRows("{call sp_dashboard_top_debtors(?)}", 5);
+        assertTrue(debtors.size() <= 5, "FR-DSH-4: the limit is respected");
+        for (int i = 1; i < debtors.size(); i++) {
+            BigDecimal previous = (BigDecimal) debtors.get(i - 1)[1];
+            BigDecimal current = (BigDecimal) debtors.get(i)[1];
+            assertTrue(previous.compareTo(current) >= 0, "FR-DSH-4: ordered by balance descending");
+        }
+        for (Object[] row : debtors) {
+            assertTrue(((BigDecimal) row[1]).signum() > 0, "FR-DSH-4: listed debtors owe money");
+        }
+
+        int months = 6;
+        java.util.List<Object[]> trend = reportRows("{call sp_dashboard_monthly_revenue(?)}", months);
+        assertEquals(months, trend.size(), "FR-DSH-5: one row per requested month");
+        for (Object[] row : trend) {
+            BigDecimal revenue = (BigDecimal) row[1];
+            BigDecimal cost = (BigDecimal) row[2];
+            BigDecimal margin = (BigDecimal) row[3];
+            assertEquals(0, revenue.subtract(cost).compareTo(margin),
+                    "FR-DSH-5: margin = revenue - cost");
+        }
+
+        java.util.List<Object[]> fleet = reportRows("{call sp_dashboard_fleet_status()}");
+        long counted = fleet.stream().mapToLong(row -> ((Number) row[1]).longValue()).sum();
+        assertEquals(scalarLong("SELECT COUNT(*) FROM vehicles"), counted,
+                "FR-DSH-6: fleet status counts add up");
+    }
+
     // ------------------------------------------------------------------ helpers
 
     private long createRequest(int clientId, int routeId, String pickup, String delivery,
@@ -465,6 +517,26 @@ class SqlRulesTest {
     private BigDecimal scalarBigDecimal(String sql) throws Exception {
         try (Statement st = connection.createStatement(); ResultSet rs = st.executeQuery(sql)) {
             return rs.next() ? rs.getBigDecimal(1) : null;
+        }
+    }
+
+    private java.util.List<Object[]> reportRows(String callSql, Object... in) throws Exception {
+        try (CallableStatement cs = connection.prepareCall(callSql)) {
+            for (int i = 0; i < in.length; i++) {
+                cs.setObject(i + 1, in[i]);
+            }
+            try (ResultSet rs = cs.executeQuery()) {
+                java.util.List<Object[]> rows = new java.util.ArrayList<>();
+                int columns = rs.getMetaData().getColumnCount();
+                while (rs.next()) {
+                    Object[] row = new Object[columns];
+                    for (int c = 0; c < columns; c++) {
+                        row[c] = rs.getObject(c + 1);
+                    }
+                    rows.add(row);
+                }
+                return rows;
+            }
         }
     }
 

@@ -1,10 +1,10 @@
 ---
 title: Reports
-description: The eight reports, CSV export, and the alert dashboard.
+description: The eight reports, CSV export, and the modern dashboard.
 ---
 
 Package `mx.marjan.reports`. Reports are plain SQL result sets rendered into a generic `Report`
-record; the dashboard shows alert counters.
+record; the dashboard combines alert counters, finance/operation KPIs, charts and lists.
 
 ## The eight reports
 
@@ -43,19 +43,36 @@ labels, so **the procedure's `AS` aliases are the column titles** (in Spanish).
 comma, quote or newline. The screen uses a `JFileChooser` and names the file
 `title.replace(' ', '_') + ".csv"`.
 
-## Dashboard — FR-DSH-1
+## Dashboard — FR-DSH-1..6
 
-`DashboardView` shows four counters from `sp_dashboard(today, OUT×4)`:
+`DashboardView` is a scrollable panel built from cards, charts and lists. Widgets are shown
+**only when the user has the permission for the underlying data**, and every card or table row
+links to the tab where the work happens (via `MainFrame.navigate(title)`).
 
-| Card | Meaning |
+| Widget | Data | Permission |
+| --- | --- | --- |
+| Alert cards (assign, overdue invoices, licenses, maintenance) | `sp_dashboard(today, OUT×4)` | always |
+| Finance cards (month revenue, receivable) | `sp_dashboard_finance(today)` | `invoices.read` |
+| Operation cards (active trips, available vehicles) | `sp_dashboard_operations(today, OUT×2)` | `trips.read` or `fleet.read` |
+| Revenue/margin chart (12 months) | `sp_dashboard_monthly_revenue(12)` | `reports.view` |
+| Fleet-by-status chart | `sp_dashboard_fleet_status()` | `fleet.read` |
+| Upcoming trips table | `sp_dashboard_upcoming_trips(today, 7)` | `trips.read` |
+| Debtors table | `sp_dashboard_top_debtors(10)` | `invoices.read` |
+| Quick actions | navigation only | write permissions |
+
+It also greets the logged-in user (name + role) and shows the last refresh time with an
+**Actualizar** button. The dashboard tab is always shown (no permission required), but the
+permission check for each widget lives in `DashboardService`.
+
+The look is centralized in `mx.marjan.shared`:
+
+| Class | Role |
 | --- | --- |
-| Licencias por vencer | licenses expiring within 30 days |
-| Facturas vencidas | overdue unpaid invoices |
-| Unidades con mantenimiento proximo | vehicles due for maintenance |
-| Solicitudes por asignar | requests in `scheduled` |
-
-It also greets the logged-in user (name + role) and has an **Actualizar** button. The dashboard tab
-is always shown (no permission required), but the data it surfaces is aggregate.
+| `Theme` | colors and fonts |
+| `Icons` | dependency-free Java2D vector icons |
+| `KpiCard` | clickable summary card |
+| `Charts` | JFreeChart bar/line/pie factories styled to match |
+| `Cards` | rounded section containers |
 
 ## Profitability (the important one)
 
@@ -72,7 +89,7 @@ join-multiplication bug (summing a one-to-many join inflates totals).
 
 | Layer | Class |
 | --- | --- |
-| Records | `Report`, `DashboardAlerts` |
+| Records | `Report`, `DashboardAlerts`, `DashboardFinance`, `DashboardOperations`, `UpcomingTrip`, `Debtor`, `MonthlyRevenue`, `FleetStatusCount` |
 | Repository | `ReportRepository`, `DashboardRepository` |
 | Service | `ReportService`, `DashboardService` |
 | View | `ReportsView`, `DashboardView` |

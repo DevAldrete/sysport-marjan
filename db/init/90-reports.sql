@@ -149,4 +149,123 @@ p: BEGIN
   FROM service_requests WHERE status = 'scheduled';
 END$$
 
+-- --------------------------------------------------- dashboard (revamp)
+-- FR-DSH-2: finance summary for the current month plus outstanding balances.
+CREATE PROCEDURE sp_dashboard_finance(IN p_today DATE)
+p: BEGIN
+  SELECT
+    COALESCE((SELECT SUM(i.amount) FROM invoices i
+      WHERE i.status <> 'cancelled'
+        AND i.issue_date >= DATE_FORMAT(p_today, '%Y-%m-01')
+        AND i.issue_date < DATE_ADD(DATE_FORMAT(p_today, '%Y-%m-01'), INTERVAL 1 MONTH)), 0)
+      AS ingresos_mes,
+    COALESCE((SELECT SUM(p.amount) FROM payments p
+      WHERE p.payment_date >= DATE_FORMAT(p_today, '%Y-%m-01')
+        AND p.payment_date < DATE_ADD(DATE_FORMAT(p_today, '%Y-%m-01'), INTERVAL 1 MONTH)), 0)
+      AS cobrado_mes,
+    COALESCE((SELECT SUM(i.amount - COALESCE(paid.total, 0))
+      FROM invoices i
+      LEFT JOIN (SELECT invoice_id, SUM(amount) AS total FROM payments GROUP BY invoice_id) paid
+             ON paid.invoice_id = i.id
+      WHERE i.status <> 'cancelled' AND i.amount > COALESCE(paid.total, 0)), 0)
+      AS por_cobrar,
+    COALESCE((SELECT SUM(i.amount - COALESCE(paid.total, 0))
+      FROM invoices i
+      LEFT JOIN (SELECT invoice_id, SUM(amount) AS total FROM payments GROUP BY invoice_id) paid
+             ON paid.invoice_id = i.id
+      WHERE i.status <> 'cancelled' AND i.due_date < p_today
+        AND i.amount > COALESCE(paid.total, 0)), 0)
+      AS vencido;
+END$$
+
+-- FR-DSH-2: active trips and vehicles ready to be assigned.
+CREATE PROCEDURE sp_dashboard_operations(
+    IN p_today DATE, OUT p_active_trips INT, OUT p_available_vehicles INT)
+p: BEGIN
+  SELECT COUNT(*) INTO p_active_trips
+  FROM trips WHERE status IN ('scheduled', 'in_transit');
+
+  SELECT COUNT(*) INTO p_available_vehicles
+  FROM vehicles WHERE status = 'available';
+END$$
+
+-- FR-DSH-3: the next trips to leave (or already on the road).
+CREATE PROCEDURE sp_dashboard_upcoming_trips(IN p_today DATE, IN p_days INT)
+p: BEGIN
+  SELECT t.id, sr.folio, c.name AS cliente,
+         COALESCE(fn_route_label(sr.route_id), CONCAT(r.origin, ' -> ', r.destination)) AS ruta,
+         CONCAT(v.internal_code, ' (', v.plates, ')') AS unidad,
+         e.name AS operador, t.planned_start AS salida, t.status
+  FROM trips t
+  JOIN service_requests sr ON sr.id = t.service_request_id
+  JOIN clients c ON c.id = sr.client_id
+  JOIN routes r ON r.id = sr.route_id
+  JOIN vehicles v ON v.id = t.vehicle_id
+  JOIN employees e ON e.id = t.employee_id
+  WHERE t.status IN ('scheduled', 'in_transit')
+    AND t.planned_start < DATE_ADD(p_today, INTERVAL p_days DAY)
+  ORDER BY t.planned_start
+  LIMIT 20;
+END$$
+
+-- FR-DSH-4: clients owing the most money.
+CREATE PROCEDURE sp_dashboard_top_debtors(IN p_limit INT)
+p: BEGIN
+  SELECT c.name AS cliente,
+         SUM(i.amount - COALESCE(paid.total, 0)) AS saldo,
+         COUNT(*) AS facturas,
+         MIN(i.due_date) AS vencimiento_mas_antiguo
+  FROM invoices i
+  JOIN clients c ON c.id = i.client_id
+  LEFT JOIN (SELECT invoice_id, SUM(amount) AS total FROM payments GROUP BY invoice_id) paid
+         ON paid.invoice_id = i.id
+  WHERE i.status <> 'cancelled' AND i.amount > COALESCE(paid.total, 0)
+  GROUP BY c.id, c.name
+  ORDER BY saldo DESC
+  LIMIT p_limit;
+END$$
+
+-- FR-DSH-5: revenue and margin per month for the trend chart.
+CREATE PROCEDURE sp_dashboard_monthly_revenue(IN p_months INT)
+p: BEGIN
+  WITH RECURSIVE months AS (
+    SELECT DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL (p_months - 1) MONTH), '%Y-%m-01') AS m
+    UNION ALL
+    SELECT DATE_ADD(m, INTERVAL 1 MONTH) FROM months
+    WHERE m < DATE_FORMAT(CURDATE(), '%Y-%m-01')
+  )
+  SELECT DATE_FORMAT(months.m, '%Y-%m') AS mes,
+         COALESCE(rev.ingresos, 0) AS ingresos,
+         COALESCE(cost.costo, 0) AS costo,
+         COALESCE(rev.ingresos, 0) - COALESCE(cost.costo, 0) AS margen
+  FROM months
+  LEFT JOIN (
+    SELECT DATE_FORMAT(i.issue_date, '%Y-%m') AS ym, SUM(i.amount) AS ingresos
+    FROM invoices i
+    WHERE i.status <> 'cancelled'
+    GROUP BY DATE_FORMAT(i.issue_date, '%Y-%m')
+  ) rev ON rev.ym = DATE_FORMAT(months.m, '%Y-%m')
+  LEFT JOIN (
+    SELECT DATE_FORMAT(t.planned_start, '%Y-%m') AS ym, SUM(t.total) AS costo
+    FROM (
+      SELECT tr.id, tr.planned_start,
+             COALESCE((SELECT SUM(e.amount) FROM expenses e WHERE e.trip_id = tr.id), 0)
+           + COALESCE((SELECT SUM(f.amount) FROM fuel_loads f WHERE f.trip_id = tr.id), 0) AS total
+      FROM trips tr
+    ) t
+    GROUP BY DATE_FORMAT(t.planned_start, '%Y-%m')
+  ) cost ON cost.ym = DATE_FORMAT(months.m, '%Y-%m')
+  ORDER BY months.m;
+END$$
+
+-- FR-DSH-6: how the fleet is distributed by status for the chart.
+CREATE PROCEDURE sp_dashboard_fleet_status()
+p: BEGIN
+  SELECT status, COUNT(*) AS unidades
+  FROM vehicles
+  GROUP BY status
+  ORDER BY FIELD(status, 'available', 'assigned', 'on_trip', 'maintenance',
+                          'out_of_service', 'decommissioned');
+END$$
+
 DELIMITER ;

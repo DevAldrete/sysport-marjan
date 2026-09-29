@@ -23,6 +23,7 @@ Built for the fictional (personal-project) company **Transportes MARJAN**, based
 - **Invoicing & collections**: invoices, payments, outstanding balances, overdue detection.
 - **Users & permissions**: roles, permissions, audit trail, no hard deletes.
 - **Reports**: revenue per client, route usage, vehicle usage, fuel yield, profitability per trip; CSV export.
+- **Dashboard**: permission-aware KPI cards, upcoming trips, top debtors, revenue/margin and fleet charts, quick actions — all linking to the relevant tab.
 
 ## Tech stack
 

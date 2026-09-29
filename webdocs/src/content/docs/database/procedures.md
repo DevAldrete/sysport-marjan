@@ -134,6 +134,12 @@ problems at once.
 | `sp_expiring_licenses(today)` | Licenses expiring within 30 days (**BR-10**). |
 | `sp_maintenance_due(today)` | Vehicles whose next service date/km is due. |
 | `sp_dashboard(today, OUT×4)` | Counters: expiring licenses, overdue invoices, maintenance due, requests awaiting assignment (**FR-DSH-1**). |
+| `sp_dashboard_finance(today)` | Month revenue, month collected, total receivable, overdue amount (**FR-DSH-2**). |
+| `sp_dashboard_operations(today, OUT×2)` | Active trips and available vehicles (**FR-DSH-2**). |
+| `sp_dashboard_upcoming_trips(today, days)` | Next departures with client, route, vehicle and operator (**FR-DSH-3**). |
+| `sp_dashboard_top_debtors(limit)` | Clients with the largest outstanding balances (**FR-DSH-4**). |
+| `sp_dashboard_monthly_revenue(months)` | Revenue, cost and margin per month, zero-filled (**FR-DSH-5**). |
+| `sp_dashboard_fleet_status()` | Vehicles per status (**FR-DSH-6**). |
 
 ## The assignment transaction (read this one)
 

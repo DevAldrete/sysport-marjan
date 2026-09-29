@@ -53,7 +53,7 @@ manual values only).
 ## Functional requirement IDs
 
 The code also references `FR-*` ids from the PRD (e.g. `FR-TRP-1` eligible resources, `FR-INV-1`
-pending billing, `FR-RPT-1..7` reports, `FR-DSH-1` dashboard). These map to features rather than
+pending billing, `FR-RPT-1..7` reports, `FR-DSH-1..6` dashboard). These map to features rather than
 rules; grep the same way.
 
 ## Adding a rule

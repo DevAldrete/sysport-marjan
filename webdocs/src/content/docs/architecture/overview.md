@@ -63,7 +63,7 @@ function** (or, rarely, in `shared/` as a pure helper).
 mx.marjan
 ├── App.java                 entry point
 ├── MainFrame.java           tabbed main window, permission-guarded tabs
-├── shared/                  Database, Result, Async, BaseView, FormPanel, Ui, Money, Dates, …
+├── shared/                  Database, Result, Async, BaseView, FormPanel, Ui, Theme, Icons, KpiCard, Charts, …
 ├── security/                users, roles, login, session
 ├── clients/                 clients, rates
 ├── routes/                  origin → destination lanes
