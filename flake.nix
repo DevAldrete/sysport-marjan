@@ -21,9 +21,9 @@
 
           # ---- TWEAK PER PROJECT -------------------------------------------
           packages = with pkgs; [
-            git
-	    openjdk21
-	    jdt-language-server
+            openjdk21
+            jdt-language-server
+            maven
 
             # Node:    nodejs pnpm
             # Python:  python3 uv
